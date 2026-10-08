@@ -52,14 +52,33 @@ class PlatformFiles {
     });
   }
 
-  static Future<File?> _settingsFile() async {
+  /// Lets the user pick where to save [bytes] (system "Save as" dialog).
+  static Future<bool> saveFile(String name, String mime, Uint8List bytes) async {
+    final r = await _channel.invokeMethod<bool>('saveFile', {'name': name, 'mime': mime, 'bytes': bytes});
+    return r ?? false;
+  }
+
+  /// Opens the Android share sheet with plain text.
+  static Future<void> shareText(String text) async {
+    await _channel.invokeMethod<bool>('shareText', {'text': text});
+  }
+
+  static String? _filesDir;
+
+  /// App-private directory (null when not running on Android).
+  static Future<String?> filesDir() async {
+    if (_filesDir != null) return _filesDir;
     try {
-      final dir = await _channel.invokeMethod<String>('filesDir');
-      if (dir == null) return null;
-      return File('$dir/settings.json');
+      _filesDir = await _channel.invokeMethod<String>('filesDir');
     } on MissingPluginException {
-      return null;
+      _filesDir = null;
     }
+    return _filesDir;
+  }
+
+  static Future<File?> _settingsFile() async {
+    final dir = await filesDir();
+    return dir == null ? null : File('$dir/settings.json');
   }
 
   static Future<SliceSettings> loadSettings() async {

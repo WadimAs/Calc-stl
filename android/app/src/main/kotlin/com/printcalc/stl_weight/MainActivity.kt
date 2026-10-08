@@ -14,6 +14,9 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val channelName = "stl_weight/files"
     private val pickRequest = 4711
+    private val saveRequest = 4712
+    private var pendingSave: MethodChannel.Result? = null
+    private var pendingSaveBytes: ByteArray? = null
     private var channel: MethodChannel? = null
     private var pendingPick: MethodChannel.Result? = null
     private var initialUri: Uri? = null
@@ -46,6 +49,43 @@ class MainActivity : FlutterActivity() {
                     if (uri == null) result.success(null) else readUri(uri) { result.success(it) }
                 }
                 "filesDir" -> result.success(filesDir.absolutePath)
+                "saveFile" -> {
+                    val name = call.argument<String>("name") ?: "export.csv"
+                    val mime = call.argument<String>("mime") ?: "text/csv"
+                    val bytes = call.argument<ByteArray>("bytes")
+                    if (bytes == null) {
+                        result.error("args", "no bytes", null)
+                    } else {
+                        pendingSave?.success(false)
+                        pendingSave = result
+                        pendingSaveBytes = bytes
+                        val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = mime
+                            putExtra(Intent.EXTRA_TITLE, name)
+                        }
+                        try {
+                            startActivityForResult(i, saveRequest)
+                        } catch (e: Exception) {
+                            pendingSave = null
+                            pendingSaveBytes = null
+                            result.error("save", e.message, null)
+                        }
+                    }
+                }
+                "shareText" -> {
+                    val text = call.argument<String>("text") ?: ""
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, text)
+                    }
+                    try {
+                        startActivity(Intent.createChooser(send, null))
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("share", e.message, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -62,6 +102,29 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == saveRequest) {
+            val res = pendingSave ?: return
+            val bytes = pendingSaveBytes
+            pendingSave = null
+            pendingSaveBytes = null
+            val uri = data?.data
+            if (resultCode != Activity.RESULT_OK || uri == null || bytes == null) {
+                res.success(false)
+                return
+            }
+            Thread {
+                var ok = false
+                try {
+                    contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                    ok = true
+                } catch (e: Exception) {
+                    ok = false
+                }
+                val done = ok
+                mainHandler.post { res.success(done) }
+            }.start()
+            return
+        }
         if (requestCode != pickRequest) return
         val result = pendingPick ?: return
         pendingPick = null

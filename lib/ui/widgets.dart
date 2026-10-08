@@ -8,6 +8,21 @@ String fmtGrams(double g) {
   return '${fmtNum(g, 1)} г';
 }
 
+String fmtMoney(double v) {
+  final whole = v.abs() >= 1000;
+  final txt = v.toStringAsFixed(whole ? 0 : 2);
+  // Thousands separator (thin space) for readability.
+  final parts = txt.split('.');
+  final digits = parts[0];
+  final b = StringBuffer();
+  for (int i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 == 0 && digits[i - 1] != '-') b.write('\u202F');
+    b.write(digits[i]);
+  }
+  if (parts.length > 1) b.write(',${parts[1]}');
+  return '$b грн';
+}
+
 /// "label  [-] value [+]" row used for integer and decimal settings.
 class StepperRow extends StatelessWidget {
   final String label;
@@ -94,6 +109,68 @@ class Stat extends StatelessWidget {
         const SizedBox(height: 2),
         Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
       ],
+    );
+  }
+}
+
+/// Numeric text field that reports valid values as they are typed and picks up
+/// external changes of [value].
+class NumberField extends StatefulWidget {
+  final String label;
+  final String? helper;
+  final String? suffix;
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  const NumberField({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.helper,
+    this.suffix,
+  });
+
+  @override
+  State<NumberField> createState() => _NumberFieldState();
+}
+
+class _NumberFieldState extends State<NumberField> {
+  late final TextEditingController _c = TextEditingController(text: _fmt(widget.value));
+
+  static String _fmt(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : fmtNum(v, 2);
+
+  static double? _parse(String t) => double.tryParse(t.replaceAll(',', '.').replaceAll(' ', '').trim());
+
+  @override
+  void didUpdateWidget(covariant NumberField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final cur = _parse(_c.text);
+    if (cur != null && (cur - widget.value).abs() > 1e-9) _c.text = _fmt(widget.value);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _c,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(
+        labelText: widget.label,
+        helperText: widget.helper,
+        suffixText: widget.suffix,
+        border: const OutlineInputBorder(),
+        isDense: true,
+      ),
+      onChanged: (t) {
+        final v = _parse(t);
+        if (v != null && v >= 0) widget.onChanged(v);
+      },
     );
   }
 }

@@ -73,7 +73,12 @@ class _SettingsBodyState extends State<_SettingsBody> {
             Expanded(child: Text('Налаштування друку', style: Theme.of(context).textTheme.titleLarge)),
             TextButton(
               onPressed: () {
-                const d = SliceSettings();
+                // Reset print settings, keep prices.
+                final d = const SliceSettings().copyWith(
+                  pricesPerKg: _s.pricesPerKg,
+                  markupPercent: _s.markupPercent,
+                  extraCost: _s.extraCost,
+                );
                 _density.text = fmtNum(d.density, 2);
                 _set(d);
               },
@@ -146,6 +151,63 @@ class _SettingsBodyState extends State<_SettingsBody> {
           divisions: 20,
           label: '${fmtNum(s.infillPercent, 0)}%',
           onChanged: (v) => _set(s.copyWith(infillPercent: v)),
+        ),
+        _section('Підтримки'),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Друкувати з підтримками'),
+          value: s.supportsEnabled,
+          onChanged: (v) => _set(s.copyWith(supportsEnabled: v)),
+        ),
+        if (s.supportsEnabled) ...[
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: false, label: Text('Скрізь')),
+              ButtonSegment(value: true, label: Text('Лише від столу')),
+            ],
+            selected: {s.supportPlateOnly},
+            onSelectionChanged: (v) => _set(s.copyWith(supportPlateOnly: v.first)),
+          ),
+          const SizedBox(height: 8),
+          StepperRow(
+            label: 'Кут нависання',
+            hint: 'від вертикалі; більший кут — менше підтримок',
+            value: s.supportAngle,
+            min: 20,
+            max: 80,
+            step: 5,
+            unit: '°',
+            onChanged: (v) => _set(s.copyWith(supportAngle: v)),
+          ),
+          StepperRow(
+            label: 'Щільність підтримок',
+            value: s.supportDensity,
+            min: 5,
+            max: 60,
+            step: 5,
+            unit: '%',
+            onChanged: (v) => _set(s.copyWith(supportDensity: v)),
+          ),
+        ],
+        _section('Вартість'),
+        NumberField(
+          key: ValueKey('price-${s.materialId}'),
+          label: 'Ціна ${materialById(s.materialId).name}, $currency за кг',
+          value: s.pricePerKg,
+          onChanged: (v) => _set(_s.withPrice(v)),
+        ),
+        const SizedBox(height: 12),
+        NumberField(
+          label: 'Націнка, %',
+          value: s.markupPercent,
+          onChanged: (v) => _set(_s.copyWith(markupPercent: v)),
+        ),
+        const SizedBox(height: 12),
+        NumberField(
+          label: 'Доплата за замовлення, $currency',
+          helper: 'Робота, моделювання, пакування тощо',
+          value: s.extraCost,
+          onChanged: (v) => _set(_s.copyWith(extraCost: v)),
         ),
         _section('Модель'),
         StepperRow(
@@ -220,10 +282,11 @@ class _SettingsBodyState extends State<_SettingsBody> {
         ),
         const SizedBox(height: 20),
         Text(
-          'Розрахунок не враховує підтримки, кайму (brim), спідницю та очищувальну вежу.',
+          'Розрахунок не враховує кайму (brim), спідницю та очищувальну вежу.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
       ],
     );
   }
 }
+

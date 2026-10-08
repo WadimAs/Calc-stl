@@ -1,13 +1,19 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
+import '../history/history.dart';
 import '../mesh/loader.dart';
 import '../platform/files.dart';
 import '../slicer/settings.dart';
 import '../slicer/slice_runner.dart';
 import '../slicer/slicer.dart';
 import '../viewer/model_viewer.dart';
+import 'history_page.dart';
 import 'settings_sheet.dart';
 import 'widgets.dart';
 
@@ -32,6 +38,8 @@ class _HomePageState extends State<HomePage> {
   double? _progress;
   String? _sliceError;
   Timer? _debounce;
+  bool _saving = false;
+  final GlobalKey _viewerKey = GlobalKey();
 
   @override
   void initState() {
@@ -140,6 +148,94 @@ class _HomePageState extends State<HomePage> {
 
   void _openSettings() => showSettingsSheet(context, _settings, _updateSettings);
 
+  void _openHistory() {
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const HistoryPage()));
+  }
+
+  /// Snapshot of the current calculation as a history entry.
+  HistoryEntry? _buildEntry({String note = '', String? thumbPath, String? id}) {
+    final m = _model;
+    final r = _result;
+    if (m == null || r == null) return null;
+    final s = _settings;
+    final grams = r.grams(s.density, copies: s.copies);
+    final cost = CostBreakdown.of(grams, s);
+    final mat = materialById(s.materialId);
+    return HistoryEntry(
+      id: id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+      date: DateTime.now(),
+      name: m.name,
+      material: mat.id == 'custom' ? 'Свій (${fmtNum(s.density, 2)} г/см³)' : mat.name,
+      density: s.density,
+      pricePerKg: s.pricePerKg,
+      layerHeight: s.layerHeight,
+      infillPercent: s.infillPercent,
+      walls: s.walls,
+      supports: s.supportsEnabled,
+      supportPlateOnly: s.supportPlateOnly,
+      scalePercent: s.scalePercent,
+      copies: s.copies,
+      modelGrams: r.modelGrams(s.density),
+      supportGrams: r.supportGrams(s.density),
+      filamentMeters: r.filamentMeters(s.filamentDiameter, copies: s.copies),
+      materialCost: cost.material,
+      markupPercent: s.markupPercent,
+      extraCost: s.extraCost,
+      totalCost: cost.total,
+      sizeX: r.sizeX,
+      sizeY: r.sizeY,
+      sizeZ: r.sizeZ,
+      note: note,
+      thumbPath: thumbPath,
+    );
+  }
+
+  Future<Uint8List?> _captureThumb() async {
+    try {
+      final obj = _viewerKey.currentContext?.findRenderObject();
+      if (obj is! RenderRepaintBoundary) return null;
+      final size = obj.size;
+      if (size.isEmpty) return null;
+      final ratio = 320 / math.max(size.width, size.height);
+      final img = await obj.toImage(pixelRatio: ratio);
+      final data = await img.toByteData(format: ui.ImageByteFormat.png);
+      img.dispose();
+      return data?.buffer.asUint8List();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _saveToHistory() async {
+    if (_buildEntry() == null) return;
+    final note = await showDialog<String>(context: context, builder: (_) => const _NoteDialog());
+    if (note == null || !mounted) return;
+    setState(() => _saving = true);
+    try {
+      final id = DateTime.now().microsecondsSinceEpoch.toString();
+      final png = await _captureThumb();
+      final thumb = png == null ? null : await HistoryStore.saveThumb(id, png);
+      final e = _buildEntry(note: note, thumbPath: thumb, id: id);
+      if (e == null) return;
+      await HistoryStore.add(e);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Збережено в історію'),
+        action: SnackBarAction(label: 'Відкрити', onPressed: _openHistory),
+      ));
+    } catch (e) {
+      _snack('Не вдалося зберегти: $e');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _share() {
+    final e = _buildEntry();
+    if (e == null) return;
+    PlatformFiles.shareText(historySummary(e)).catchError((Object _) {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final model = _model;
@@ -148,6 +244,7 @@ class _HomePageState extends State<HomePage> {
         title: Text(model?.name ?? 'STL Вага', overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(tooltip: 'Відкрити файл', onPressed: _loading ? null : _pick, icon: const Icon(Icons.folder_open)),
+          IconButton(tooltip: 'Історія', onPressed: _openHistory, icon: const Icon(Icons.history)),
           IconButton(tooltip: 'Налаштування', onPressed: _openSettings, icon: const Icon(Icons.tune)),
         ],
       ),
@@ -184,7 +281,9 @@ class _HomePageState extends State<HomePage> {
     final b = m.bounds;
     String mm(double v) => fmtNum(v * k, 1);
     return Stack(children: [
-      Positioned.fill(child: ModelViewer(model: m, color: _modelColor)),
+      Positioned.fill(
+        child: RepaintBoundary(key: _viewerKey, child: ModelViewer(model: m, color: _modelColor)),
+      ),
       Positioned(
         left: 12,
         bottom: 10,
@@ -220,6 +319,8 @@ class _HomePageState extends State<HomePage> {
       children: [
         _resultCard(),
         const SizedBox(height: 8),
+        _costCard(),
+        const SizedBox(height: 8),
         _quickSettings(),
         const SizedBox(height: 8),
         _modelInfo(m),
@@ -232,6 +333,14 @@ class _HomePageState extends State<HomePage> {
     final r = _result;
     final s = _settings;
     final busy = _progress != null;
+    final onCard = theme.colorScheme.onPrimaryContainer;
+    final grams = r?.grams(s.density, copies: s.copies) ?? 0;
+    final cost = CostBreakdown.of(grams, s);
+    final costParts = <String>[
+      'пластик ${fmtMoney(cost.material)}',
+      if (cost.markup != 0) 'націнка ${fmtMoney(cost.markup)}',
+      if (cost.extra != 0) 'доплата ${fmtMoney(cost.extra)}',
+    ];
     return Card(
       color: theme.colorScheme.primaryContainer,
       child: Padding(
@@ -242,8 +351,12 @@ class _HomePageState extends State<HomePage> {
             Row(children: [
               Text('Вага пластику', style: theme.textTheme.titleSmall),
               const Spacer(),
-              Text(materialById(s.materialId).id == 'custom' ? 'свій, ${fmtNum(s.density, 2)} г/см³' : materialById(s.materialId).name,
-                  style: theme.textTheme.labelLarge),
+              Text(
+                materialById(s.materialId).id == 'custom'
+                    ? 'свій, ${fmtNum(s.density, 2)} г/см³'
+                    : materialById(s.materialId).name,
+                style: theme.textTheme.labelLarge,
+              ),
             ]),
             const SizedBox(height: 4),
             if (r != null)
@@ -251,11 +364,8 @@ class _HomePageState extends State<HomePage> {
                 opacity: busy ? 0.4 : 1,
                 duration: const Duration(milliseconds: 200),
                 child: Text(
-                  fmtGrams(r.grams(s.density, copies: s.copies)),
-                  style: theme.textTheme.displayMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: theme.colorScheme.onPrimaryContainer,
-                  ),
+                  fmtGrams(grams),
+                  style: theme.textTheme.displayMedium?.copyWith(fontWeight: FontWeight.w700, color: onCard),
                 ),
               )
             else if (!busy && _sliceError == null)
@@ -264,7 +374,10 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 8),
               LinearProgressIndicator(value: _progress),
               const SizedBox(height: 4),
-              Text('Нарізання… ${((_progress ?? 0) * 100).round()}%', style: theme.textTheme.bodySmall),
+              Text(
+                '${s.supportsEnabled ? 'Нарізання і підтримки' : 'Нарізання'}… ${((_progress ?? 0) * 100).round()}%',
+                style: theme.textTheme.bodySmall,
+              ),
             ],
             if (_sliceError != null) ...[
               const SizedBox(height: 8),
@@ -272,6 +385,12 @@ class _HomePageState extends State<HomePage> {
               TextButton(onPressed: _slice, child: const Text('Спробувати ще раз')),
             ],
             if (r != null) ...[
+              if (s.supportsEnabled)
+                Text(
+                  'модель ${fmtGrams(r.modelGrams(s.density) * s.copies)} · '
+                  'підтримки ${fmtGrams(r.supportGrams(s.density) * s.copies)}',
+                  style: theme.textTheme.bodyMedium,
+                ),
               if (s.copies > 1)
                 Text('${s.copies} шт. · одна: ${fmtGrams(r.grams(s.density))}', style: theme.textTheme.bodyMedium),
               const SizedBox(height: 12),
@@ -279,16 +398,97 @@ class _HomePageState extends State<HomePage> {
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   Stat('філамент', '${fmtNum(r.filamentMeters(s.filamentDiameter, copies: s.copies), 2)} м'),
-                  Stat('об\'єм', '${fmtNum(r.volumeMm3 * s.copies / 1000, 1)} см³'),
+                  Stat('об\'єм', '${fmtNum(r.totalVolumeMm3 * s.copies / 1000, 1)} см³'),
                   Stat('шарів', '${r.layers}'),
                 ],
               ),
-              const SizedBox(height: 10),
+              Divider(height: 28, color: onCard.withValues(alpha: 0.2)),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('Вартість', style: theme.textTheme.titleSmall),
+                  const Spacer(),
+                  Text(
+                    fmtMoney(cost.total),
+                    style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700, color: onCard),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '${costParts.join(' + ')} · ${fmtNum(s.pricePerKg, 0)} $currency/кг',
+                textAlign: TextAlign.right,
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: busy ? null : _share,
+                    icon: const Icon(Icons.share_outlined),
+                    label: const Text('Поділитися'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: busy || _saving ? null : _saveToHistory,
+                    icon: const Icon(Icons.bookmark_add_outlined),
+                    label: const Text('Зберегти'),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 8),
               Text(
                 'Суцільна модель (100%): ${fmtGrams(r.solidGrams(s.density))}',
                 style: theme.textTheme.bodySmall,
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _costCard() {
+    final theme = Theme.of(context);
+    final s = _settings;
+    final mat = materialById(s.materialId);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Ціни', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 10),
+            NumberField(
+              key: ValueKey('price-${s.materialId}'),
+              label: 'Котушка ${mat.id == 'custom' ? 'свого матеріалу' : mat.name}, за 1 кг',
+              suffix: currency,
+              value: s.pricePerKg,
+              onChanged: (v) => _updateSettings(_settings.withPrice(v)),
+            ),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(
+                child: NumberField(
+                  label: 'Націнка',
+                  suffix: '%',
+                  value: s.markupPercent,
+                  onChanged: (v) => _updateSettings(_settings.copyWith(markupPercent: v)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: NumberField(
+                  label: 'Доплата',
+                  suffix: currency,
+                  value: s.extraCost,
+                  onChanged: (v) => _updateSettings(_settings.copyWith(extraCost: v)),
+                ),
+              ),
+            ]),
           ],
         ),
       ),
@@ -351,6 +551,16 @@ class _HomePageState extends State<HomePage> {
               max: 15,
               step: 1,
               onChanged: (v) => _updateSettings(s.copyWith(walls: v.round())),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Підтримки'),
+              subtitle: s.supportsEnabled
+                  ? Text('${s.supportPlateOnly ? 'лише від столу' : 'скрізь'} · '
+                      '${fmtNum(s.supportAngle, 0)}° · ${fmtNum(s.supportDensity, 0)}%')
+                  : null,
+              value: s.supportsEnabled,
+              onChanged: (v) => _updateSettings(s.copyWith(supportsEnabled: v)),
             ),
             Align(
               alignment: Alignment.centerRight,
@@ -438,6 +648,44 @@ class _EmptyState extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _NoteDialog extends StatefulWidget {
+  const _NoteDialog();
+
+  @override
+  State<_NoteDialog> createState() => _NoteDialogState();
+}
+
+class _NoteDialogState extends State<_NoteDialog> {
+  final _c = TextEditingController();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Зберегти розрахунок'),
+      content: TextField(
+        controller: _c,
+        autofocus: true,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: const InputDecoration(
+          labelText: 'Примітка (необов\'язково)',
+          hintText: 'Клієнт, колір, термін…',
+        ),
+        onSubmitted: (_) => Navigator.pop(context, _c.text.trim()),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
+        FilledButton(onPressed: () => Navigator.pop(context, _c.text.trim()), child: const Text('Зберегти')),
+      ],
     );
   }
 }

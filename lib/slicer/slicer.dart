@@ -4,10 +4,13 @@ import 'dart:typed_data';
 import 'settings.dart';
 
 /// Geometry-only result of a slice. Weight/length depend on material and are
-/// derived in [SliceResult.grams] / [SliceResult.filamentMeters].
+/// derived with [grams] / [filamentMeters].
 class SliceResult {
-  /// Extruded plastic volume for one copy, mm³.
+  /// Extruded plastic volume of the model for one copy, mm³.
   final double volumeMm3;
+
+  /// Support material volume for one copy, mm³ (0 when supports are off).
+  final double supportVolumeMm3;
 
   /// Volume of the (scaled) model if printed 100% solid, mm³.
   final double solidVolumeMm3;
@@ -18,6 +21,7 @@ class SliceResult {
 
   const SliceResult({
     required this.volumeMm3,
+    required this.supportVolumeMm3,
     required this.solidVolumeMm3,
     required this.layers,
     required this.cellSize,
@@ -27,17 +31,25 @@ class SliceResult {
     required this.sizeZ,
   });
 
-  double grams(double density, {int copies = 1}) => volumeMm3 * density / 1000.0 * copies;
+  double get totalVolumeMm3 => volumeMm3 + supportVolumeMm3;
+
+  /// Model + supports, for [copies] copies.
+  double grams(double density, {int copies = 1}) => totalVolumeMm3 * density / 1000.0 * copies;
+
+  double modelGrams(double density) => volumeMm3 * density / 1000.0;
+
+  double supportGrams(double density) => supportVolumeMm3 * density / 1000.0;
 
   double solidGrams(double density) => solidVolumeMm3 * density / 1000.0;
 
   double filamentMeters(double diameter, {int copies = 1}) {
     final r = diameter / 2;
-    return volumeMm3 / (math.pi * r * r) / 1000.0 * copies;
+    return totalVolumeMm3 / (math.pi * r * r) / 1000.0 * copies;
   }
 
   Map<String, dynamic> toMap() => {
         'volumeMm3': volumeMm3,
+        'supportVolumeMm3': supportVolumeMm3,
         'solidVolumeMm3': solidVolumeMm3,
         'layers': layers,
         'cellSize': cellSize,
@@ -49,6 +61,7 @@ class SliceResult {
 
   static SliceResult fromMap(Map m) => SliceResult(
         volumeMm3: (m['volumeMm3'] as num).toDouble(),
+        supportVolumeMm3: (m['supportVolumeMm3'] as num? ?? 0).toDouble(),
         solidVolumeMm3: (m['solidVolumeMm3'] as num).toDouble(),
         layers: (m['layers'] as num).toInt(),
         cellSize: (m['cellSize'] as num).toDouble(),
@@ -61,6 +74,27 @@ class SliceResult {
 
 typedef ProgressCallback = void Function(double fraction);
 
+/// Support model constants.
+const double kSupportXyGapMm = 0.6;
+const int kSupportInterfaceLayers = 2;
+const double kSupportInterfaceDensity = 0.7;
+
+/// Bounding box and fill statistics of one rasterised layer.
+class _LayerInfo {
+  int x0 = 0, y0 = 0, x1 = -1, y1 = -1;
+  int count = 0;
+  double area = 0;
+
+  void copyFrom(_LayerInfo o) {
+    x0 = o.x0;
+    y0 = o.y0;
+    x1 = o.x1;
+    y1 = o.y1;
+    count = o.count;
+    area = o.area;
+  }
+}
+
 /// Layer-by-layer slicer.
 ///
 /// Every layer is cut from the mesh, rasterised with the non-zero winding rule
@@ -68,6 +102,12 @@ typedef ProgressCallback = void Function(double fraction);
 /// solid top/bottom skin (area not covered by the N layers above/below) and
 /// sparse infill (the rest, multiplied by the infill density). The raster
 /// area is corrected to the exact polygon area of each layer.
+///
+/// Supports (optional) are computed in a second, top-down pass: a cell of
+/// layer i+1 overhangs when no model cell of layer i is within
+/// layerHeight × tan(angle). Overhangs start a support column that runs down
+/// until it meets the model (or, for "build plate only", only exists where
+/// nothing of the model is below it).
 SliceResult sliceMesh(
   Float32List source,
   SliceSettings st, {
@@ -95,8 +135,17 @@ SliceResult sliceMesh(
     if (z > maxZ) maxZ = z;
   }
   if (nT == 0 || !(maxZ > minZ)) {
-    return SliceResult(
-        volumeMm3: 0, solidVolumeMm3: 0, layers: 0, cellSize: 0, millis: 0, sizeX: 0, sizeY: 0, sizeZ: 0);
+    return const SliceResult(
+      volumeMm3: 0,
+      supportVolumeMm3: 0,
+      solidVolumeMm3: 0,
+      layers: 0,
+      cellSize: 0,
+      millis: 0,
+      sizeX: 0,
+      sizeY: 0,
+      sizeZ: 0,
+    );
   }
 
   // Put the model on the bed and compute its solid volume.
@@ -144,16 +193,49 @@ SliceResult sliceMesh(
   final ny = ((maxY - minY) / s).ceil() + 4;
   final nCells = nx * ny;
 
-  // Triangles sorted by lowest Z for a sweep.
-  final tzMin = Float64List(nT), tzMax = Float64List(nT);
+  // Triangles bucketed by the layers whose cutting plane they cross,
+  // so any layer can be generated in any order.
+  int firstLayerAtOrAbove(double z) {
+    int lo = 0, hi = nL;
+    while (lo < hi) {
+      final m = (lo + hi) >> 1;
+      if (mids[m] < z) {
+        lo = m + 1;
+      } else {
+        hi = m;
+      }
+    }
+    return lo;
+  }
+
+  final triLo = Int32List(nT), triHi = Int32List(nT);
+  final layerStart = Int32List(nL + 1);
   for (int k = 0; k < nT; k++) {
     final b = k * 9;
-    tzMin[k] = math.min(t[b + 2], math.min(t[b + 5], t[b + 8]));
-    tzMax[k] = math.max(t[b + 2], math.max(t[b + 5], t[b + 8]));
+    final zl = math.min(t[b + 2], math.min(t[b + 5], t[b + 8]));
+    final zh = math.max(t[b + 2], math.max(t[b + 5], t[b + 8]));
+    final lo = firstLayerAtOrAbove(zl);
+    final hi = firstLayerAtOrAbove(zh) - 1; // last layer with mid < zh
+    triLo[k] = lo;
+    triHi[k] = hi;
+    for (int l = lo; l <= hi; l++) {
+      layerStart[l + 1]++;
+    }
   }
-  final order = List<int>.generate(nT, (i) => i)..sort((a, b) => tzMin[a].compareTo(tzMin[b]));
-  int nextTri = 0;
-  var active = <int>[];
+  for (int l = 0; l < nL; l++) {
+    layerStart[l + 1] += layerStart[l];
+  }
+  final totalRefs = layerStart[nL];
+  if (totalRefs > 60000000) throw StateError('Модель надто складна для телефона');
+  final layerTris = Int32List(totalRefs);
+  {
+    final fill = Int32List.fromList(Int32List.sublistView(layerStart, 0, nL));
+    for (int k = 0; k < nT; k++) {
+      for (int l = triLo[k]; l <= triHi[k]; l++) {
+        layerTris[fill[l]++] = k;
+      }
+    }
+  }
 
   // Scratch buffers.
   var seg = Float64List(4096); // x1,y1,x2,y2
@@ -162,35 +244,17 @@ SliceResult sliceMesh(
   final rowStart = Int32List(ny + 1);
   final rowFill = Int32List(ny);
 
-  final top = st.topLayers < 0 ? 0 : st.topLayers;
-  final bottom = st.bottomLayers < 0 ? 0 : st.bottomLayers;
-  final ringSize = top + bottom + 1;
-  final ring = List<Uint8List>.generate(ringSize, (_) => Uint8List(nCells));
-  final ringArea = Float64List(ringSize);
-  final ringCount = Int32List(ringSize);
-  final ringCrop = Int32List(ringSize * 4); // x0, y0, x1, y1
-
-  /// Cuts layer [li] and rasterises it into ring slot li % ringSize.
-  void genLayer(int li) {
-    final slot = li % ringSize;
-    final mask = ring[slot];
+  /// Cuts layer [li] and rasterises it into [mask]; fills [info].
+  void genLayer(int li, Uint8List mask, _LayerInfo info) {
     mask.fillRange(0, nCells, 0);
     final z = mids[li];
-
-    while (nextTri < nT && tzMin[order[nextTri]] <= z) {
-      active.add(order[nextTri]);
-      nextTri++;
-    }
-    final still = <int>[];
     int nSeg = 0;
     double area2 = 0;
     double sMinX = double.infinity, sMinY = double.infinity;
     double sMaxX = -double.infinity, sMaxY = -double.infinity;
 
-    for (final k in active) {
-      if (tzMax[k] < z) continue;
-      still.add(k);
-      final b = k * 9;
+    for (int r = layerStart[li]; r < layerStart[li + 1]; r++) {
+      final b = layerTris[r] * 9;
       double px = 0, py = 0, qx = 0, qy = 0;
       int found = 0;
       for (int e = 0; e < 3; e++) {
@@ -245,25 +309,24 @@ SliceResult sliceMesh(
       if (py > sMaxY) sMaxY = py;
       if (qy > sMaxY) sMaxY = qy;
     }
-    active = still;
 
-    ringArea[slot] = area2.abs() / 2;
-    ringCount[slot] = 0;
+    info.area = area2.abs() / 2;
+    info.count = 0;
     if (nSeg == 0) {
-      ringCrop[slot * 4] = 0;
-      ringCrop[slot * 4 + 1] = 0;
-      ringCrop[slot * 4 + 2] = -1;
-      ringCrop[slot * 4 + 3] = -1;
+      info.x0 = 0;
+      info.y0 = 0;
+      info.x1 = -1;
+      info.y1 = -1;
       return;
     }
     final cx0 = math.max(0, ((sMinX - ox) / s).floor() - 1);
     final cy0 = math.max(0, ((sMinY - oy) / s).floor() - 1);
     final cx1 = math.min(nx - 1, ((sMaxX - ox) / s).floor() + 1);
     final cy1 = math.min(ny - 1, ((sMaxY - oy) / s).floor() + 1);
-    ringCrop[slot * 4] = cx0;
-    ringCrop[slot * 4 + 1] = cy0;
-    ringCrop[slot * 4 + 2] = cx1;
-    ringCrop[slot * 4 + 3] = cy1;
+    info.x0 = cx0;
+    info.y0 = cy0;
+    info.x1 = cx1;
+    info.y1 = cy1;
 
     // Pass 1: count crossings of every row centre.
     for (int j = cy0; j <= cy1 + 1 && j <= ny; j++) {
@@ -279,7 +342,6 @@ SliceResult sliceMesh(
         rowStart[j + 1]++;
       }
     }
-    // Prefix sums (rowStart[j] = first index of row j).
     rowStart[cy0] = 0;
     for (int j = cy0; j <= cy1; j++) {
       rowStart[j + 1] += rowStart[j];
@@ -331,8 +393,18 @@ SliceResult sliceMesh(
         }
       }
     }
-    ringCount[slot] = count;
+    info.count = count;
   }
+
+  final top = st.topLayers < 0 ? 0 : st.topLayers;
+  final bottom = st.bottomLayers < 0 ? 0 : st.bottomLayers;
+  final ringSize = top + bottom + 1;
+  final ring = List<Uint8List>.generate(ringSize, (_) => Uint8List(nCells));
+  final ringInfo = List<_LayerInfo>.generate(ringSize, (_) => _LayerInfo());
+
+  final supports = st.supportsEnabled;
+  // Lowest model layer per cell (for "build plate only" supports).
+  final firstModelLayer = supports && st.supportPlateOnly ? (Int32List(nCells)..fillRange(0, nCells, 1 << 30)) : null;
 
   final dist = Float32List(nCells);
   const r2 = 1.41421356;
@@ -341,22 +413,36 @@ SliceResult sliceMesh(
   double volume = 0;
   int generated = 0;
   final progressStep = math.max(1, nL ~/ 100);
+  final modelShare = supports ? 0.6 : 1.0;
 
   for (int i = 0; i < nL; i++) {
     final want = math.min(i + top, nL - 1);
     while (generated <= want) {
-      genLayer(generated);
+      final gs = generated % ringSize;
+      genLayer(generated, ring[gs], ringInfo[gs]);
+      final fm = firstModelLayer;
+      if (fm != null) {
+        final inf = ringInfo[gs];
+        final m = ring[gs];
+        for (int y = inf.y0; y <= inf.y1; y++) {
+          final row = y * nx;
+          for (int x = inf.x0; x <= inf.x1; x++) {
+            if (m[row + x] != 0 && fm[row + x] > generated) fm[row + x] = generated;
+          }
+        }
+      }
       generated++;
     }
     final slot = i % ringSize;
-    final nIn = ringCount[slot];
-    if (onProgress != null && i % progressStep == 0) onProgress(i / nL);
+    final info = ringInfo[slot];
+    final nIn = info.count;
+    if (onProgress != null && i % progressStep == 0) onProgress(i / nL * modelShare);
     if (nIn == 0) continue;
     final mask = ring[slot];
-    final x0 = ringCrop[slot * 4], y0 = ringCrop[slot * 4 + 1];
-    final x1 = ringCrop[slot * 4 + 2], y1 = ringCrop[slot * 4 + 3];
+    final x0 = info.x0, y0 = info.y0;
+    final x1 = info.x1, y1 = info.y1;
 
-    // Chamfer distance transform (in cells) inside the crop.
+    // Chamfer distance transform (in cells) to the outside, inside the crop.
     for (int y = y0; y <= y1; y++) {
       final row = y * nx;
       for (int x = x0; x <= x1; x++) {
@@ -426,14 +512,157 @@ SliceResult sliceMesh(
     }
 
     final rasterArea = nIn * s * s;
-    double corr = ringArea[slot] / rasterArea;
+    double corr = info.area / rasterArea;
     if (!(corr > 0.7 && corr < 1.4)) corr = 1.0;
     volume += heights[i] * s * s * corr * (shell + solid + infill * sparse);
+  }
+
+  // ---- Supports: top-down pass. ----
+  double supportVolume = 0;
+  if (supports && nL > 1) {
+    final angle = st.supportAngle.clamp(5.0, 89.0).toDouble() * math.pi / 180.0;
+    final double density = (st.supportDensity / 100.0).clamp(0.0, 1.0).toDouble();
+    final gapCells = kSupportXyGapMm / s;
+    final inColumn = Uint8List(nCells);
+    final srcLayer = Int32List(nCells); // layer where the column's overhang is
+    var maskUp = ring[0];
+    var maskHere = ringSize > 1 ? ring[1] : Uint8List(nCells);
+    final infoUp = _LayerInfo(), infoHere = _LayerInfo();
+    int sx0 = nx, sy0 = ny, sx1 = -1, sy1 = -1; // bbox of active columns
+    genLayer(nL - 1, maskUp, infoUp);
+
+    for (int k = nL - 2; k >= 0; k--) {
+      if (onProgress != null && k % progressStep == 0) {
+        onProgress(modelShare + (1 - modelShare) * (nL - 1 - k) / nL);
+      }
+      genLayer(k, maskHere, infoHere);
+
+      // Region where distances are needed.
+      int rx0 = nx, ry0 = ny, rx1 = -1, ry1 = -1;
+      void grow(int ax0, int ay0, int ax1, int ay1) {
+        if (ax1 < ax0 || ay1 < ay0) return;
+        if (ax0 < rx0) rx0 = ax0;
+        if (ay0 < ry0) ry0 = ay0;
+        if (ax1 > rx1) rx1 = ax1;
+        if (ay1 > ry1) ry1 = ay1;
+      }
+
+      grow(infoHere.x0, infoHere.y0, infoHere.x1, infoHere.y1);
+      grow(infoUp.x0, infoUp.y0, infoUp.x1, infoUp.y1);
+      grow(sx0, sy0, sx1, sy1);
+
+      if (rx1 >= rx0 && ry1 >= ry0) {
+        // Distance (cells) to the nearest model cell of layer k.
+        for (int y = ry0; y <= ry1; y++) {
+          final row = y * nx;
+          for (int x = rx0; x <= rx1; x++) {
+            dist[row + x] = maskHere[row + x] != 0 ? 0.0 : 1e9;
+          }
+        }
+        for (int y = ry0; y <= ry1; y++) {
+          final row = y * nx;
+          for (int x = rx0; x <= rx1; x++) {
+            final idx = row + x;
+            double v = dist[idx];
+            if (v == 0) continue;
+            if (x > rx0) {
+              final c = dist[idx - 1] + 1;
+              if (c < v) v = c;
+            }
+            if (y > ry0) {
+              double c = dist[idx - nx] + 1;
+              if (c < v) v = c;
+              if (x > rx0) {
+                c = dist[idx - nx - 1] + r2;
+                if (c < v) v = c;
+              }
+              if (x < rx1) {
+                c = dist[idx - nx + 1] + r2;
+                if (c < v) v = c;
+              }
+            }
+            dist[idx] = v;
+          }
+        }
+        for (int y = ry1; y >= ry0; y--) {
+          final row = y * nx;
+          for (int x = rx1; x >= rx0; x--) {
+            final idx = row + x;
+            double v = dist[idx];
+            if (v == 0) continue;
+            if (x < rx1) {
+              final c = dist[idx + 1] + 1;
+              if (c < v) v = c;
+            }
+            if (y < ry1) {
+              double c = dist[idx + nx] + 1;
+              if (c < v) v = c;
+              if (x < rx1) {
+                c = dist[idx + nx + 1] + r2;
+                if (c < v) v = c;
+              }
+              if (x > rx0) {
+                c = dist[idx + nx - 1] + r2;
+                if (c < v) v = c;
+              }
+            }
+            dist[idx] = v;
+          }
+        }
+
+        // Overhangs of layer k+1 start new support columns.
+        final reach = heights[k + 1] * math.tan(angle) / s + 0.5;
+        for (int y = infoUp.y0; y <= infoUp.y1; y++) {
+          final row = y * nx;
+          for (int x = infoUp.x0; x <= infoUp.x1; x++) {
+            final idx = row + x;
+            if (maskUp[idx] != 0 && dist[idx] > reach) {
+              inColumn[idx] = 1;
+              srcLayer[idx] = k + 1;
+              if (x < sx0) sx0 = x;
+              if (y < sy0) sy0 = y;
+              if (x > sx1) sx1 = x;
+              if (y > sy1) sy1 = y;
+            }
+          }
+        }
+
+        // Count support cells of layer k.
+        int sparseCells = 0, denseCells = 0;
+        final fm = firstModelLayer;
+        for (int y = sy0; y <= sy1; y++) {
+          final row = y * nx;
+          for (int x = sx0; x <= sx1; x++) {
+            final idx = row + x;
+            if (inColumn[idx] == 0) continue;
+            if (maskHere[idx] != 0) {
+              inColumn[idx] = 0; // column lands on the model
+              continue;
+            }
+            if (dist[idx] <= gapCells) continue;
+            if (fm != null && fm[idx] <= k) continue;
+            if (srcLayer[idx] - k <= kSupportInterfaceLayers) {
+              denseCells++;
+            } else {
+              sparseCells++;
+            }
+          }
+        }
+        supportVolume += heights[k] * s * s * (sparseCells * density + denseCells * kSupportInterfaceDensity);
+      }
+
+      // Layer k becomes the "upper" layer for k-1.
+      final tm = maskUp;
+      maskUp = maskHere;
+      maskHere = tm;
+      infoUp.copyFrom(infoHere);
+    }
   }
   onProgress?.call(1.0);
 
   return SliceResult(
     volumeMm3: volume,
+    supportVolumeMm3: supportVolume,
     solidVolumeMm3: solidVolume,
     layers: nL,
     cellSize: s,

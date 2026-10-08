@@ -3,6 +3,7 @@ import 'dart:io' show ZLibEncoder;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:stl_weight/history/history.dart';
 import 'package:stl_weight/mesh/mesh.dart';
 import 'package:stl_weight/mesh/stl_parser.dart';
 import 'package:stl_weight/mesh/threemf_parser.dart';
@@ -10,8 +11,8 @@ import 'package:stl_weight/slicer/settings.dart';
 import 'package:stl_weight/slicer/slicer.dart';
 
 /// Axis-aligned box with outward-facing triangles.
-Float32List box(double sx, double sy, double sz) {
-  List<double> v(int x, int y, int z) => [x * sx, y * sy, z * sz];
+Float32List box(double sx, double sy, double sz, [double ox = 0, double oy = 0, double oz = 0]) {
+  List<double> v(int x, int y, int z) => [x * sx + ox, y * sy + oy, z * sz + oz];
   int i(int x, int y, int z) => x * 4 + y * 2 + z;
   final verts = <List<double>>[
     for (final x in [0, 1])
@@ -202,5 +203,80 @@ void main() {
     expect(m.signedVolume(), closeTo(9 * 1000 / 6 * 1000, 1));
     final b = Bounds.of(m.tris);
     expect(b.minX, closeTo(1000, 1e-3));
+  });
+
+  test('supports: overhanging slab on a pillar', () {
+    final mushroom = Float32List.fromList([...box(4, 4, 10.5, 8, 8, 0), ...box(20, 20, 2, 0, 0, 10)]);
+    const st = SliceSettings(supportsEnabled: true);
+    final r = sliceMesh(mushroom, st);
+    // ~373 mm² under the slab, 50 layers: 2 interface (70 %) + 48 sparse (15 %).
+    expect(r.supportVolumeMm3, closeTo(641, 641 * 0.08));
+    final off = sliceMesh(mushroom, const SliceSettings());
+    expect(off.supportVolumeMm3, 0);
+    expect(r.volumeMm3, closeTo(off.volumeMm3, 1e-6));
+  });
+
+  test('supports: build plate only skips columns that land on the model', () {
+    final floating = Float32List.fromList([...box(20, 20, 3), ...box(20, 20, 2, 0, 0, 8)]);
+    final everywhere = sliceMesh(floating, const SliceSettings(supportsEnabled: true));
+    final plate = sliceMesh(floating, const SliceSettings(supportsEnabled: true, supportPlateOnly: true));
+    expect(everywhere.supportVolumeMm3, closeTo(388, 388 * 0.08));
+    expect(plate.supportVolumeMm3, 0);
+  });
+
+  test('a plain cube needs no supports', () {
+    final r = sliceMesh(box(20, 20, 20), const SliceSettings(supportsEnabled: true));
+    expect(r.supportVolumeMm3, 0);
+  });
+
+  test('cost breakdown', () {
+    const s = SliceSettings(pricesPerKg: {'PLA': 800}, markupPercent: 50, extraCost: 20);
+    final c = CostBreakdown.of(250, s);
+    expect(c.material, closeTo(200, 1e-9));
+    expect(c.markup, closeTo(100, 1e-9));
+    expect(c.total, closeTo(320, 1e-9));
+    expect(s.copyWith(materialId: 'PETG').pricePerKg, 650);
+    expect(s.withPrice(900).pricePerKg, 900);
+  });
+
+  test('settings and history survive JSON round trip', () {
+    const s = SliceSettings(supportsEnabled: true, supportAngle: 55, pricesPerKg: {'PETG': 700}, markupPercent: 10);
+    final back = SliceSettings.fromJson(jsonDecode(jsonEncode(s.toJson())) as Map<String, dynamic>);
+    expect(back.geometryKey, s.geometryKey);
+    expect(back.pricesPerKg['PETG'], 700);
+    expect(back.markupPercent, 10);
+
+    final e = HistoryEntry(
+      id: '1',
+      date: DateTime(2026, 10, 8, 21, 5),
+      name: 'cube.stl',
+      material: 'PLA',
+      density: 1.24,
+      pricePerKg: 600,
+      layerHeight: 0.2,
+      infillPercent: 15,
+      walls: 2,
+      supports: true,
+      supportPlateOnly: false,
+      scalePercent: 100,
+      copies: 2,
+      modelGrams: 10,
+      supportGrams: 2,
+      filamentMeters: 8,
+      materialCost: 14.4,
+      markupPercent: 0,
+      extraCost: 0,
+      totalCost: 14.4,
+      sizeX: 20,
+      sizeY: 20,
+      sizeZ: 20,
+      note: 'Іван; синій',
+    );
+    final e2 = HistoryEntry.fromJson(jsonDecode(jsonEncode(e.toJson())))!;
+    expect(e2.totalGrams, 24);
+    expect(e2.note, 'Іван; синій');
+    expect(formatDate(e2.date), '08.10.2026 21:05');
+    final csv = HistoryStore.toCsv([e2]);
+    expect(csv.split('\n')[1], contains('"Іван; синій"'));
   });
 }
