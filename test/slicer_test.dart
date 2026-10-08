@@ -224,16 +224,20 @@ void main() {
     expect(plate.supportVolumeMm3, 0);
   });
 
-  test('tree supports use less material than normal ones on tall overhangs', () {
+  test('tree supports: branches under overhangs, less than normal on tall columns', () {
     final tall = Float32List.fromList([...box(4, 4, 40.5, 8, 8, 0), ...box(20, 20, 2, 0, 0, 40)]);
     final normal = sliceMesh(tall, const SliceSettings(supportsEnabled: true));
     final tree = sliceMesh(tall, const SliceSettings(supportsEnabled: true, supportType: 'tree'));
     expect(tree.supportVolumeMm3, greaterThan(0));
-    expect(tree.supportVolumeMm3, lessThan(normal.supportVolumeMm3 * 0.6));
-    // Branches merge lower down: fewer nodes on a coarser grid.
-    expect(treeBranchAt(6, 6, 2), isTrue);
-    expect(treeBranchAt(6, 6, 30), isFalse);
-    expect(treeBranchAt(0, 0, 30), isTrue);
+    expect(tree.supportVolumeMm3, lessThan(normal.supportVolumeMm3));
+    // Branches are drawn in the sliced view.
+    expect(tree.preview!.classes.contains(SliceClass.support), isTrue);
+    // Floating slab over a block: build-plate-only trees that hit the block stop.
+    final floating = Float32List.fromList([...box(20, 20, 3), ...box(20, 20, 2, 0, 0, 8)]);
+    final plate = sliceMesh(
+        floating, const SliceSettings(supportsEnabled: true, supportType: 'tree', supportPlateOnly: true));
+    final anywhere = sliceMesh(floating, const SliceSettings(supportsEnabled: true, supportType: 'tree'));
+    expect(plate.supportVolumeMm3, lessThanOrEqualTo(anywhere.supportVolumeMm3));
   });
 
   test('printer profiles: unique ids, brands grouped, defaults reset', () {

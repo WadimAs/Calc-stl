@@ -182,31 +182,119 @@ const double kSupportXyGapMm = 0.6;
 const int kSupportInterfaceLayers = 2;
 const double kSupportInterfaceDensity = 0.7;
 
-/// Tree supports: branches stand on a grid of nodes, start thin under the
-/// contact area and thicken going down. Lower down, branches merge: every
-/// [kTreeMergeDepthMm] the node grid doubles its spacing (its nodes are a
-/// subset of the finer grid, so branches visibly join into trunks). Branches
-/// are printed mostly as walls, so a cross-section is filled at [kTreeFill].
-const double kTreeSpacingMm = 6.0;
-const double kTreeTipRadiusMm = 1.0;
-const double kTreeGrowth = 0.0875; // tan(5°) — radius gained per mm of height
-const List<double> kTreeMergeDepthMm = [10, 25];
-const List<double> kTreeMaxRadiusMm = [1.9, 2.6, 3.6];
-const double kTreeFill = 0.6;
+/// Tree supports (Orca/Bambu style): tips under every overhang, branches
+/// lean towards their neighbours by up to the branch angle per layer, merge
+/// into thicker trunks, keep clear of the model and end on the bed (or on the
+/// model). Branches are printed as hollow tubes of two walls.
+const double kTreeTipSpacingMm = 3.0;
+const double kTreeTipRadiusMm = 0.6;
+const double kTreeMaxRadiusMm = 2.5;
+const double kTreeGrowth = 0.0875; // tan(5°): radius gained per mm going down
+const double kTreeBranchAngle = 40; // degrees from vertical
+const double kTreeMergeSearchMm = 10.0;
 
-/// Whether the point (x, y) at [depth] mm below its overhang lies inside a branch.
-bool treeBranchAt(double x, double y, double depth) {
-  int tier = 0;
-  while (tier < kTreeMergeDepthMm.length && depth >= kTreeMergeDepthMm[tier]) {
-    tier++;
+class _TreeNode {
+  double x, y, r;
+  int born; // layer of the overhang it supports
+  bool alive = true;
+
+  _TreeNode(this.x, this.y, this.r, this.born);
+}
+
+/// Branch nodes of the tree support pass.
+class _TreeSupport {
+  final List<_TreeNode> nodes = [];
+
+  int _key(double x, double y, double cell) =>
+      ((x / cell).floor() + 100000) * 200003 + (y / cell).floor() + 100000;
+
+  /// Adds tips over the overhang cells of a layer (Poisson-like sampling).
+  void addTips(List<double> xs, List<double> ys, int born) {
+    if (xs.isEmpty) return;
+    const cell = kTreeTipSpacingMm;
+    final grid = <int, List<_TreeNode>>{};
+    for (final n in nodes) {
+      grid.putIfAbsent(_key(n.x, n.y, cell), () => []).add(n);
+    }
+    const min2 = kTreeTipSpacingMm * kTreeTipSpacingMm * 0.64;
+    for (int i = 0; i < xs.length; i++) {
+      final x = xs[i], y = ys[i];
+      final cx = (x / cell).floor(), cy = (y / cell).floor();
+      bool near = false;
+      for (int dx = -1; dx <= 1 && !near; dx++) {
+        for (int dy = -1; dy <= 1 && !near; dy++) {
+          final list = grid[(cx + dx + 100000) * 200003 + cy + dy + 100000];
+          if (list == null) continue;
+          for (final n in list) {
+            final ex = n.x - x, ey = n.y - y;
+            if (ex * ex + ey * ey < min2) {
+              near = true;
+              break;
+            }
+          }
+        }
+      }
+      if (near) continue;
+      final n = _TreeNode(x, y, kTreeTipRadiusMm, born);
+      nodes.add(n);
+      grid.putIfAbsent(_key(x, y, cell), () => []).add(n);
+    }
   }
-  final spacing = kTreeSpacingMm * (1 << tier);
-  final half = spacing / 2;
-  final dx = (x + half) % spacing - half;
-  final dy = (y + half) % spacing - half;
-  double r = kTreeTipRadiusMm + depth * kTreeGrowth;
-  if (r > kTreeMaxRadiusMm[tier]) r = kTreeMaxRadiusMm[tier];
-  return dx * dx + dy * dy <= r * r;
+
+  /// Moves older nodes towards their nearest neighbour and merges touching ones.
+  void moveAndMerge(int layer, double maxMove) {
+    const cell = kTreeMergeSearchMm;
+    final grid = <int, List<_TreeNode>>{};
+    for (final n in nodes) {
+      grid.putIfAbsent(_key(n.x, n.y, cell), () => []).add(n);
+    }
+    for (final n in nodes) {
+      if (n.born - layer <= kSupportInterfaceLayers) continue; // tips hang straight first
+      final cx = (n.x / cell).floor(), cy = (n.y / cell).floor();
+      _TreeNode? best;
+      double bestD = kTreeMergeSearchMm * kTreeMergeSearchMm;
+      for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+          final list = grid[(cx + dx + 100000) * 200003 + cy + dy + 100000];
+          if (list == null) continue;
+          for (final o in list) {
+            if (identical(o, n)) continue;
+            final ex = o.x - n.x, ey = o.y - n.y;
+            final d = ex * ex + ey * ey;
+            if (d < bestD) {
+              bestD = d;
+              best = o;
+            }
+          }
+        }
+      }
+      if (best == null) continue;
+      final d = math.sqrt(bestD);
+      if (d < 1e-6) continue;
+      final step = math.min(maxMove, d / 2);
+      n.x += (best.x - n.x) / d * step;
+      n.y += (best.y - n.y) / d * step;
+    }
+    // Merge nodes whose branches overlap.
+    for (int i = 0; i < nodes.length; i++) {
+      final a = nodes[i];
+      if (!a.alive) continue;
+      for (int j = i + 1; j < nodes.length; j++) {
+        final b = nodes[j];
+        if (!b.alive) continue;
+        final ex = a.x - b.x, ey = a.y - b.y;
+        final lim = math.max(a.r, b.r) * 0.8;
+        if (ex * ex + ey * ey > lim * lim) continue;
+        final wa = a.r * a.r, wb = b.r * b.r;
+        a.x = (a.x * wa + b.x * wb) / (wa + wb);
+        a.y = (a.y * wa + b.y * wb) / (wa + wb);
+        a.r = math.min(kTreeMaxRadiusMm, math.max(a.r, b.r));
+        a.born = math.min(a.born, b.born);
+        b.alive = false;
+      }
+    }
+    nodes.removeWhere((n) => !n.alive);
+  }
 }
 
 /// Bounding box and fill statistics of one rasterised layer.
@@ -740,6 +828,45 @@ SliceResult sliceMesh(
     final double density = (st.supportDensity / 100.0).clamp(0.0, 1.0).toDouble();
     final gapCells = kSupportXyGapMm / s;
     final tree = st.isTreeSupport;
+    final treeNodes = _TreeSupport();
+    final mark = tree ? (Int32List(nCells)..fillRange(0, nCells, -1)) : null;
+    final maxMove = h * math.tan(kTreeBranchAngle * math.pi / 180);
+    final wallBand = 2 * lineW;
+    // "Build plate only" trees must also steer clear of everything below.
+    final avoidPlate = tree && firstModelLayer != null ? Float32List(nCells) : null;
+
+    void chamfer(Float32List d, int x0, int y0, int x1, int y1) {
+      for (int y = y0; y <= y1; y++) {
+        final row = y * nx;
+        for (int x = x0; x <= x1; x++) {
+          final idx = row + x;
+          double v = d[idx];
+          if (v == 0) continue;
+          if (x > x0 && d[idx - 1] + 1 < v) v = d[idx - 1] + 1;
+          if (y > y0) {
+            if (d[idx - nx] + 1 < v) v = d[idx - nx] + 1;
+            if (x > x0 && d[idx - nx - 1] + r2 < v) v = d[idx - nx - 1] + r2;
+            if (x < x1 && d[idx - nx + 1] + r2 < v) v = d[idx - nx + 1] + r2;
+          }
+          d[idx] = v;
+        }
+      }
+      for (int y = y1; y >= y0; y--) {
+        final row = y * nx;
+        for (int x = x1; x >= x0; x--) {
+          final idx = row + x;
+          double v = d[idx];
+          if (v == 0) continue;
+          if (x < x1 && d[idx + 1] + 1 < v) v = d[idx + 1] + 1;
+          if (y < y1) {
+            if (d[idx + nx] + 1 < v) v = d[idx + nx] + 1;
+            if (x < x1 && d[idx + nx + 1] + r2 < v) v = d[idx + nx + 1] + r2;
+            if (x > x0 && d[idx + nx - 1] + r2 < v) v = d[idx + nx - 1] + r2;
+          }
+          d[idx] = v;
+        }
+      }
+    }
     final inColumn = Uint8List(nCells);
     final srcLayer = Int32List(nCells); // layer where the column's overhang is
     final dist = Float32List(nCells);
@@ -768,6 +895,7 @@ SliceResult sliceMesh(
       grow(infoHere.x0, infoHere.y0, infoHere.x1, infoHere.y1);
       grow(infoUp.x0, infoUp.y0, infoUp.x1, infoUp.y1);
       grow(sx0, sy0, sx1, sy1);
+      if (tree && treeNodes.nodes.isNotEmpty) grow(0, 0, nx - 1, ny - 1);
 
       if (rx1 >= rx0 && ry1 >= ry0) {
         // Distance (cells) to the nearest model cell of layer k.
@@ -830,6 +958,107 @@ SliceResult sliceMesh(
 
         // Overhangs of layer k+1 start new support columns.
         final reach = heights[k + 1] * math.tan(angle) / s + 0.5;
+        if (tree) {
+          final tipsX = <double>[], tipsY = <double>[];
+          for (int y = infoUp.y0; y <= infoUp.y1; y++) {
+            final row = y * nx;
+            for (int x = infoUp.x0; x <= infoUp.x1; x++) {
+              final idx = row + x;
+              if (maskUp[idx] != 0 && dist[idx] > reach) {
+                tipsX.add(ox + (x + 0.5) * s);
+                tipsY.add(oy + (y + 0.5) * s);
+              }
+            }
+          }
+          treeNodes.addTips(tipsX, tipsY, k + 1);
+          treeNodes.moveAndMerge(k, maxMove);
+          int ringCells = 0, denseCells = 0;
+          final fm = firstModelLayer;
+          // Distance used for steering: to the model at this layer, or (bed
+          // only) to anything of the model at or below this layer.
+          Float32List avoid = dist;
+          final ap = avoidPlate;
+          if (ap != null && fm != null) {
+            for (int i = 0; i < nCells; i++) {
+              ap[i] = (maskHere[i] != 0 || fm[i] <= k) ? 0.0 : 1e9;
+            }
+            chamfer(ap, 0, 0, nx - 1, ny - 1);
+            avoid = ap;
+          }
+          final gapMm = kSupportXyGapMm;
+          for (final n in treeNodes.nodes) {
+            // Keep clear of the model: step towards larger distance.
+            int ci = ((n.x - ox) / s).floor(), cj = ((n.y - oy) / s).floor();
+            if (ci < 0 || cj < 0 || ci >= nx || cj >= ny) {
+              n.alive = false;
+              continue;
+            }
+            if (avoid[cj * nx + ci] * s < n.r + gapMm) {
+              final steps = math.max(1, (maxMove * 2 / s).ceil());
+              double bestD = avoid[cj * nx + ci];
+              int bi = ci, bj = cj;
+              for (int dj = -steps; dj <= steps; dj++) {
+                for (int di = -steps; di <= steps; di++) {
+                  final ii = ci + di, jj = cj + dj;
+                  if (ii < 0 || jj < 0 || ii >= nx || jj >= ny) continue;
+                  final v = avoid[jj * nx + ii];
+                  if (v > bestD) {
+                    bestD = v;
+                    bi = ii;
+                    bj = jj;
+                  }
+                }
+              }
+              ci = bi;
+              cj = bj;
+              n.x = ox + (ci + 0.5) * s;
+              n.y = oy + (cj + 0.5) * s;
+            }
+            final cidx = cj * nx + ci;
+            // Landed on the model (or blocked when only the bed may be used).
+            if (maskHere[cidx] != 0 || avoid[cidx] * s < n.r * 0.5) {
+              n.alive = false;
+              continue;
+            }
+            final depth = n.born - k;
+            final dense = depth <= kSupportInterfaceLayers;
+            final rc = (n.r / s).ceil();
+            final rr2 = n.r * n.r;
+            final mk = mark!;
+            final inner = n.r - wallBand;
+            final inner2 = inner > 0 ? inner * inner : -1.0;
+            for (int j = math.max(0, cj - rc); j <= math.min(ny - 1, cj + rc); j++) {
+              final yy = oy + (j + 0.5) * s - n.y;
+              for (int i = math.max(0, ci - rc); i <= math.min(nx - 1, ci + rc); i++) {
+                final xx = ox + (i + 0.5) * s - n.x;
+                final d2 = xx * xx + yy * yy;
+                if (d2 > rr2) continue;
+                final idx = j * nx + i;
+                if (maskHere[idx] != 0 || dist[idx] <= gapCells) continue;
+                if (fm != null && fm[idx] <= k) continue;
+                if (mk[idx] == k) continue;
+                if (!dense && d2 < inner2) continue; // hollow branch
+                mk[idx] = k;
+                if (dense) {
+                  denseCells++;
+                } else {
+                  ringCells++;
+                }
+                final pIdx = centerMap[idx];
+                if (pIdx >= 0) previewCls[k * pn + pIdx] = dense ? 6 : 5;
+              }
+            }
+            n.r = math.min(kTreeMaxRadiusMm, n.r + h * kTreeGrowth);
+          }
+          treeNodes.nodes.removeWhere((n) => !n.alive);
+          final supArea = s * s * (ringCells + denseCells * kSupportInterfaceDensity);
+          supportVolume += heights[k] * supArea;
+          if (k == 0) {
+            firstLen += supArea / lineW;
+          } else {
+            supportLen += supArea / lineW;
+          }
+        } else {
         for (int y = infoUp.y0; y <= infoUp.y1; y++) {
           final row = y * nx;
           for (int x = infoUp.x0; x <= infoUp.x1; x++) {
@@ -860,26 +1089,24 @@ SliceResult sliceMesh(
             if (dist[idx] <= gapCells) continue;
             if (fm != null && fm[idx] <= k) continue;
             final dense = srcLayer[idx] - k <= kSupportInterfaceLayers;
-            if (!dense && tree) {
-              if (!treeBranchAt(ox + (x + 0.5) * s, oy + (y + 0.5) * s, (srcLayer[idx] - k) * h)) continue;
-            }
             if (dense) {
               denseCells++;
             } else {
               sparseCells++;
             }
             final pIdx = centerMap[idx];
-            if (pIdx >= 0 && (dense || tree || (density > 0 && onGrid(pIdx, lineW / density, false)))) {
+            if (pIdx >= 0 && (dense || (density > 0 && onGrid(pIdx, lineW / density, false)))) {
               previewCls[k * pn + pIdx] = dense ? 6 : 5;
             }
           }
         }
-        final supArea = s * s * (sparseCells * (tree ? kTreeFill : density) + denseCells * kSupportInterfaceDensity);
+        final supArea = s * s * (sparseCells * density + denseCells * kSupportInterfaceDensity);
         supportVolume += heights[k] * supArea;
         if (k == 0) {
           firstLen += supArea / lineW;
         } else {
           supportLen += supArea / lineW;
+        }
         }
       }
 
