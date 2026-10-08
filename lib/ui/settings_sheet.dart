@@ -62,28 +62,48 @@ class _SettingsBodyState extends State<_SettingsBody> {
             )),
       );
 
+  /// Setting row with a Bambu-style reset icon on the right.
+  Widget _withReset(Widget child, bool changed, VoidCallback reset) => Row(children: [
+        Expanded(child: child),
+        ResetButton(changed: changed, onReset: reset),
+      ]);
+
+  Future<void> _resetAll() async {
+    final choice = await showDialog<int>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Скинути налаштування?'),
+        content: const Text('Усі параметри повернуться до значень за замовчуванням (як «0.20mm Standard» у Bambu Studio).'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Скасувати')),
+          TextButton(onPressed: () => Navigator.pop(c, 2), child: const Text('Разом із цінами')),
+          FilledButton(onPressed: () => Navigator.pop(c, 1), child: const Text('Скинути')),
+        ],
+      ),
+    );
+    if (choice == null) return;
+    final d = _s.resetAll(prices: choice == 2);
+    _density.text = fmtNum(d.density, 2);
+    _set(d);
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = _s;
+    const d = SliceSettings();
+    final theme = Theme.of(context);
+    final currentPrinter = printerById(s.printerId);
     return ListView(
       controller: widget.controller,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+      padding: const EdgeInsets.fromLTRB(20, 0, 12, 32),
       children: [
         Row(
           children: [
-            Expanded(child: Text('Налаштування друку', style: Theme.of(context).textTheme.titleLarge)),
-            TextButton(
-              onPressed: () {
-                // Reset print settings, keep prices.
-                final d = const SliceSettings().copyWith(
-                  pricesPerKg: _s.pricesPerKg,
-                  markupPercent: _s.markupPercent,
-                  extraCost: _s.extraCost,
-                );
-                _density.text = fmtNum(d.density, 2);
-                _set(d);
-              },
-              child: const Text('Скинути'),
+            Expanded(child: Text('Налаштування', style: theme.textTheme.titleLarge)),
+            TextButton.icon(
+              onPressed: _resetAll,
+              icon: const Icon(Icons.restart_alt),
+              label: const Text('Скинути все'),
             ),
           ],
         ),
@@ -91,168 +111,245 @@ class _SettingsBodyState extends State<_SettingsBody> {
         StepperRow(
           label: 'Висота шару',
           value: s.layerHeight,
+          defaultValue: d.layerHeight,
           min: 0.04,
           max: 1.0,
           step: 0.02,
           decimals: 2,
           unit: ' мм',
-          onChanged: (v) => _set(s.copyWith(layerHeight: v)),
+          onChanged: (v) => _set(_s.copyWith(layerHeight: v)),
         ),
         StepperRow(
           label: 'Перший шар',
           value: s.firstLayerHeight,
+          defaultValue: d.firstLayerHeight,
           min: 0.06,
           max: 1.0,
           step: 0.02,
           decimals: 2,
           unit: ' мм',
-          onChanged: (v) => _set(s.copyWith(firstLayerHeight: v)),
+          onChanged: (v) => _set(_s.copyWith(firstLayerHeight: v)),
         ),
         StepperRow(
           label: 'Ширина лінії',
           hint: 'зазвичай ≈ сопло × 1,05',
           value: s.lineWidth,
+          defaultValue: d.lineWidth,
           min: 0.2,
           max: 1.6,
           step: 0.02,
           decimals: 2,
           unit: ' мм',
-          onChanged: (v) => _set(s.copyWith(lineWidth: v)),
+          onChanged: (v) => _set(_s.copyWith(lineWidth: v)),
         ),
         _section('Стінки та оболонка'),
         StepperRow(
           label: 'Стінки (периметри)',
           value: s.walls.toDouble(),
+          defaultValue: d.walls.toDouble(),
           min: 1,
           max: 15,
           step: 1,
-          onChanged: (v) => _set(s.copyWith(walls: v.round())),
+          onChanged: (v) => _set(_s.copyWith(walls: v.round())),
         ),
         StepperRow(
           label: 'Верхні шари',
           value: s.topLayers.toDouble(),
+          defaultValue: d.topLayers.toDouble(),
           min: 0,
           max: 30,
           step: 1,
-          onChanged: (v) => _set(s.copyWith(topLayers: v.round())),
+          onChanged: (v) => _set(_s.copyWith(topLayers: v.round())),
         ),
         StepperRow(
           label: 'Нижні шари',
           value: s.bottomLayers.toDouble(),
+          defaultValue: d.bottomLayers.toDouble(),
           min: 0,
           max: 30,
           step: 1,
-          onChanged: (v) => _set(s.copyWith(bottomLayers: v.round())),
+          onChanged: (v) => _set(_s.copyWith(bottomLayers: v.round())),
         ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Товщина вертикальної оболонки'),
-          subtitle: const Text('Суцільне заповнення біля похилих стінок, як у Bambu/Orca/Prusa'),
-          value: s.ensureVerticalShell,
-          onChanged: (v) => _set(s.copyWith(ensureVerticalShell: v)),
+        _withReset(
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Товщина вертикальної оболонки'),
+            subtitle: const Text('Суцільне заповнення біля похилих стінок, як у Bambu/Orca/Prusa'),
+            value: s.ensureVerticalShell,
+            onChanged: (v) => _set(_s.copyWith(ensureVerticalShell: v)),
+          ),
+          s.ensureVerticalShell != d.ensureVerticalShell,
+          () => _set(_s.copyWith(ensureVerticalShell: d.ensureVerticalShell)),
         ),
-        _section('Заповнення — ${fmtNum(s.infillPercent, 0)}%'),
+        _withReset(
+          _section('Заповнення — ${fmtNum(s.infillPercent, 0)}%'),
+          s.infillPercent != d.infillPercent,
+          () => _set(_s.copyWith(infillPercent: d.infillPercent)),
+        ),
         Slider(
           value: s.infillPercent.clamp(0, 100).toDouble(),
           min: 0,
           max: 100,
           divisions: 20,
           label: '${fmtNum(s.infillPercent, 0)}%',
-          onChanged: (v) => _set(s.copyWith(infillPercent: v)),
+          onChanged: (v) => _set(_s.copyWith(infillPercent: v)),
         ),
         _section('Підтримки'),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Друкувати з підтримками'),
-          value: s.supportsEnabled,
-          onChanged: (v) => _set(s.copyWith(supportsEnabled: v)),
+        _withReset(
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Друкувати з підтримками'),
+            value: s.supportsEnabled,
+            onChanged: (v) => _set(_s.copyWith(supportsEnabled: v)),
+          ),
+          s.supportsEnabled != d.supportsEnabled,
+          () => _set(_s.copyWith(supportsEnabled: d.supportsEnabled)),
         ),
         if (s.supportsEnabled) ...[
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(value: false, label: Text('Скрізь')),
-              ButtonSegment(value: true, label: Text('Лише від столу')),
-            ],
-            selected: {s.supportPlateOnly},
-            onSelectionChanged: (v) => _set(s.copyWith(supportPlateOnly: v.first)),
+          _withReset(
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'normal', label: Text('Звичайні'), icon: Icon(Icons.view_column_outlined)),
+                ButtonSegment(value: 'tree', label: Text('Деревоподібні'), icon: Icon(Icons.park_outlined)),
+              ],
+              selected: {s.isTreeSupport ? 'tree' : 'normal'},
+              onSelectionChanged: (v) => _set(_s.copyWith(supportType: v.first)),
+            ),
+            s.supportType != d.supportType,
+            () => _set(_s.copyWith(supportType: d.supportType)),
+          ),
+          const SizedBox(height: 8),
+          _withReset(
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, label: Text('Скрізь')),
+                ButtonSegment(value: true, label: Text('Лише від столу')),
+              ],
+              selected: {s.supportPlateOnly},
+              onSelectionChanged: (v) => _set(_s.copyWith(supportPlateOnly: v.first)),
+            ),
+            s.supportPlateOnly != d.supportPlateOnly,
+            () => _set(_s.copyWith(supportPlateOnly: d.supportPlateOnly)),
           ),
           const SizedBox(height: 8),
           StepperRow(
             label: 'Кут нависання',
             hint: 'від вертикалі; більший кут — менше підтримок',
             value: s.supportAngle,
+            defaultValue: d.supportAngle,
             min: 20,
             max: 80,
             step: 5,
             unit: '°',
-            onChanged: (v) => _set(s.copyWith(supportAngle: v)),
+            onChanged: (v) => _set(_s.copyWith(supportAngle: v)),
           ),
-          StepperRow(
-            label: 'Щільність підтримок',
-            value: s.supportDensity,
-            min: 5,
-            max: 60,
-            step: 5,
-            unit: '%',
-            onChanged: (v) => _set(s.copyWith(supportDensity: v)),
-          ),
+          if (!s.isTreeSupport)
+            StepperRow(
+              label: 'Щільність підтримок',
+              value: s.supportDensity,
+              defaultValue: d.supportDensity,
+              min: 5,
+              max: 60,
+              step: 5,
+              unit: '%',
+              onChanged: (v) => _set(_s.copyWith(supportDensity: v)),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(top: 4, right: 36),
+              child: Text(
+                'Гілки: крок 6 мм, кінчики Ø2 мм, донизу товщають і зливаються у стовбури.',
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ),
         ],
+        _section('Принтер'),
+        _withReset(
+          InputDecorator(
+            decoration: const InputDecoration(
+              labelText: 'Модель (для оцінки часу)',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                isExpanded: true,
+                value: currentPrinter.id,
+                selectedItemBuilder: (_) => [
+                  for (final brand in printerBrands) ...[
+                    const SizedBox.shrink(),
+                    for (final p in printers.where((p) => p.brand == brand))
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(p.fullName, overflow: TextOverflow.ellipsis),
+                      ),
+                  ],
+                ],
+                items: [
+                  for (final brand in printerBrands) ...[
+                    DropdownMenuItem<String>(
+                      enabled: false,
+                      value: 'brand:$brand',
+                      child: Text(
+                        brand,
+                        style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary),
+                      ),
+                    ),
+                    for (final p in printers.where((p) => p.brand == brand))
+                      DropdownMenuItem<String>(
+                        value: p.id,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 12),
+                          child: Text(p.name, overflow: TextOverflow.ellipsis),
+                        ),
+                      ),
+                  ],
+                ],
+                onChanged: (id) {
+                  if (id == null || id.startsWith('brand:')) return;
+                  _set(_s.copyWith(printerId: id, powerW: printerById(id).powerW));
+                },
+              ),
+            ),
+          ),
+          s.printerId != d.printerId,
+          () => _set(_s.copyWith(printerId: d.printerId, powerW: printerById(d.printerId).powerW)),
+        ),
         _section('Собівартість'),
         NumberField(
           key: ValueKey('price-${s.materialId}'),
           label: 'Котушка ${materialById(s.materialId).name}, за 1 кг',
           suffix: currency,
           value: s.pricePerKg,
-          onChanged: (v) => _set(_s.withPrice(v)),
-        ),
-        const SizedBox(height: 12),
-        InputDecorator(
-          decoration: const InputDecoration(
-            labelText: 'Принтер (для оцінки часу)',
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              value: printerById(s.printerId).id,
-              items: [
-                for (final p in printers) DropdownMenuItem(value: p.id, child: Text(p.name, overflow: TextOverflow.ellipsis)),
-              ],
-              onChanged: (id) {
-                if (id == null) return;
-                _set(_s.copyWith(printerId: id, powerW: printerById(id).powerW));
-              },
-            ),
+          defaultValue: s.defaultPricePerKg,
+          onChanged: (v) => _set(
+            (v - _s.defaultPricePerKg).abs() < 1e-9 ? _s.withoutPriceOverride() : _s.withPrice(v),
           ),
         ),
         const SizedBox(height: 12),
-        Row(children: [
-          Expanded(
-            child: NumberField(
-              key: ValueKey('power-${s.printerId}'),
-              label: 'Споживання',
-              suffix: 'Вт',
-              value: s.powerW,
-              onChanged: (v) => _set(_s.copyWith(powerW: v)),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: NumberField(
-              label: 'Тариф, за кВт·год',
-              suffix: currency,
-              value: s.tariff,
-              onChanged: (v) => _set(_s.copyWith(tariff: v)),
-            ),
-          ),
-        ]),
+        NumberField(
+          key: ValueKey('power-${s.printerId}'),
+          label: 'Споживання принтера',
+          suffix: 'Вт',
+          value: s.powerW,
+          defaultValue: currentPrinter.powerW,
+          onChanged: (v) => _set(_s.copyWith(powerW: v)),
+        ),
+        const SizedBox(height: 12),
+        NumberField(
+          label: 'Тариф, за кВт·год',
+          suffix: currency,
+          value: s.tariff,
+          defaultValue: d.tariff,
+          onChanged: (v) => _set(_s.copyWith(tariff: v)),
+        ),
         const SizedBox(height: 12),
         NumberField(
           label: 'Амортизація, за годину друку',
           helper: 'Ціна принтера й запчастин ÷ ресурс у годинах',
           suffix: currency,
           value: s.amortizationPerHour,
+          defaultValue: d.amortizationPerHour,
           onChanged: (v) => _set(_s.copyWith(amortizationPerHour: v)),
         ),
         _section('Заробіток'),
@@ -260,6 +357,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
           label: 'Націнка на собівартість',
           suffix: '%',
           value: s.markupPercent,
+          defaultValue: d.markupPercent,
           onChanged: (v) => _set(_s.copyWith(markupPercent: v)),
         ),
         const SizedBox(height: 12),
@@ -268,83 +366,108 @@ class _SettingsBodyState extends State<_SettingsBody> {
           helper: 'Робота, моделювання, пакування тощо',
           suffix: currency,
           value: s.extraCost,
+          defaultValue: d.extraCost,
           onChanged: (v) => _set(_s.copyWith(extraCost: v)),
         ),
         _section('Модель'),
         StepperRow(
           label: 'Масштаб',
           value: s.scalePercent,
+          defaultValue: d.scalePercent,
           min: 5,
           max: 2000,
           step: 5,
           unit: '%',
-          onChanged: (v) => _set(s.copyWith(scalePercent: v)),
+          onChanged: (v) => _set(_s.copyWith(scalePercent: v)),
         ),
         StepperRow(
           label: 'Кількість копій',
           value: s.copies.toDouble(),
+          defaultValue: d.copies.toDouble(),
           min: 1,
           max: 500,
           step: 1,
-          onChanged: (v) => _set(s.copyWith(copies: v.round())),
+          onChanged: (v) => _set(_s.copyWith(copies: v.round())),
         ),
         _section('Матеріал'),
-        InputDecorator(
-          decoration: const InputDecoration(
-            labelText: 'Пластик',
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              value: s.materialId,
-              items: [
-                for (final m in materials)
-                  DropdownMenuItem(
-                    value: m.id,
-                    child: Text(m.id == 'custom' ? m.name : '${m.name} — ${fmtNum(m.density, 2)} г/см³'),
-                  ),
-              ],
-              onChanged: (id) {
-                if (id == null) return;
-                final m = materialById(id);
-                final density = id == 'custom' ? s.density : m.density;
-                _density.text = fmtNum(density, 2);
-                _set(s.copyWith(materialId: id, density: density));
-              },
+        _withReset(
+          InputDecorator(
+            decoration: const InputDecoration(
+              labelText: 'Пластик',
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                isExpanded: true,
+                value: s.materialId,
+                items: [
+                  for (final m in materials)
+                    DropdownMenuItem(
+                      value: m.id,
+                      child: Text(m.id == 'custom' ? m.name : '${m.name} — ${fmtNum(m.density, 2)} г/см³'),
+                    ),
+                ],
+                onChanged: (id) {
+                  if (id == null) return;
+                  final m = materialById(id);
+                  final density = id == 'custom' ? _s.density : m.density;
+                  _density.text = fmtNum(density, 2);
+                  _set(_s.copyWith(materialId: id, density: density));
+                },
+              ),
             ),
           ),
+          s.materialId != d.materialId,
+          () {
+            _density.text = fmtNum(d.density, 2);
+            _set(_s.copyWith(materialId: d.materialId, density: d.density));
+          },
         ),
         const SizedBox(height: 12),
-        TextField(
-          controller: _density,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(
-            labelText: 'Густина, г/см³',
-            helperText: 'Можна уточнити з паспорта котушки',
-            border: OutlineInputBorder(),
+        _withReset(
+          TextField(
+            controller: _density,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Густина, г/см³',
+              helperText: 'Можна уточнити з паспорта котушки',
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (t) {
+              final v = double.tryParse(t.replaceAll(',', '.').trim());
+              if (v != null && v > 0.3 && v < 5) _set(_s.copyWith(density: v));
+            },
           ),
-          onChanged: (t) {
-            final v = double.tryParse(t.replaceAll(',', '.').trim());
-            if (v != null && v > 0.3 && v < 5) _set(s.copyWith(density: v));
+          s.materialId != 'custom' && (s.density - materialById(s.materialId).density).abs() > 1e-9,
+          () {
+            final v = materialById(_s.materialId).density;
+            _density.text = fmtNum(v, 2);
+            _set(_s.copyWith(density: v));
           },
         ),
         const SizedBox(height: 16),
-        Text('Діаметр філаменту', style: Theme.of(context).textTheme.bodyLarge),
+        Text('Діаметр філаменту', style: theme.textTheme.bodyLarge),
         const SizedBox(height: 8),
-        SegmentedButton<double>(
-          segments: const [
-            ButtonSegment(value: 1.75, label: Text('1,75 мм')),
-            ButtonSegment(value: 2.85, label: Text('2,85 мм')),
-          ],
-          selected: {s.filamentDiameter == 2.85 ? 2.85 : 1.75},
-          onSelectionChanged: (v) => _set(s.copyWith(filamentDiameter: v.first)),
+        _withReset(
+          SegmentedButton<double>(
+            segments: const [
+              ButtonSegment(value: 1.75, label: Text('1,75 мм')),
+              ButtonSegment(value: 2.85, label: Text('2,85 мм')),
+            ],
+            selected: {s.filamentDiameter == 2.85 ? 2.85 : 1.75},
+            onSelectionChanged: (v) => _set(_s.copyWith(filamentDiameter: v.first)),
+          ),
+          s.filamentDiameter != d.filamentDiameter,
+          () => _set(_s.copyWith(filamentDiameter: d.filamentDiameter)),
         ),
         const SizedBox(height: 20),
-        Text(
-          'Розрахунок не враховує кайму (brim), спідницю та очищувальну вежу.',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+        Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: Text(
+            'Розрахунок не враховує кайму (brim), спідницю та очищувальну вежу.',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
         ),
         const SizedBox(height: 16),
         const _AboutRow(),
@@ -352,7 +475,6 @@ class _SettingsBodyState extends State<_SettingsBody> {
     );
   }
 }
-
 
 class _AboutRow extends StatefulWidget {
   const _AboutRow();

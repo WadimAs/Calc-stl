@@ -224,6 +224,31 @@ void main() {
     expect(plate.supportVolumeMm3, 0);
   });
 
+  test('tree supports use less material than normal ones on tall overhangs', () {
+    final tall = Float32List.fromList([...box(4, 4, 40.5, 8, 8, 0), ...box(20, 20, 2, 0, 0, 40)]);
+    final normal = sliceMesh(tall, const SliceSettings(supportsEnabled: true));
+    final tree = sliceMesh(tall, const SliceSettings(supportsEnabled: true, supportType: 'tree'));
+    expect(tree.supportVolumeMm3, greaterThan(0));
+    expect(tree.supportVolumeMm3, lessThan(normal.supportVolumeMm3 * 0.6));
+    // Branches merge lower down: fewer nodes on a coarser grid.
+    expect(treeBranchAt(6, 6, 2), isTrue);
+    expect(treeBranchAt(6, 6, 30), isFalse);
+    expect(treeBranchAt(0, 0, 30), isTrue);
+  });
+
+  test('printer profiles: unique ids, brands grouped, defaults reset', () {
+    final ids = printers.map((p) => p.id).toSet();
+    expect(ids.length, printers.length);
+    expect(printerBrands, containsAll(['Bambu Lab', 'Creality', 'Anycubic', 'Elegoo']));
+    expect(printerById('missing').id, printers.first.id);
+    const s = SliceSettings(walls: 5, pricesPerKg: {'PLA': 900}, supportType: 'tree');
+    expect(s.resetAll().walls, 2);
+    expect(s.resetAll().pricePerKg, 900);
+    expect(s.resetAll(prices: true).pricePerKg, 600);
+    expect(s.withoutPriceOverride().pricePerKg, 600);
+    expect(SliceSettings.fromJson(s.toJson()).supportType, 'tree');
+  });
+
   test('a plain cube needs no supports', () {
     final r = sliceMesh(box(20, 20, 20), const SliceSettings(supportsEnabled: true));
     expect(r.supportVolumeMm3, 0);

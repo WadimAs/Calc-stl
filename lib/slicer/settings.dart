@@ -28,6 +28,7 @@ const materials = <FilamentMaterial>[
 /// Speeds (mm/s) and overheads used for the print-time estimate.
 class PrinterProfile {
   final String id;
+  final String brand;
   final String name;
   final double outerWall, innerWall, sparse, solid, support, firstLayer;
 
@@ -45,6 +46,7 @@ class PrinterProfile {
 
   const PrinterProfile({
     required this.id,
+    required this.brand,
     required this.name,
     required this.outerWall,
     required this.innerWall,
@@ -57,52 +59,69 @@ class PrinterProfile {
     required this.startMinutes,
     required this.powerW,
   });
+
+  String get fullName => '$brand $name';
 }
 
-const printers = <PrinterProfile>[
-  PrinterProfile(
-    id: 'bambu',
-    name: 'Bambu Lab (X1, P1, A1)',
-    outerWall: 200,
-    innerWall: 300,
-    sparse: 270,
-    solid: 250,
-    support: 150,
-    firstLayer: 50,
-    layerSeconds: 2.5,
-    accelFactor: 1.6,
-    startMinutes: 4,
-    powerW: 140,
-  ),
-  PrinterProfile(
-    id: 'klipper',
-    name: 'Швидкий Klipper (K1, Voron, Neptune 4, MK4)',
-    outerWall: 120,
-    innerWall: 180,
-    sparse: 200,
-    solid: 160,
-    support: 120,
-    firstLayer: 40,
-    layerSeconds: 2,
-    accelFactor: 1.5,
-    startMinutes: 4,
-    powerW: 160,
-  ),
-  PrinterProfile(
-    id: 'classic',
-    name: 'Класичний (Ender 3, Prusa MK3, Anycubic)',
-    outerWall: 35,
-    innerWall: 60,
-    sparse: 80,
-    solid: 60,
-    support: 50,
-    firstLayer: 20,
-    layerSeconds: 1.5,
-    accelFactor: 1.15,
-    startMinutes: 5,
-    powerW: 120,
-  ),
+// Fast CoreXY / Klipper machines (300+ mm/s class).
+const _fastCoreXY = (outer: 200.0, inner: 300.0, sparse: 270.0, solid: 250.0, support: 150.0, first: 50.0);
+// Bed-slingers with Klipper / input shaping (~250 mm/s class).
+const _fastSlinger = (outer: 150.0, inner: 220.0, sparse: 250.0, solid: 200.0, support: 150.0, first: 50.0);
+// Mid-speed machines (~150 mm/s class).
+const _mid = (outer: 100.0, inner: 150.0, sparse: 180.0, solid: 150.0, support: 100.0, first: 40.0);
+// Classic Marlin machines (~50–80 mm/s).
+const _classic = (outer: 35.0, inner: 60.0, sparse: 80.0, solid: 60.0, support: 50.0, first: 20.0);
+
+PrinterProfile _p(
+  String id,
+  String brand,
+  String name,
+  ({double outer, double inner, double sparse, double solid, double support, double first}) v, {
+  required double power,
+  double layer = 2.5,
+  double accel = 1.6,
+  double start = 4,
+}) =>
+    PrinterProfile(
+      id: id,
+      brand: brand,
+      name: name,
+      outerWall: v.outer,
+      innerWall: v.inner,
+      sparse: v.sparse,
+      solid: v.solid,
+      support: v.support,
+      firstLayer: v.first,
+      layerSeconds: layer,
+      accelFactor: accel,
+      startMinutes: start,
+      powerW: power,
+    );
+
+final printers = <PrinterProfile>[
+  _p('bambu', 'Bambu Lab', 'X1 / P1 / H2D', _fastCoreXY, power: 140),
+  _p('bambu_a1', 'Bambu Lab', 'A1 / A1 mini', _fastCoreXY, power: 95, accel: 1.7),
+  _p('creality_k1', 'Creality', 'K1 / K1C / K1 Max / K2', _fastCoreXY, power: 180, accel: 1.7),
+  _p('creality_v3', 'Creality', 'Ender-3 V3 / V3 KE / V3 Plus', _fastSlinger, power: 130),
+  _p('creality_v3se', 'Creality', 'Ender-3 V3 SE / Ender-5 S1', _mid, power: 120, accel: 1.5),
+  _p('creality_classic', 'Creality', 'Ender-3 / V2 / S1 / CR-10', _classic, power: 120, layer: 1.5, accel: 1.15, start: 5),
+  _p('anycubic_s1', 'Anycubic', 'Kobra S1', _fastCoreXY, power: 150, accel: 1.7),
+  _p('anycubic_k3', 'Anycubic', 'Kobra 3 / Kobra 2 Pro / Max', _fastSlinger, power: 140),
+  _p('anycubic_k2', 'Anycubic', 'Kobra 2 / Kobra 2 Neo', _mid, power: 130, accel: 1.5),
+  _p('anycubic_classic', 'Anycubic', 'Kobra / Vyper / i3 Mega', _classic, power: 120, layer: 1.5, accel: 1.15, start: 5),
+  _p('elegoo_cc', 'Elegoo', 'Centauri Carbon', _fastCoreXY, power: 150, accel: 1.7),
+  _p('elegoo_n4', 'Elegoo', 'Neptune 4 / 4 Pro / 4 Plus / 4 Max', _fastSlinger, power: 150),
+  _p('elegoo_n3', 'Elegoo', 'Neptune 3 / 3 Pro / 3 Plus / 3 Max', _classic, power: 120, layer: 1.5, accel: 1.15, start: 5),
+  _p('prusa_mk4', 'Prusa', 'MK4 / MK4S / Core One', _mid, power: 110, accel: 1.5),
+  _p('prusa_mk3', 'Prusa', 'MK3S / MK3S+', _classic, power: 100, layer: 1.5, accel: 1.15, start: 5),
+  _p('klipper', 'Інші', 'Швидкий Klipper (Voron тощо)', _fastSlinger, power: 160, layer: 2, accel: 1.5),
+  _p('classic', 'Інші', 'Класичний Marlin', _classic, power: 120, layer: 1.5, accel: 1.15, start: 5),
 ];
+
+List<String> get printerBrands => [
+      for (final p in printers)
+        if (p == printers.firstWhere((q) => q.brand == p.brand)) p.brand,
+    ];
 
 PrinterProfile printerById(String id) => printers.firstWhere((p) => p.id == id, orElse: () => printers.first);
 
@@ -128,6 +147,9 @@ class SliceSettings {
   // Supports.
   final bool supportsEnabled;
   final bool supportPlateOnly;
+
+  /// 'normal' or 'tree'.
+  final String supportType;
 
   /// Overhang angle measured from vertical: steeper overhangs get supports.
   final double supportAngle;
@@ -161,6 +183,7 @@ class SliceSettings {
     this.copies = 1,
     this.supportsEnabled = false,
     this.supportPlateOnly = false,
+    this.supportType = 'normal',
     this.supportAngle = 45,
     this.supportDensity = 15,
     this.ensureVerticalShell = true,
@@ -196,6 +219,7 @@ class SliceSettings {
     int? copies,
     bool? supportsEnabled,
     bool? supportPlateOnly,
+    String? supportType,
     double? supportAngle,
     double? supportDensity,
     bool? ensureVerticalShell,
@@ -222,6 +246,7 @@ class SliceSettings {
       copies: copies ?? this.copies,
       supportsEnabled: supportsEnabled ?? this.supportsEnabled,
       supportPlateOnly: supportPlateOnly ?? this.supportPlateOnly,
+      supportType: supportType ?? this.supportType,
       supportAngle: supportAngle ?? this.supportAngle,
       supportDensity: supportDensity ?? this.supportDensity,
       ensureVerticalShell: ensureVerticalShell ?? this.ensureVerticalShell,
@@ -237,7 +262,7 @@ class SliceSettings {
 
   /// Settings that change the slice geometry (copies, material, prices do not).
   String get geometryKey => '$layerHeight|$firstLayerHeight|$lineWidth|$walls|$topLayers|$bottomLayers|'
-      '$infillPercent|$scalePercent|$supportsEnabled|$supportPlateOnly|$supportAngle|$supportDensity|'
+      '$infillPercent|$scalePercent|$supportsEnabled|$supportPlateOnly|$supportType|$supportAngle|$supportDensity|'
       '$ensureVerticalShell';
 
   Map<String, dynamic> toJson() => {
@@ -255,6 +280,7 @@ class SliceSettings {
         'copies': copies,
         'supportsEnabled': supportsEnabled,
         'supportPlateOnly': supportPlateOnly,
+        'supportType': supportType,
         'supportAngle': supportAngle,
         'supportDensity': supportDensity,
         'ensureVerticalShell': ensureVerticalShell,
@@ -299,6 +325,7 @@ class SliceSettings {
       copies: integer('copies', d.copies),
       supportsEnabled: flag('supportsEnabled', d.supportsEnabled),
       supportPlateOnly: flag('supportPlateOnly', d.supportPlateOnly),
+      supportType: j['supportType'] == 'tree' ? 'tree' : 'normal',
       supportAngle: dbl('supportAngle', d.supportAngle),
       supportDensity: dbl('supportDensity', d.supportDensity),
       ensureVerticalShell: flag('ensureVerticalShell', d.ensureVerticalShell),
@@ -379,5 +406,23 @@ class CostBreakdown {
       profit: cost * s.markupPercent / 100.0,
       extra: s.extraCost,
     );
+  }
+}
+
+extension SliceSettingsDefaults on SliceSettings {
+  bool get isTreeSupport => supportType == 'tree';
+
+  /// Price of the current material without the user's override.
+  double get defaultPricePerKg => materialById(materialId).defaultPricePerKg;
+
+  SliceSettings withoutPriceOverride() {
+    final m = Map<String, double>.from(pricesPerKg)..remove(materialId);
+    return copyWith(pricesPerKg: m);
+  }
+
+  /// Everything back to defaults; prices per material kept unless [prices].
+  SliceSettings resetAll({bool prices = false}) {
+    const d = SliceSettings();
+    return prices ? d : d.copyWith(pricesPerKg: pricesPerKg);
   }
 }

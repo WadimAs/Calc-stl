@@ -765,6 +765,7 @@ class _HomePageState extends State<HomePage> {
             StepperRow(
               label: 'Стінки',
               value: s.walls.toDouble(),
+              defaultValue: const SliceSettings().walls.toDouble(),
               min: 1,
               max: 15,
               step: 1,
@@ -774,12 +775,21 @@ class _HomePageState extends State<HomePage> {
               contentPadding: EdgeInsets.zero,
               title: const Text('Підтримки'),
               subtitle: s.supportsEnabled
-                  ? Text('${s.supportPlateOnly ? 'лише від столу' : 'скрізь'} · '
-                      '${fmtNum(s.supportAngle, 0)}° · ${fmtNum(s.supportDensity, 0)}%')
+                  ? Text('${s.isTreeSupport ? 'деревоподібні' : 'звичайні ${fmtNum(s.supportDensity, 0)}%'} · '
+                      '${s.supportPlateOnly ? 'від столу' : 'скрізь'} · ${fmtNum(s.supportAngle, 0)}°')
                   : null,
               value: s.supportsEnabled,
               onChanged: (v) => _updateSettings(s.copyWith(supportsEnabled: v)),
             ),
+            if (s.supportsEnabled)
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'normal', label: Text('Звичайні'), icon: Icon(Icons.view_column_outlined)),
+                  ButtonSegment(value: 'tree', label: Text('Деревоподібні'), icon: Icon(Icons.park_outlined)),
+                ],
+                selected: {s.isTreeSupport ? 'tree' : 'normal'},
+                onSelectionChanged: (v) => _updateSettings(s.copyWith(supportType: v.first)),
+              ),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(

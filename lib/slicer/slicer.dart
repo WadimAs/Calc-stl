@@ -182,6 +182,33 @@ const double kSupportXyGapMm = 0.6;
 const int kSupportInterfaceLayers = 2;
 const double kSupportInterfaceDensity = 0.7;
 
+/// Tree supports: branches stand on a grid of nodes, start thin under the
+/// contact area and thicken going down. Lower down, branches merge: every
+/// [kTreeMergeDepthMm] the node grid doubles its spacing (its nodes are a
+/// subset of the finer grid, so branches visibly join into trunks). Branches
+/// are printed mostly as walls, so a cross-section is filled at [kTreeFill].
+const double kTreeSpacingMm = 6.0;
+const double kTreeTipRadiusMm = 1.0;
+const double kTreeGrowth = 0.0875; // tan(5°) — radius gained per mm of height
+const List<double> kTreeMergeDepthMm = [10, 25];
+const List<double> kTreeMaxRadiusMm = [1.9, 2.6, 3.6];
+const double kTreeFill = 0.6;
+
+/// Whether the point (x, y) at [depth] mm below its overhang lies inside a branch.
+bool treeBranchAt(double x, double y, double depth) {
+  int tier = 0;
+  while (tier < kTreeMergeDepthMm.length && depth >= kTreeMergeDepthMm[tier]) {
+    tier++;
+  }
+  final spacing = kTreeSpacingMm * (1 << tier);
+  final half = spacing / 2;
+  final dx = (x + half) % spacing - half;
+  final dy = (y + half) % spacing - half;
+  double r = kTreeTipRadiusMm + depth * kTreeGrowth;
+  if (r > kTreeMaxRadiusMm[tier]) r = kTreeMaxRadiusMm[tier];
+  return dx * dx + dy * dy <= r * r;
+}
+
 /// Bounding box and fill statistics of one rasterised layer.
 class _LayerInfo {
   int x0 = 0, y0 = 0, x1 = -1, y1 = -1;
@@ -712,6 +739,7 @@ SliceResult sliceMesh(
     final angle = st.supportAngle.clamp(5.0, 89.0).toDouble() * math.pi / 180.0;
     final double density = (st.supportDensity / 100.0).clamp(0.0, 1.0).toDouble();
     final gapCells = kSupportXyGapMm / s;
+    final tree = st.isTreeSupport;
     final inColumn = Uint8List(nCells);
     final srcLayer = Int32List(nCells); // layer where the column's overhang is
     final dist = Float32List(nCells);
@@ -832,18 +860,21 @@ SliceResult sliceMesh(
             if (dist[idx] <= gapCells) continue;
             if (fm != null && fm[idx] <= k) continue;
             final dense = srcLayer[idx] - k <= kSupportInterfaceLayers;
+            if (!dense && tree) {
+              if (!treeBranchAt(ox + (x + 0.5) * s, oy + (y + 0.5) * s, (srcLayer[idx] - k) * h)) continue;
+            }
             if (dense) {
               denseCells++;
             } else {
               sparseCells++;
             }
             final pIdx = centerMap[idx];
-            if (pIdx >= 0 && (dense || (density > 0 && onGrid(pIdx, lineW / density, false)))) {
+            if (pIdx >= 0 && (dense || tree || (density > 0 && onGrid(pIdx, lineW / density, false)))) {
               previewCls[k * pn + pIdx] = dense ? 6 : 5;
             }
           }
         }
-        final supArea = s * s * (sparseCells * density + denseCells * kSupportInterfaceDensity);
+        final supArea = s * s * (sparseCells * (tree ? kTreeFill : density) + denseCells * kSupportInterfaceDensity);
         supportVolume += heights[k] * supArea;
         if (k == 0) {
           firstLen += supArea / lineW;

@@ -23,6 +23,31 @@ String fmtMoney(double v) {
   return '$b грн';
 }
 
+/// Bambu-style "back to default" icon: shown only when the value differs.
+class ResetButton extends StatelessWidget {
+  final bool changed;
+  final VoidCallback onReset;
+
+  const ResetButton({super.key, required this.changed, required this.onReset});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 36,
+      height: 36,
+      child: changed
+          ? IconButton(
+              padding: EdgeInsets.zero,
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Повернути значення за замовчуванням',
+              onPressed: onReset,
+              icon: Icon(Icons.undo, size: 20, color: Theme.of(context).colorScheme.primary),
+            )
+          : null,
+    );
+  }
+}
+
 /// "label  [-] value [+]" row used for integer and decimal settings.
 class StepperRow extends StatelessWidget {
   final String label;
@@ -35,6 +60,9 @@ class StepperRow extends StatelessWidget {
   final String unit;
   final ValueChanged<double> onChanged;
 
+  /// When set, a reset icon appears while [value] differs from it.
+  final double? defaultValue;
+
   const StepperRow({
     super.key,
     required this.label,
@@ -46,6 +74,7 @@ class StepperRow extends StatelessWidget {
     this.decimals = 0,
     this.unit = '',
     this.hint,
+    this.defaultValue,
   });
 
   double _round(double v) {
@@ -70,6 +99,11 @@ class StepperRow extends StatelessWidget {
               ],
             ),
           ),
+          if (defaultValue != null)
+            ResetButton(
+              changed: (value - defaultValue!).abs() > 1e-9,
+              onReset: () => onChanged(defaultValue!),
+            ),
           IconButton.filledTonal(
             visualDensity: VisualDensity.compact,
             onPressed: value - step >= min - 1e-9 ? () => onChanged(_round(value - step)) : null,
@@ -121,6 +155,7 @@ class NumberField extends StatefulWidget {
   final String? suffix;
   final double value;
   final ValueChanged<double> onChanged;
+  final double? defaultValue;
 
   const NumberField({
     super.key,
@@ -129,6 +164,7 @@ class NumberField extends StatefulWidget {
     required this.onChanged,
     this.helper,
     this.suffix,
+    this.defaultValue,
   });
 
   @override
@@ -166,6 +202,16 @@ class _NumberFieldState extends State<NumberField> {
         suffixText: widget.suffix,
         border: const OutlineInputBorder(),
         isDense: true,
+        suffixIcon: widget.defaultValue != null && (widget.value - widget.defaultValue!).abs() > 1e-9
+            ? IconButton(
+                tooltip: 'Повернути значення за замовчуванням',
+                icon: Icon(Icons.undo, size: 20, color: Theme.of(context).colorScheme.primary),
+                onPressed: () {
+                  _c.text = _fmt(widget.defaultValue!);
+                  widget.onChanged(widget.defaultValue!);
+                },
+              )
+            : null,
       ),
       onChanged: (t) {
         final v = _parse(t);
