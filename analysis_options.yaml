@@ -1,0 +1,6 @@
+analyzer:
+  language:
+    strict-casts: false
+linter:
+  rules:
+    - avoid_print
