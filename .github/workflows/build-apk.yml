@@ -41,21 +41,29 @@ jobs:
         run: flutter test
 
       # A fixed signing key lets new APKs install over old ones.
-      # Store it once as the repository secret SIGNING_KEYSTORE_B64.
+      # Stored once as the repository secret SIGNING_KEYSTORE_B64.
       - name: Signing key
         env:
           KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
         run: |
-          mkdir -p ~/.android
           if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
-            keytool -list -keystore ~/.android/debug.keystore -storepass android | head -5
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/stl.keystore"
+            export STL_KEYSTORE="$RUNNER_TEMP/stl.keystore"
+            echo "STL_KEYSTORE=$STL_KEYSTORE" >> "$GITHUB_ENV"
+            python3 .github/scripts/use_release_key.py
           else
             echo "::warning::Secret SIGNING_KEYSTORE_B64 is not set: this APK uses a temporary key and will not update an installed copy."
           fi
 
       - name: Build release APK
         run: flutter build apk --release --build-number=${{ github.run_number }} --build-name=1.2.${{ github.run_number }}
+
+      - name: Verify signature
+        if: env.STL_KEYSTORE != ''
+        run: |
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk | tee certs.txt
+          grep -q "CN=STL Vaga" certs.txt || { echo "::error::APK is not signed with the persistent key"; exit 1; }
 
       - name: Rename APK
         run: cp build/app/outputs/flutter-apk/app-release.apk stl-weight.apk
