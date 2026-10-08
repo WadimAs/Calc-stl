@@ -15,7 +15,8 @@ String historySummary(HistoryEntry e) {
     ..writeln('Матеріал: ${e.material}, ${fmtNum(e.layerHeight, 2)} мм, заповнення ${fmtNum(e.infillPercent, 0)}%')
     ..writeln('Вага: ${fmtGrams(e.totalGrams)}${e.copies > 1 ? ' (${e.copies} шт.)' : ''}');
   if (e.supports) b.writeln('  у т.ч. підтримки: ${fmtGrams(e.supportGrams * e.copies)}');
-  b.writeln('Вартість: ${fmtMoney(e.totalCost)}');
+  if (e.printHours > 0) b.writeln('Час друку: ${formatDuration(e.printHours)}');
+  b.writeln('Ціна: ${fmtMoney(e.totalCost)}');
   if (e.note.isNotEmpty) b.writeln(e.note);
   return b.toString().trim();
 }
@@ -318,10 +319,14 @@ class _EntryDetailsState extends State<_EntryDetails> {
           row('Підтримки (1 шт.)', e.supports ? fmtGrams(e.supportGrams) : 'вимкнено'),
           row('Разом', '${fmtGrams(e.totalGrams)} · ${fmtNum(e.filamentMeters, 2)} м'),
           const Divider(height: 20),
+          if (e.printHours > 0) row('Час друку', formatDuration(e.printHours)),
           row('Пластик', fmtMoney(e.materialCost)),
-          if (e.markupPercent != 0) row('Націнка ${fmtNum(e.markupPercent, 0)}%', fmtMoney(e.materialCost * e.markupPercent / 100)),
+          if (e.electricityCost != 0) row('Електроенергія', fmtMoney(e.electricityCost)),
+          if (e.amortizationCost != 0) row('Амортизація', fmtMoney(e.amortizationCost)),
+          row('Собівартість', fmtMoney(e.costPrice)),
+          if (e.markupPercent != 0) row('Заробіток ${fmtNum(e.markupPercent, 0)}%', fmtMoney(e.costPrice * e.markupPercent / 100)),
           if (e.extraCost != 0) row('Доплата', fmtMoney(e.extraCost)),
-          row('Разом', fmtMoney(e.totalCost)),
+          row('Ціна', fmtMoney(e.totalCost)),
           const SizedBox(height: 16),
           TextField(
             controller: _note,

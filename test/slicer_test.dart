@@ -229,14 +229,64 @@ void main() {
     expect(r.supportVolumeMm3, 0);
   });
 
-  test('cost breakdown', () {
-    const s = SliceSettings(pricesPerKg: {'PLA': 800}, markupPercent: 50, extraCost: 20);
-    final c = CostBreakdown.of(250, s);
-    expect(c.material, closeTo(200, 1e-9));
-    expect(c.markup, closeTo(100, 1e-9));
-    expect(c.total, closeTo(320, 1e-9));
+  test('cost breakdown: cost price and price with profit', () {
+    const s = SliceSettings(
+      pricesPerKg: {'PLA': 800},
+      powerW: 200,
+      tariff: 5,
+      amortizationPerHour: 10,
+      markupPercent: 50,
+      extraCost: 20,
+    );
+    final c = CostBreakdown.of(250, 2, s);
+    expect(c.material, closeTo(200, 1e-9)); // 250 g × 800 / 1000
+    expect(c.electricity, closeTo(2, 1e-9)); // 2 h × 0.2 kW × 5
+    expect(c.amortization, closeTo(20, 1e-9)); // 2 h × 10
+    expect(c.costPrice, closeTo(222, 1e-9));
+    expect(c.profit, closeTo(111, 1e-9));
+    expect(c.price, closeTo(353, 1e-9));
     expect(s.copyWith(materialId: 'PETG').pricePerKg, 650);
     expect(s.withPrice(900).pricePerKg, 900);
+  });
+
+  test('print time estimate grows with the model and respects flow limits', () {
+    final small = sliceMesh(box(10, 10, 10), const SliceSettings());
+    final big = sliceMesh(box(30, 30, 30), const SliceSettings());
+    final tSmall = small.printSeconds(const SliceSettings());
+    final tBig = big.printSeconds(const SliceSettings());
+    expect(tSmall, greaterThan(60));
+    expect(tBig, greaterThan(tSmall * 4));
+    // TPU (low flow) is slower than PLA on the same printer.
+    expect(big.printSeconds(const SliceSettings(materialId: 'TPU')), greaterThan(tBig * 2));
+    // A classic printer is slower than a Bambu.
+    expect(big.printSeconds(const SliceSettings(printerId: 'classic')), greaterThan(tBig));
+  });
+
+  test('layer preview covers every layer with classified rectangles', () {
+    final r = sliceMesh(box(20, 20, 4), const SliceSettings());
+    final p = r.preview!;
+    expect(p.layers, r.layers);
+    expect(p.layerStart.length, r.layers + 1);
+    for (int l = 0; l < p.layers; l++) {
+      expect(p.layerStart[l + 1], greaterThan(p.layerStart[l]), reason: 'layer $l is empty');
+    }
+    final classes = p.classes.toSet();
+    expect(classes, containsAll([SliceClass.outerWall, SliceClass.innerWall, SliceClass.solid]));
+    expect(p.zTop.last, closeTo(4, 0.21));
+  });
+
+  test('ensure vertical shell adds solid infill on slopes only', () {
+    // Cube: vertical walls, no change.
+    final cubeOn = sliceMesh(box(20, 20, 20), const SliceSettings());
+    final cubeOff = sliceMesh(box(20, 20, 20), const SliceSettings(ensureVerticalShell: false));
+    expect(cubeOn.volumeMm3, closeTo(cubeOff.volumeMm3, cubeOff.volumeMm3 * 0.01));
+  });
+
+  test('old settings migrate from 4 to 5 top layers', () {
+    final s = SliceSettings.fromJson({'topLayers': 4});
+    expect(s.topLayers, 5);
+    final keep = SliceSettings.fromJson({'topLayers': 4, 'v': 2});
+    expect(keep.topLayers, 4);
   });
 
   test('settings and history survive JSON round trip', () {
@@ -264,6 +314,9 @@ void main() {
       supportGrams: 2,
       filamentMeters: 8,
       materialCost: 14.4,
+      printHours: 1.5,
+      electricityCost: 0.9,
+      amortizationCost: 12,
       markupPercent: 0,
       extraCost: 0,
       totalCost: 14.4,
@@ -274,6 +327,8 @@ void main() {
     );
     final e2 = HistoryEntry.fromJson(jsonDecode(jsonEncode(e.toJson())))!;
     expect(e2.totalGrams, 24);
+    expect(e2.costPrice, closeTo(27.3, 1e-9));
+    expect(e2.printHours, 1.5);
     expect(e2.note, 'Іван; синій');
     expect(formatDate(e2.date), '08.10.2026 21:05');
     final csv = HistoryStore.toCsv([e2]);

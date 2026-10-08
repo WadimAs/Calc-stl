@@ -1,7 +1,7 @@
 name: stl_weight
 description: Перегляд STL/3MF і розрахунок ваги пластику для 3D-друку.
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.2.0+1
 
 environment:
   sdk: '>=3.4.0 <4.0.0'
@@ -16,3 +16,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/logo.png

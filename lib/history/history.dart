@@ -23,14 +23,18 @@ class HistoryEntry {
   final double supportGrams; // one copy
   final double filamentMeters; // all copies
   final double materialCost;
+  final double printHours; // all copies
+  final double electricityCost;
+  final double amortizationCost;
+  final double costPrice; // plastic + electricity + amortization
   final double markupPercent;
   final double extraCost;
-  final double totalCost;
+  final double totalCost; // selling price
   final double sizeX, sizeY, sizeZ;
   final String note;
   final String? thumbPath;
 
-  const HistoryEntry({
+  HistoryEntry({
     required this.id,
     required this.date,
     required this.name,
@@ -48,6 +52,10 @@ class HistoryEntry {
     required this.supportGrams,
     required this.filamentMeters,
     required this.materialCost,
+    this.printHours = 0,
+    this.electricityCost = 0,
+    this.amortizationCost = 0,
+    double? costPrice,
     required this.markupPercent,
     required this.extraCost,
     required this.totalCost,
@@ -56,7 +64,7 @@ class HistoryEntry {
     required this.sizeZ,
     this.note = '',
     this.thumbPath,
-  });
+  }) : costPrice = costPrice ?? materialCost + electricityCost + amortizationCost;
 
   double get totalGrams => (modelGrams + supportGrams) * copies;
 
@@ -78,6 +86,10 @@ class HistoryEntry {
         supportGrams: supportGrams,
         filamentMeters: filamentMeters,
         materialCost: materialCost,
+        printHours: printHours,
+        electricityCost: electricityCost,
+        amortizationCost: amortizationCost,
+        costPrice: costPrice,
         markupPercent: markupPercent,
         extraCost: extraCost,
         totalCost: totalCost,
@@ -106,6 +118,10 @@ class HistoryEntry {
         'supportGrams': supportGrams,
         'filamentMeters': filamentMeters,
         'materialCost': materialCost,
+        'printHours': printHours,
+        'electricityCost': electricityCost,
+        'amortizationCost': amortizationCost,
+        'costPrice': costPrice,
         'markupPercent': markupPercent,
         'extraCost': extraCost,
         'totalCost': totalCost,
@@ -140,6 +156,10 @@ class HistoryEntry {
       supportGrams: d('supportGrams'),
       filamentMeters: d('filamentMeters'),
       materialCost: d('materialCost'),
+      printHours: d('printHours'),
+      electricityCost: d('electricityCost'),
+      amortizationCost: d('amortizationCost'),
+      costPrice: raw['costPrice'] is num ? d('costPrice') : null,
       markupPercent: d('markupPercent'),
       extraCost: d('extraCost'),
       totalCost: d('totalCost'),
@@ -241,7 +261,8 @@ class HistoryStore {
   static String toCsv(List<HistoryEntry> list) {
     String q(String v) => '"${v.replaceAll('"', '""')}"';
     final b = StringBuffer();
-    b.writeln('Дата;Модель;Матеріал;Копій;Вага моделі, г;Підтримки, г;Разом, г;Філамент, м;Ціна за кг;Матеріал, грн;Націнка %;Доплата;Разом, грн;Примітка');
+    b.writeln('Дата;Модель;Матеріал;Копій;Вага моделі, г;Підтримки, г;Разом, г;Філамент, м;Час, год;'
+        'Ціна за кг;Пластик, грн;Електроенергія, грн;Амортизація, грн;Собівартість, грн;Націнка %;Доплата;Ціна, грн;Примітка');
     for (final e in list) {
       String n(double v, [int f = 2]) => v.toStringAsFixed(f).replaceAll('.', ',');
       b.writeln([
@@ -253,8 +274,12 @@ class HistoryStore {
         n(e.supportGrams),
         n(e.totalGrams),
         n(e.filamentMeters),
+        n(e.printHours),
         n(e.pricePerKg, 0),
         n(e.materialCost),
+        n(e.electricityCost),
+        n(e.amortizationCost),
+        n(e.costPrice),
         n(e.markupPercent, 0),
         n(e.extraCost),
         n(e.totalCost),
@@ -268,4 +293,11 @@ class HistoryStore {
 String formatDate(DateTime d) {
   String two(int v) => v.toString().padLeft(2, '0');
   return '${two(d.day)}.${two(d.month)}.${d.year} ${two(d.hour)}:${two(d.minute)}';
+}
+
+String formatDuration(double hours) {
+  final totalMin = (hours * 60).round();
+  final h = totalMin ~/ 60, m = totalMin % 60;
+  if (h == 0) return '$m хв';
+  return '$h год ${m.toString().padLeft(2, '0')} хв';
 }

@@ -5,13 +5,50 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../mesh/loader.dart';
+import '../slicer/slicer.dart';
+
+/// Colours of the sliced view, by [SliceClass] (index 0 unused).
+const sliceColors = <Color>[
+  Color(0x00000000),
+  Color(0xFFFF7F00), // outer wall
+  Color(0xFFFFD54A), // inner wall
+  Color(0xFFB04CE0), // solid infill / top / bottom
+  Color(0xFFC0392B), // sparse infill
+  Color(0xFF2ECC71), // support
+  Color(0xFF138D4B), // support interface
+];
+
+const sliceClassNames = <String>[
+  '',
+  'Зовнішня стінка',
+  'Внутрішня стінка',
+  'Суцільне заповнення',
+  'Заповнення',
+  'Підтримки',
+  'Контакт підтримок',
+];
 
 /// Interactive 3D preview: drag to rotate, pinch to zoom/pan, double tap to reset.
+///
+/// With [showLayers] and a [preview], draws the sliced layers 0..[maxLayer]
+/// coloured by feature type instead of the mesh.
 class ModelViewer extends StatefulWidget {
   final LoadedModel model;
   final Color color;
+  final SlicePreview? preview;
+  final double previewScale; // slicer scale (settings.scalePercent / 100)
+  final bool showLayers;
+  final int maxLayer;
 
-  const ModelViewer({super.key, required this.model, required this.color});
+  const ModelViewer({
+    super.key,
+    required this.model,
+    required this.color,
+    this.preview,
+    this.previewScale = 1,
+    this.showLayers = false,
+    this.maxLayer = 1 << 30,
+  });
 
   @override
   State<ModelViewer> createState() => _ModelViewerState();
@@ -27,11 +64,13 @@ class _ModelViewerState extends State<ModelViewer> {
   Offset _pan = Offset.zero;
   double _zoomAtStart = 1.0;
   late _ViewCache _cache;
+  _LayerMeshes? _layers;
 
   @override
   void initState() {
     super.initState();
     _cache = _ViewCache(widget.model.viewTris.length ~/ 9);
+    _layers = _buildLayers(widget.preview);
   }
 
   @override
@@ -41,7 +80,19 @@ class _ModelViewerState extends State<ModelViewer> {
       _cache = _ViewCache(widget.model.viewTris.length ~/ 9);
       _reset();
     }
+    if (!identical(oldWidget.preview, widget.preview)) {
+      _layers?.dispose();
+      _layers = _buildLayers(widget.preview);
+    }
   }
+
+  @override
+  void dispose() {
+    _layers?.dispose();
+    super.dispose();
+  }
+
+  static _LayerMeshes? _buildLayers(SlicePreview? p) => p == null ? null : _LayerMeshes(p);
 
   void _reset() {
     _yaw = _defaultYaw;
@@ -80,6 +131,9 @@ class _ModelViewerState extends State<ModelViewer> {
             pan: _pan,
             color: widget.color,
             gridColor: scheme.onSurface.withValues(alpha: 0.12),
+            layers: widget.showLayers ? _layers : null,
+            previewScale: widget.previewScale,
+            maxLayer: widget.maxLayer,
           ),
         ),
       ),
@@ -108,6 +162,74 @@ class _ViewCache {
         colors = Int32List(n * 3);
 }
 
+/// GPU-ready triangles of every layer (top colour and a darker side colour).
+class _LayerMeshes {
+  final SlicePreview preview;
+  final List<ui.Vertices?> top;
+  final List<ui.Vertices?> side;
+
+  _LayerMeshes(this.preview)
+      : top = List<ui.Vertices?>.filled(preview.layers, null),
+        side = List<ui.Vertices?>.filled(preview.layers, null) {
+    final colors = [for (final c in sliceColors) c.toARGB32()];
+    for (int l = 0; l < preview.layers; l++) {
+      final a = preview.layerStart[l], e = preview.layerStart[l + 1];
+      final n = e - a;
+      if (n <= 0) continue;
+      final pos = Float32List(n * 12);
+      final cTop = Int32List(n * 6);
+      final cSide = Int32List(n * 6);
+      final shade = l.isOdd ? 0.9 : 1.0;
+      for (int r = 0; r < n; r++) {
+        final o = (a + r) * 4;
+        final x0 = preview.rects[o], y0 = preview.rects[o + 1];
+        final x1 = preview.rects[o + 2], y1 = preview.rects[o + 3];
+        final q = r * 12;
+        pos[q] = x0;
+        pos[q + 1] = y0;
+        pos[q + 2] = x1;
+        pos[q + 3] = y0;
+        pos[q + 4] = x1;
+        pos[q + 5] = y1;
+        pos[q + 6] = x0;
+        pos[q + 7] = y0;
+        pos[q + 8] = x1;
+        pos[q + 9] = y1;
+        pos[q + 10] = x0;
+        pos[q + 11] = y1;
+        final cls = preview.classes[a + r];
+        final base = colors[cls < colors.length ? cls : 0];
+        final ct = _scale(base, shade);
+        final cs = _scale(base, 0.6);
+        for (int k = 0; k < 6; k++) {
+          cTop[r * 6 + k] = ct;
+          cSide[r * 6 + k] = cs;
+        }
+      }
+      top[l] = ui.Vertices.raw(ui.VertexMode.triangles, pos, colors: cTop);
+      side[l] = ui.Vertices.raw(ui.VertexMode.triangles, pos, colors: cSide);
+    }
+  }
+
+  static int _scale(int argb, double f) {
+    int ch(int shift) {
+      final v = (((argb >> shift) & 0xFF) * f).round();
+      return v > 255 ? 255 : v;
+    }
+
+    return (0xFF << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0);
+  }
+
+  void dispose() {
+    for (final v in top) {
+      v?.dispose();
+    }
+    for (final v in side) {
+      v?.dispose();
+    }
+  }
+}
+
 class _ModelPainter extends CustomPainter {
   final LoadedModel model;
   final _ViewCache cache;
@@ -115,6 +237,9 @@ class _ModelPainter extends CustomPainter {
   final Offset pan;
   final Color color;
   final Color gridColor;
+  final _LayerMeshes? layers;
+  final double previewScale;
+  final int maxLayer;
 
   _ModelPainter({
     required this.model,
@@ -125,7 +250,56 @@ class _ModelPainter extends CustomPainter {
     required this.pan,
     required this.color,
     required this.gridColor,
+    required this.layers,
+    required this.previewScale,
+    required this.maxLayer,
   });
+
+  /// Draws the sliced layers. Every layer is a flat slab: its darker copy at
+  /// the bottom plane shows as the slab's edge, the normal copy at the top.
+  void _paintLayers(Canvas canvas, _LayerMeshes lm, double scale, double cx, double cy, double cyw, double syw,
+      double cp, double sp) {
+    final b = model.bounds;
+    final k = previewScale > 0 ? 1 / previewScale : 1.0;
+    final p = lm.preview;
+    final last = math.min(maxLayer, p.layers - 1);
+    final a = scale * cyw, c = -scale * syw;
+    final bq = -scale * sp * syw, d = -scale * sp * cyw;
+    final tx = -b.centerX, ty = -b.centerY;
+    final paint = Paint();
+
+    void drawAt(ui.Vertices v, double zSlicer) {
+      final z = zSlicer * k - b.sizeZ / 2;
+      final f = cy - scale * z * cp;
+      final m = Float64List(16);
+      m[0] = a * k;
+      m[1] = bq * k;
+      m[4] = c * k;
+      m[5] = d * k;
+      m[10] = 1;
+      m[12] = a * tx + c * ty + cx;
+      m[13] = bq * tx + d * ty + f;
+      m[15] = 1;
+      canvas.save();
+      canvas.transform(m);
+      canvas.drawVertices(v, BlendMode.dst, paint);
+      canvas.restore();
+    }
+
+    final fromAbove = pitch >= 0;
+    for (int n = 0; n <= last; n++) {
+      final l = fromAbove ? n : last - n;
+      final top = lm.top[l], side = lm.side[l];
+      if (top == null || side == null) continue;
+      if (fromAbove) {
+        drawAt(side, p.zBottom[l]);
+        drawAt(top, p.zTop[l]);
+      } else {
+        drawAt(side, p.zTop[l]);
+        drawAt(top, p.zBottom[l]);
+      }
+    }
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -155,6 +329,12 @@ class _ModelPainter extends CustomPainter {
     for (double v = -half; v <= half + 1e-6; v += step) {
       canvas.drawLine(project(v, -half, zBed), project(v, half, zBed), gridPaint);
       canvas.drawLine(project(-half, v, zBed), project(half, v, zBed), gridPaint);
+    }
+
+    final lm = layers;
+    if (lm != null) {
+      _paintLayers(canvas, lm, scale, cx, cy, cyw, syw, cp, sp);
+      return;
     }
 
     final tris = model.viewTris;
@@ -260,5 +440,8 @@ class _ModelPainter extends CustomPainter {
       old.pan != pan ||
       !identical(old.model, model) ||
       old.color != color ||
-      old.gridColor != gridColor;
+      old.gridColor != gridColor ||
+      !identical(old.layers, layers) ||
+      old.maxLayer != maxLayer ||
+      old.previewScale != previewScale;
 }

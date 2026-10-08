@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Only used to check GitHub for a newer version. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="STL Вага"
         android:name="${applicationName}"

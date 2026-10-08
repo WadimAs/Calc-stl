@@ -49,6 +49,29 @@ class MainActivity : FlutterActivity() {
                     if (uri == null) result.success(null) else readUri(uri) { result.success(it) }
                 }
                 "filesDir" -> result.success(filesDir.absolutePath)
+                "appInfo" -> {
+                    try {
+                        val info = packageManager.getPackageInfo(packageName, 0)
+                        val code: Long = if (Build.VERSION.SDK_INT >= 28) {
+                            info.longVersionCode
+                        } else {
+                            @Suppress("DEPRECATION")
+                            info.versionCode.toLong()
+                        }
+                        result.success(hashMapOf<String, Any>("versionCode" to code, "versionName" to (info.versionName ?: "")))
+                    } catch (e: Exception) {
+                        result.error("info", e.message, null)
+                    }
+                }
+                "openUrl" -> {
+                    val url = call.argument<String>("url") ?: ""
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("url", e.message, null)
+                    }
+                }
                 "saveFile" -> {
                     val name = call.argument<String>("name") ?: "export.csv"
                     val mime = call.argument<String>("mime") ?: "text/csv"

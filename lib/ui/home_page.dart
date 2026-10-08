@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import '../history/history.dart';
 import '../mesh/loader.dart';
 import '../platform/files.dart';
+import '../platform/updates.dart';
 import '../slicer/settings.dart';
 import '../slicer/slice_runner.dart';
 import '../slicer/slicer.dart';
@@ -40,6 +41,10 @@ class _HomePageState extends State<HomePage> {
   Timer? _debounce;
   bool _saving = false;
   final GlobalKey _viewerKey = GlobalKey();
+  bool _layersView = false;
+  int _layer = 0;
+  double? _manualHours; // print time of one copy entered by the user
+  UpdateInfo? _update;
 
   @override
   void initState() {
@@ -52,6 +57,9 @@ class _HomePageState extends State<HomePage> {
     final s = await PlatformFiles.loadSettings();
     if (!mounted) return;
     setState(() => _settings = s);
+    Updates.check().then((u) {
+      if (u != null && mounted) setState(() => _update = u);
+    });
     final f = await PlatformFiles.initialFile();
     if (f != null && mounted) await _open(f);
   }
@@ -88,6 +96,8 @@ class _HomePageState extends State<HomePage> {
         _result = null;
         _progress = null;
         _sliceError = null;
+        _manualHours = null;
+        _layersView = false;
       });
       _slice();
     } catch (e) {
@@ -129,6 +139,7 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _result = r;
         _progress = null;
+        _layer = r.layers - 1;
       });
     } on SliceCancelled {
       // A newer job replaced this one.
@@ -152,14 +163,36 @@ class _HomePageState extends State<HomePage> {
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const HistoryPage()));
   }
 
+  /// Print time of all copies, hours.
+  double _totalHours(SliceResult r) {
+    final manual = _manualHours;
+    if (manual != null) return manual * _settings.copies;
+    final perCopy = r.printSeconds(_settings) / 3600;
+    return perCopy * _settings.copies + printerById(_settings.printerId).startMinutes / 60;
+  }
+
+  CostBreakdown _cost(SliceResult r) =>
+      CostBreakdown.of(r.grams(_settings.density, copies: _settings.copies), _totalHours(r), _settings);
+
+  Future<void> _editTime() async {
+    final r = _result;
+    if (r == null) return;
+    final current = _manualHours ?? (r.printSeconds(_settings) / 3600 + printerById(_settings.printerId).startMinutes / 60);
+    final v = await showDialog<double>(
+      context: context,
+      builder: (_) => _TimeDialog(initialHours: current, isManual: _manualHours != null),
+    );
+    if (v == null || !mounted) return;
+    setState(() => _manualHours = v < 0 ? null : v);
+  }
+
   /// Snapshot of the current calculation as a history entry.
   HistoryEntry? _buildEntry({String note = '', String? thumbPath, String? id}) {
     final m = _model;
     final r = _result;
     if (m == null || r == null) return null;
     final s = _settings;
-    final grams = r.grams(s.density, copies: s.copies);
-    final cost = CostBreakdown.of(grams, s);
+    final cost = _cost(r);
     final mat = materialById(s.materialId);
     return HistoryEntry(
       id: id ?? DateTime.now().microsecondsSinceEpoch.toString(),
@@ -179,9 +212,13 @@ class _HomePageState extends State<HomePage> {
       supportGrams: r.supportGrams(s.density),
       filamentMeters: r.filamentMeters(s.filamentDiameter, copies: s.copies),
       materialCost: cost.material,
+      printHours: cost.hours,
+      electricityCost: cost.electricity,
+      amortizationCost: cost.amortization,
+      costPrice: cost.costPrice,
       markupPercent: s.markupPercent,
       extraCost: s.extraCost,
-      totalCost: cost.total,
+      totalCost: cost.price,
       sizeX: r.sizeX,
       sizeY: r.sizeY,
       sizeZ: r.sizeZ,
@@ -248,7 +285,43 @@ class _HomePageState extends State<HomePage> {
           IconButton(tooltip: 'Налаштування', onPressed: _openSettings, icon: const Icon(Icons.tune)),
         ],
       ),
-      body: _loading
+      body: Column(children: [
+        if (_update != null) _updateBanner(_update!),
+        Expanded(child: _body()),
+      ]),
+    );
+  }
+
+  Widget _updateBanner(UpdateInfo u) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+        child: Row(children: [
+          Icon(Icons.system_update, color: theme.colorScheme.onTertiaryContainer),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text('Доступна нова версія (збірка ${u.build})',
+                style: TextStyle(color: theme.colorScheme.onTertiaryContainer)),
+          ),
+          TextButton(
+            onPressed: () => Updates.open(u.downloadUrl).catchError((Object _) {}),
+            child: const Text('Оновити'),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: () => setState(() => _update = null),
+            icon: const Icon(Icons.close, size: 18),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _body() {
+    final model = _model;
+    return _loading
           ? const Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 CircularProgressIndicator(),
@@ -271,8 +344,7 @@ class _HomePageState extends State<HomePage> {
                     SizedBox(height: c.maxHeight * 0.45, child: viewer),
                     Expanded(child: panel),
                   ]);
-                }),
-    );
+                });
   }
 
   Widget _viewer(LoadedModel m) {
@@ -280,35 +352,132 @@ class _HomePageState extends State<HomePage> {
     final k = _settings.scalePercent / 100;
     final b = m.bounds;
     String mm(double v) => fmtNum(v * k, 1);
-    return Stack(children: [
-      Positioned.fill(
-        child: RepaintBoundary(key: _viewerKey, child: ModelViewer(model: m, color: _modelColor)),
-      ),
-      Positioned(
-        left: 12,
-        bottom: 10,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.85),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text('${mm(b.sizeX)} × ${mm(b.sizeY)} × ${mm(b.sizeZ)} мм', style: theme.textTheme.labelMedium),
-        ),
-      ),
-      if (_loadError != null)
-        Positioned(
-          left: 12,
-          right: 12,
-          top: 10,
-          child: Material(
-            color: theme.colorScheme.errorContainer,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.all(10),
-              child: Text(_loadError!, style: TextStyle(color: theme.colorScheme.onErrorContainer)),
+    final preview = _result?.preview;
+    final layersMode = _layersView && preview != null && preview.layers > 0;
+    final chipDecoration = BoxDecoration(
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.88),
+      borderRadius: BorderRadius.circular(8),
+    );
+    final layer = preview == null || preview.layers == 0 ? 0 : _layer.clamp(0, preview.layers - 1).toInt();
+
+    return Column(children: [
+      Expanded(
+        child: Stack(children: [
+          Positioned.fill(
+            child: RepaintBoundary(
+              key: _viewerKey,
+              child: ModelViewer(
+                model: m,
+                color: _modelColor,
+                preview: preview,
+                previewScale: k,
+                showLayers: layersMode,
+                maxLayer: layer,
+              ),
             ),
           ),
+          Positioned(
+            left: 10,
+            top: 8,
+            child: SegmentedButton<bool>(
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: false, label: Text('Модель'), icon: Icon(Icons.view_in_ar_outlined)),
+                ButtonSegment(value: true, label: Text('Шари'), icon: Icon(Icons.layers_outlined)),
+              ],
+              selected: {layersMode},
+              onSelectionChanged: (v) {
+                if (v.first && preview == null) {
+                  _snack('Шари з\'являться після нарізання');
+                  return;
+                }
+                setState(() => _layersView = v.first);
+              },
+            ),
+          ),
+          Positioned(
+            right: 10,
+            top: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: chipDecoration,
+              child: Text('${mm(b.sizeX)} × ${mm(b.sizeY)} × ${mm(b.sizeZ)} мм', style: theme.textTheme.labelMedium),
+            ),
+          ),
+          if (layersMode)
+            Positioned(
+              left: 10,
+              bottom: 8,
+              right: 10,
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final c in [1, 2, 3, 4, if (_settings.supportsEnabled) 5])
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: chipDecoration,
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(color: sliceColors[c], borderRadius: BorderRadius.circular(3)),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(sliceClassNames[c], style: theme.textTheme.labelSmall),
+                      ]),
+                    ),
+                ],
+              ),
+            ),
+          if (_loadError != null)
+            Positioned(
+              left: 12,
+              right: 12,
+              top: 56,
+              child: Material(
+                color: theme.colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Text(_loadError!, style: TextStyle(color: theme.colorScheme.onErrorContainer)),
+                ),
+              ),
+            ),
+        ]),
+      ),
+      if (layersMode)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 12, 0),
+          child: Row(children: [
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              onPressed: layer > 0 ? () => setState(() => _layer = layer - 1) : null,
+              icon: const Icon(Icons.remove),
+            ),
+            Expanded(
+              child: Slider(
+                value: layer.toDouble(),
+                min: 0,
+                max: (preview!.layers - 1).toDouble(),
+                onChanged: (v) => setState(() => _layer = v.round()),
+              ),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              onPressed: layer < preview!.layers - 1 ? () => setState(() => _layer = layer + 1) : null,
+              icon: const Icon(Icons.add),
+            ),
+            SizedBox(
+              width: 92,
+              child: Text(
+                '${layer + 1}/${preview!.layers}\n${fmtNum(preview!.zTop[layer], 2)} мм',
+                textAlign: TextAlign.right,
+                style: theme.textTheme.labelSmall,
+              ),
+            ),
+          ]),
         ),
     ]);
   }
@@ -335,12 +504,17 @@ class _HomePageState extends State<HomePage> {
     final busy = _progress != null;
     final onCard = theme.colorScheme.onPrimaryContainer;
     final grams = r?.grams(s.density, copies: s.copies) ?? 0;
-    final cost = CostBreakdown.of(grams, s);
-    final costParts = <String>[
-      'пластик ${fmtMoney(cost.material)}',
-      if (cost.markup != 0) 'націнка ${fmtMoney(cost.markup)}',
-      if (cost.extra != 0) 'доплата ${fmtMoney(cost.extra)}',
-    ];
+    final cost = r == null ? null : _cost(r);
+    final small = theme.textTheme.bodySmall;
+
+    Widget line(String label, String value, {bool strong = false}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1.5),
+          child: Row(children: [
+            Expanded(child: Text(label, style: strong ? theme.textTheme.bodyMedium : small)),
+            Text(value, style: strong ? theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600) : small),
+          ]),
+        );
+
     return Card(
       color: theme.colorScheme.primaryContainer,
       child: Padding(
@@ -376,7 +550,7 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 4),
               Text(
                 '${s.supportsEnabled ? 'Нарізання і підтримки' : 'Нарізання'}… ${((_progress ?? 0) * 100).round()}%',
-                style: theme.textTheme.bodySmall,
+                style: small,
               ),
             ],
             if (_sliceError != null) ...[
@@ -384,7 +558,7 @@ class _HomePageState extends State<HomePage> {
               Text(_sliceError!, style: TextStyle(color: theme.colorScheme.error)),
               TextButton(onPressed: _slice, child: const Text('Спробувати ще раз')),
             ],
-            if (r != null) ...[
+            if (r != null && cost != null) ...[
               if (s.supportsEnabled)
                 Text(
                   'модель ${fmtGrams(r.modelGrams(s.density) * s.copies)} · '
@@ -402,24 +576,57 @@ class _HomePageState extends State<HomePage> {
                   Stat('шарів', '${r.layers}'),
                 ],
               ),
-              Divider(height: 28, color: onCard.withValues(alpha: 0.2)),
+              Divider(height: 24, color: onCard.withValues(alpha: 0.2)),
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: _editTime,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(children: [
+                    const Icon(Icons.schedule, size: 18),
+                    const SizedBox(width: 6),
+                    Text('Час друку', style: theme.textTheme.bodyMedium),
+                    const Spacer(),
+                    Text(
+                      '${_manualHours == null ? '≈ ' : ''}${formatDuration(cost.hours)}',
+                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(_manualHours == null ? Icons.edit_outlined : Icons.edit, size: 16),
+                  ]),
+                ),
+              ),
+              Text(
+                _manualHours == null
+                    ? 'оцінка для «${printerById(s.printerId).name}»; торкніться, щоб ввести час зі слайсера'
+                    : 'введено вручну${s.copies > 1 ? ' (${formatDuration(_manualHours!)} × ${s.copies})' : ''}',
+                style: small,
+              ),
+              const SizedBox(height: 10),
+              line('Пластик', fmtMoney(cost.material)),
+              line('Електроенергія', fmtMoney(cost.electricity)),
+              line('Амортизація', fmtMoney(cost.amortization)),
+              line('Собівартість', fmtMoney(cost.costPrice), strong: true),
+              const SizedBox(height: 4),
+              line('Заробіток ${fmtNum(s.markupPercent, 0)}%', fmtMoney(cost.profit)),
+              if (cost.extra != 0) line('Доплата', fmtMoney(cost.extra)),
+              const SizedBox(height: 6),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('Вартість', style: theme.textTheme.titleSmall),
+                  Text('Ціна', style: theme.textTheme.titleSmall),
                   const Spacer(),
                   Text(
-                    fmtMoney(cost.total),
+                    fmtMoney(cost.price),
                     style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700, color: onCard),
                   ),
                 ],
               ),
-              const SizedBox(height: 2),
-              Text(
-                '${costParts.join(' + ')} · ${fmtNum(s.pricePerKg, 0)} $currency/кг',
-                textAlign: TextAlign.right,
-                style: theme.textTheme.bodySmall,
-              ),
+              if (s.copies > 1)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text('${fmtMoney(cost.price / s.copies)} за штуку', style: small),
+                ),
               const SizedBox(height: 12),
               Row(children: [
                 Expanded(
@@ -441,7 +648,7 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 8),
               Text(
                 'Суцільна модель (100%): ${fmtGrams(r.solidGrams(s.density))}',
-                style: theme.textTheme.bodySmall,
+                style: small,
               ),
             ],
           ],
@@ -456,7 +663,7 @@ class _HomePageState extends State<HomePage> {
     final mat = materialById(s.materialId);
     return Card(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -473,7 +680,7 @@ class _HomePageState extends State<HomePage> {
             Row(children: [
               Expanded(
                 child: NumberField(
-                  label: 'Націнка',
+                  label: 'Заробіток',
                   suffix: '%',
                   value: s.markupPercent,
                   onChanged: (v) => _updateSettings(_settings.copyWith(markupPercent: v)),
@@ -489,6 +696,17 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ]),
+            const SizedBox(height: 4),
+            TextButton.icon(
+              style: TextButton.styleFrom(alignment: Alignment.centerLeft),
+              onPressed: _openSettings,
+              icon: const Icon(Icons.bolt_outlined, size: 18),
+              label: Text(
+                '${fmtNum(s.powerW, 0)} Вт × ${fmtNum(s.tariff, 2)} $currency/кВт·год · '
+                'амортизація ${fmtNum(s.amortizationPerHour, 1)} $currency/год',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
           ],
         ),
       ),
@@ -625,8 +843,11 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.view_in_ar_outlined, size: 96, color: theme.colorScheme.primary),
-            const SizedBox(height: 16),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(28),
+              child: Image.asset('assets/logo.png', width: 112, height: 112),
+            ),
+            const SizedBox(height: 20),
             Text('Відкрийте STL або 3MF', style: theme.textTheme.headlineSmall, textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(
@@ -685,6 +906,80 @@ class _NoteDialogState extends State<_NoteDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
         FilledButton(onPressed: () => Navigator.pop(context, _c.text.trim()), child: const Text('Зберегти')),
+      ],
+    );
+  }
+}
+
+/// Print-time input: hours and minutes of one copy, as shown by the slicer.
+/// Pops the hours, or -1 to go back to the estimate.
+class _TimeDialog extends StatefulWidget {
+  final double initialHours;
+  final bool isManual;
+
+  const _TimeDialog({required this.initialHours, required this.isManual});
+
+  @override
+  State<_TimeDialog> createState() => _TimeDialogState();
+}
+
+class _TimeDialogState extends State<_TimeDialog> {
+  late final TextEditingController _h;
+  late final TextEditingController _m;
+
+  @override
+  void initState() {
+    super.initState();
+    final total = (widget.initialHours * 60).round();
+    _h = TextEditingController(text: '${total ~/ 60}');
+    _m = TextEditingController(text: '${total % 60}');
+  }
+
+  @override
+  void dispose() {
+    _h.dispose();
+    _m.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final h = int.tryParse(_h.text.trim()) ?? 0;
+    final m = int.tryParse(_m.text.trim()) ?? 0;
+    final hours = h + m / 60.0;
+    Navigator.pop(context, hours > 0 ? hours : -1.0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Час друку однієї копії'),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('Введіть час, який показує ваш слайсер — розрахунок світла та амортизації стане точним.'),
+        const SizedBox(height: 16),
+        Row(children: [
+          Expanded(
+            child: TextField(
+              controller: _h,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Години', border: OutlineInputBorder()),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: _m,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Хвилини', border: OutlineInputBorder()),
+              onSubmitted: (_) => _save(),
+            ),
+          ),
+        ]),
+      ]),
+      actions: [
+        if (widget.isManual)
+          TextButton(onPressed: () => Navigator.pop(context, -1.0), child: const Text('Оцінка')),
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
+        FilledButton(onPressed: _save, child: const Text('Готово')),
       ],
     );
   }

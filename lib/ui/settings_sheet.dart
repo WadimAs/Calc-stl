@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../slicer/settings.dart';
+import '../platform/updates.dart';
 import 'widgets.dart';
 
 Future<void> showSettingsSheet(
@@ -143,6 +144,13 @@ class _SettingsBodyState extends State<_SettingsBody> {
           step: 1,
           onChanged: (v) => _set(s.copyWith(bottomLayers: v.round())),
         ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Товщина вертикальної оболонки'),
+          subtitle: const Text('Суцільне заповнення біля похилих стінок, як у Bambu/Orca/Prusa'),
+          value: s.ensureVerticalShell,
+          onChanged: (v) => _set(s.copyWith(ensureVerticalShell: v)),
+        ),
         _section('Заповнення — ${fmtNum(s.infillPercent, 0)}%'),
         Slider(
           value: s.infillPercent.clamp(0, 100).toDouble(),
@@ -189,23 +197,76 @@ class _SettingsBodyState extends State<_SettingsBody> {
             onChanged: (v) => _set(s.copyWith(supportDensity: v)),
           ),
         ],
-        _section('Вартість'),
+        _section('Собівартість'),
         NumberField(
           key: ValueKey('price-${s.materialId}'),
-          label: 'Ціна ${materialById(s.materialId).name}, $currency за кг',
+          label: 'Котушка ${materialById(s.materialId).name}, за 1 кг',
+          suffix: currency,
           value: s.pricePerKg,
           onChanged: (v) => _set(_s.withPrice(v)),
         ),
         const SizedBox(height: 12),
+        InputDecorator(
+          decoration: const InputDecoration(
+            labelText: 'Принтер (для оцінки часу)',
+            border: OutlineInputBorder(),
+            contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: printerById(s.printerId).id,
+              items: [
+                for (final p in printers) DropdownMenuItem(value: p.id, child: Text(p.name, overflow: TextOverflow.ellipsis)),
+              ],
+              onChanged: (id) {
+                if (id == null) return;
+                _set(_s.copyWith(printerId: id, powerW: printerById(id).powerW));
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(
+            child: NumberField(
+              key: ValueKey('power-${s.printerId}'),
+              label: 'Споживання',
+              suffix: 'Вт',
+              value: s.powerW,
+              onChanged: (v) => _set(_s.copyWith(powerW: v)),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: NumberField(
+              label: 'Тариф, за кВт·год',
+              suffix: currency,
+              value: s.tariff,
+              onChanged: (v) => _set(_s.copyWith(tariff: v)),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 12),
         NumberField(
-          label: 'Націнка, %',
+          label: 'Амортизація, за годину друку',
+          helper: 'Ціна принтера й запчастин ÷ ресурс у годинах',
+          suffix: currency,
+          value: s.amortizationPerHour,
+          onChanged: (v) => _set(_s.copyWith(amortizationPerHour: v)),
+        ),
+        _section('Заробіток'),
+        NumberField(
+          label: 'Націнка на собівартість',
+          suffix: '%',
           value: s.markupPercent,
           onChanged: (v) => _set(_s.copyWith(markupPercent: v)),
         ),
         const SizedBox(height: 12),
         NumberField(
-          label: 'Доплата за замовлення, $currency',
+          label: 'Доплата за замовлення',
           helper: 'Робота, моделювання, пакування тощо',
+          suffix: currency,
           value: s.extraCost,
           onChanged: (v) => _set(_s.copyWith(extraCost: v)),
         ),
@@ -285,8 +346,59 @@ class _SettingsBodyState extends State<_SettingsBody> {
           'Розрахунок не враховує кайму (brim), спідницю та очищувальну вежу.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
+        const SizedBox(height: 16),
+        const _AboutRow(),
       ],
     );
   }
 }
 
+
+class _AboutRow extends StatefulWidget {
+  const _AboutRow();
+
+  @override
+  State<_AboutRow> createState() => _AboutRowState();
+}
+
+class _AboutRowState extends State<_AboutRow> {
+  String _version = '';
+  bool _checking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Updates.installedName().then((v) {
+      if (mounted) setState(() => _version = v);
+    });
+  }
+
+  Future<void> _check() async {
+    setState(() => _checking = true);
+    final u = await Updates.check();
+    if (!mounted) return;
+    setState(() => _checking = false);
+    if (u == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('У вас найновіша версія')));
+    } else {
+      await Updates.open(u.downloadUrl).catchError((Object _) {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(children: [
+      Expanded(
+        child: Text('Версія $_version', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+      ),
+      TextButton.icon(
+        onPressed: _checking ? null : _check,
+        icon: _checking
+            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.system_update_outlined),
+        label: const Text('Перевірити оновлення'),
+      ),
+    ]);
+  }
+}

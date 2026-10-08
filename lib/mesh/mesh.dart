@@ -19,6 +19,8 @@ class FloatBuf {
 
   double operator [](int i) => _data[i];
 
+  void setAt(int i, double v) => _data[i] = v;
+
   Float32List toList() => Float32List.fromList(Float32List.sublistView(_data, 0, length));
 }
 
