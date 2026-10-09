@@ -12,6 +12,9 @@ class Product {
   final double price; // selling price per piece
   final String? thumbPath;
 
+  /// Photo of the real printed product (shown instead of the render).
+  final String? photoPath;
+
   const Product({
     required this.id,
     required this.name,
@@ -22,9 +25,13 @@ class Product {
     required this.cost,
     required this.price,
     this.thumbPath,
+    this.photoPath,
   });
 
-  Product copyWith({String? name, double? price}) => Product(
+  /// Best picture: the photo, else the render.
+  String? get picture => photoPath ?? thumbPath;
+
+  Product copyWith({String? name, double? price, String? photoPath, bool clearPhoto = false}) => Product(
         id: id,
         name: name ?? this.name,
         material: material,
@@ -34,6 +41,7 @@ class Product {
         cost: cost,
         price: price ?? this.price,
         thumbPath: thumbPath,
+        photoPath: clearPhoto ? null : (photoPath ?? this.photoPath),
       );
 
   Map<String, dynamic> toJson() => {
@@ -46,6 +54,7 @@ class Product {
         'cost': cost,
         'price': price,
         'thumbPath': thumbPath,
+        'photoPath': photoPath,
       };
 
   static Product? fromJson(Object? raw) {
@@ -61,6 +70,7 @@ class Product {
       cost: d('cost'),
       price: d('price'),
       thumbPath: raw['thumbPath'] is String ? raw['thumbPath'] as String : null,
+      photoPath: raw['photoPath'] is String ? raw['photoPath'] as String : null,
     );
   }
 }

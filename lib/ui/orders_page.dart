@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../catalog/catalog.dart';
 import '../clients/clients.dart';
+import '../data/photos.dart';
 import '../data/records.dart';
 import '../history/history.dart';
 import '../orders/orders.dart';
@@ -12,6 +13,7 @@ import '../platform/files.dart';
 import '../slicer/settings.dart';
 import '../spools/spools.dart';
 import 'clients_page.dart';
+import 'photos_ui.dart';
 import 'quote_page.dart';
 import 'widgets.dart';
 
@@ -248,7 +250,9 @@ class _OrdersPageState extends State<OrdersPage> {
                                     .push(MaterialPageRoute<void>(builder: (_) => OrderPage(orderId: o.id)));
                                 _reload();
                               },
-                              leading: ItemThumb(o.items.isEmpty ? null : o.items.first.thumbPath),
+                              leading: ItemThumb(o.photos.isNotEmpty
+                                  ? o.photos.first
+                                  : (o.items.isEmpty ? null : o.items.first.thumbPath)),
                               title: Text(o.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                               subtitle: Padding(
                                 padding: const EdgeInsets.only(top: 4),
@@ -394,7 +398,7 @@ class _OrderPageState extends State<OrderPage> {
       builder: (ctx) => ListView(children: [
         for (final p in products)
           ListTile(
-            leading: ItemThumb(p.thumbPath, size: 40),
+            leading: ItemThumb(p.picture, size: 40),
             title: Text(p.name),
             subtitle: Text('${p.material} · ${fmtGrams(p.grams)}'),
             trailing: Text(fmtMoney(p.price)),
@@ -464,6 +468,9 @@ class _OrderPageState extends State<OrderPage> {
     if (ok != true) return;
     if (o.deducted.isNotEmpty) await SpoolStore.adjust(o.deducted);
     await OrderReminders.cancel(o);
+    for (final p in o.photos) {
+      await Photos.delete(p);
+    }
     await OrderStore.remove(o.id);
     if (mounted) Navigator.pop(context);
   }
@@ -680,6 +687,30 @@ class _OrderPageState extends State<OrderPage> {
             ),
           ),
           const SizedBox(height: 12),
+          Text('Фото готового виробу', style: theme.textTheme.titleSmall),
+          const SizedBox(height: 8),
+          PhotoStrip(
+            photos: o.photos,
+            onAdd: () async {
+              final path = await addPhoto(context);
+              if (path == null || !mounted) return;
+              setState(() => o.photos.add(path));
+              _save();
+            },
+            onOpen: (i) => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => PhotoViewer(
+                photos: List.of(o.photos),
+                initial: i,
+                onDelete: (path) async {
+                  await Photos.delete(path);
+                  if (!mounted) return;
+                  setState(() => o.photos.remove(path));
+                  _save();
+                },
+              ),
+            )),
+          ),
+          const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: o.items.isEmpty
                 ? null
@@ -703,7 +734,7 @@ OrderItem productToItem(Product p, {int qty = 1}) => OrderItem(
       hoursEach: p.hours,
       costEach: p.cost,
       priceEach: p.price,
-      thumbPath: p.thumbPath,
+      thumbPath: p.picture,
       source: 'прайс',
     );
 

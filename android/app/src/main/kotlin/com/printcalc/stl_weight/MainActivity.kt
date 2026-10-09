@@ -16,6 +16,9 @@ class MainActivity : FlutterActivity() {
     private val pickRequest = 4711
     private val saveRequest = 4712
     private val backupRequest = 4714
+    private val imageRequest = 4715
+    private val cameraRequest = 4716
+    private var pendingImage: MethodChannel.Result? = null
     private var pendingBackup: MethodChannel.Result? = null
     private var pendingSave: MethodChannel.Result? = null
     private var pendingSaveBytes: ByteArray? = null
@@ -51,6 +54,39 @@ class MainActivity : FlutterActivity() {
                     val uri = initialUri
                     initialUri = null
                     if (uri == null) result.success(null) else readUri(uri) { result.success(it) }
+                }
+                "pickImage" -> {
+                    pendingImage?.success(null)
+                    pendingImage = result
+                    val i = Intent(Intent.ACTION_GET_CONTENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "image/*"
+                    }
+                    try {
+                        startActivityForResult(i, imageRequest)
+                    } catch (e: Exception) {
+                        pendingImage = null
+                        result.error("image", e.message, null)
+                    }
+                }
+                "takePhoto" -> {
+                    pendingImage?.success(null)
+                    pendingImage = result
+                    try {
+                        val dir = java.io.File(cacheDir, "share")
+                        dir.mkdirs()
+                        java.io.File(dir, "capture.jpg").delete()
+                        val uri = Uri.parse("content://$packageName.share/capture.jpg")
+                        val i = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                            putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri)
+                            clipData = android.content.ClipData.newRawUri("capture", uri)
+                            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivityForResult(i, cameraRequest)
+                    } catch (e: Exception) {
+                        pendingImage = null
+                        result.error("camera", e.message, null)
+                    }
                 }
                 "getInitialLink" -> {
                     result.success(initialLink)
@@ -223,6 +259,29 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == imageRequest || requestCode == cameraRequest) {
+            val res = pendingImage ?: return
+            pendingImage = null
+            if (resultCode != Activity.RESULT_OK) {
+                res.success(null)
+                return
+            }
+            val uri = if (requestCode == imageRequest) data?.data else
+                Uri.fromFile(java.io.File(java.io.File(cacheDir, "share"), "capture.jpg"))
+            if (uri == null) {
+                res.success(null)
+                return
+            }
+            Thread {
+                val bytes = try {
+                    processImage(uri)
+                } catch (e: Throwable) {
+                    null
+                }
+                mainHandler.post { res.success(bytes) }
+            }.start()
+            return
+        }
         if (requestCode == backupRequest) {
             val res = pendingBackup ?: return
             pendingBackup = null
@@ -289,6 +348,48 @@ class MainActivity : FlutterActivity() {
             }
             else -> null
         }
+    }
+
+    private fun openImage(uri: Uri): java.io.InputStream? =
+        if (uri.scheme == "file") java.io.FileInputStream(uri.path ?: "") else contentResolver.openInputStream(uri)
+
+    /** Downscales a photo to at most [maxSide] px, applies EXIF rotation, returns JPEG. */
+    private fun processImage(uri: Uri, maxSide: Int = 1600): ByteArray? {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        openImage(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide) sample *= 2
+        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+        val src = openImage(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, opts) } ?: return null
+        var rotation = 0f
+        if (Build.VERSION.SDK_INT >= 24) {
+            try {
+                openImage(uri)?.use {
+                    val exif = android.media.ExifInterface(it)
+                    rotation = when (exif.getAttributeInt(
+                        android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL
+                    )) {
+                        android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+                        android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+                        android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+                        else -> 0f
+                    }
+                }
+            } catch (e: Exception) {
+                rotation = 0f
+            }
+        }
+        val scale = minOf(1f, maxSide.toFloat() / maxOf(src.width, src.height))
+        val m = android.graphics.Matrix()
+        m.postScale(scale, scale)
+        if (rotation != 0f) m.postRotate(rotation)
+        val out = android.graphics.Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
+        val bos = java.io.ByteArrayOutputStream()
+        out.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, bos)
+        if (out !== src) out.recycle()
+        src.recycle()
+        return bos.toByteArray()
     }
 
     /** First http(s) link in shared text (e.g. a Thingiverse page). */

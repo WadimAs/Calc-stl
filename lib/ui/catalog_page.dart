@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../catalog/catalog.dart';
+import '../data/photos.dart';
 import '../history/history.dart';
 import '../orders/orders.dart';
 import '../platform/files.dart';
 import '../slicer/settings.dart';
 import 'orders_page.dart';
+import 'photos_ui.dart';
 import 'widgets.dart';
 
 String priceListText(List<Product> list) {
@@ -79,7 +81,27 @@ class _CatalogPageState extends State<CatalogPage> {
     if (mounted) setState(() => _list = list);
   }
 
+  Future<void> _setPhoto(Product p) async {
+    final path = await addPhoto(context);
+    if (path == null) return;
+    if (p.photoPath != null) await Photos.delete(p.photoPath!);
+    final list = await productStore.upsert(p.copyWith(photoPath: path));
+    if (mounted) setState(() => _list = list);
+  }
+
+  void _viewPhoto(Product p) => Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => PhotoViewer(
+          photos: [p.photoPath!],
+          onDelete: (path) async {
+            await Photos.delete(path);
+            final list = await productStore.upsert(p.copyWith(clearPhoto: true));
+            if (mounted) setState(() => _list = list);
+          },
+        ),
+      ));
+
   Future<void> _delete(Product p) async {
+    if (p.photoPath != null) await Photos.delete(p.photoPath!);
     final list = await productStore.remove(p.id);
     if (mounted) setState(() => _list = list);
   }
@@ -171,7 +193,10 @@ class _CatalogPageState extends State<CatalogPage> {
                       Card(
                         margin: const EdgeInsets.symmetric(vertical: 4),
                         child: ListTile(
-                          leading: ItemThumb(p.thumbPath),
+                          leading: GestureDetector(
+                            onTap: p.photoPath == null ? null : () => _viewPhoto(p),
+                            child: ItemThumb(p.picture),
+                          ),
                           title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
                           subtitle: Text(
                             '${p.material} · ${fmtGrams(p.grams)} · собів. ${fmtMoney(p.cost)}',
@@ -186,11 +211,18 @@ class _CatalogPageState extends State<CatalogPage> {
                                 if (v == 'order') _toOrder(p);
                                 if (v == 'edit') _edit(p);
                                 if (v == 'del') _delete(p);
+                                if (v == 'photo') _setPhoto(p);
+                                if (v == 'share') sharePhoto(p.photoPath!).catchError((Object _) {});
                               },
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(value: 'order', child: Text('До замовлення')),
-                                PopupMenuItem(value: 'edit', child: Text('Змінити ціну')),
-                                PopupMenuItem(value: 'del', child: Text('Видалити')),
+                              itemBuilder: (_) => [
+                                const PopupMenuItem(value: 'order', child: Text('До замовлення')),
+                                const PopupMenuItem(value: 'edit', child: Text('Змінити ціну')),
+                                PopupMenuItem(
+                                    value: 'photo',
+                                    child: Text(p.photoPath == null ? 'Додати фото' : 'Замінити фото')),
+                                if (p.photoPath != null)
+                                  const PopupMenuItem(value: 'share', child: Text('Надіслати фото')),
+                                const PopupMenuItem(value: 'del', child: Text('Видалити')),
                               ],
                             ),
                           ]),

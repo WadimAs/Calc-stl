@@ -42,6 +42,17 @@ class PlatformFiles {
     }
   }
 
+  /// Photo from the gallery / files, downscaled to JPEG (≤1600 px).
+  static Future<Uint8List?> pickImage() => _image('pickImage');
+
+  /// Photo from the camera app, downscaled to JPEG.
+  static Future<Uint8List?> takePhoto() => _image('takePhoto');
+
+  static Future<Uint8List?> _image(String method) async {
+    final r = await _channel.invokeMethod<Object?>(method);
+    return r is Uint8List ? r : null;
+  }
+
   /// Link shared to the app as text (e.g. from a browser), if any.
   static Future<String?> initialLink() async {
     try {

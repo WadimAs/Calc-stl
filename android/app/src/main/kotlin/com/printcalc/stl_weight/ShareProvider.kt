@@ -14,11 +14,13 @@ import java.io.FileNotFoundException
 class ShareProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
 
-    private fun fileFor(uri: Uri): File? {
+    private fun fileFor(uri: Uri, forWrite: Boolean = false): File? {
         val name = uri.lastPathSegment ?: return null
         if (name.contains("/") || name.contains("..")) return null
         val dir = File(context?.cacheDir ?: return null, "share")
         val f = File(dir, name)
+        // Only the camera capture file may be created by another app.
+        if (forWrite) return if (name.startsWith("capture")) f.also { dir.mkdirs() } else null
         return if (f.exists()) f else null
     }
 
@@ -48,7 +50,7 @@ class ShareProvider : ContentProvider() {
         val p = uri.lastPathSegment ?: ""
         return when {
             p.endsWith(".png") -> "image/png"
-            p.endsWith(".jpg") -> "image/jpeg"
+            p.endsWith(".jpg") || p.endsWith(".jpeg") -> "image/jpeg"
             p.endsWith(".csv") -> "text/csv"
             p.endsWith(".json") -> "application/json"
             p.endsWith(".pdf") -> "application/pdf"
@@ -57,6 +59,14 @@ class ShareProvider : ContentProvider() {
     }
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
+        if (mode.contains('w')) {
+            val f = fileFor(uri, forWrite = true) ?: throw FileNotFoundException(uri.toString())
+            return ParcelFileDescriptor.open(
+                f,
+                ParcelFileDescriptor.MODE_READ_WRITE or ParcelFileDescriptor.MODE_CREATE or
+                    ParcelFileDescriptor.MODE_TRUNCATE
+            )
+        }
         val f = fileFor(uri) ?: throw FileNotFoundException(uri.toString())
         return ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY)
     }

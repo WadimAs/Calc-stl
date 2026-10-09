@@ -120,6 +120,9 @@ class Order {
   /// Plastic written off spools when the order was printed: spool id → grams.
   Map<String, double> deducted;
 
+  /// Photos of the finished order (file paths).
+  List<String> photos;
+
   Order({
     required this.id,
     required this.createdAt,
@@ -136,8 +139,10 @@ class Order {
     this.roundTo = 0,
     this.discounts = const [],
     Map<String, double>? deducted,
+    List<String>? photos,
   })  : items = items ?? [],
-        deducted = deducted ?? {};
+        deducted = deducted ?? {},
+        photos = photos ?? [];
 
   factory Order.create(SliceSettings s, {String client = ''}) => Order(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -214,6 +219,7 @@ class Order {
         'roundTo': roundTo,
         'discounts': [for (final d in discounts) d.toJson()],
         'deducted': deducted,
+        'photos': photos,
       };
 
   static Order? fromJson(Object? raw) {
@@ -248,6 +254,11 @@ class Order {
               QtyDiscount((e[0] as num).toInt(), (e[1] as num).toDouble()),
       ],
       deducted: deducted,
+      photos: [
+        if (raw['photos'] is List)
+          for (final p in raw['photos'] as List)
+            if (p is String) p,
+      ],
     );
   }
 }

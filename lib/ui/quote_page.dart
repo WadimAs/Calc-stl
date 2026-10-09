@@ -43,6 +43,7 @@ class _QuotePageState extends State<QuotePage> {
   final _key = GlobalKey();
   bool _busy = false;
   bool _invoice = false;
+  late bool _withPhotos = widget.order.photos.isNotEmpty;
   BusinessInfo _business = const BusinessInfo();
 
   @override
@@ -138,10 +139,17 @@ class _QuotePageState extends State<QuotePage> {
                 label: const Text('Додати свої реквізити для оплати'),
               ),
             ),
+          if (widget.order.photos.isNotEmpty)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Додати фото виробу'),
+              value: _withPhotos,
+              onChanged: (v) => setState(() => _withPhotos = v),
+            ),
           const SizedBox(height: 12),
           RepaintBoundary(
             key: _key,
-            child: QuoteCard(order: widget.order, invoice: _invoice, business: _business),
+            child: QuoteCard(order: widget.order, invoice: _invoice, business: _business, photos: _withPhotos),
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
@@ -184,8 +192,15 @@ class QuoteCard extends StatelessWidget {
   final Order order;
   final bool invoice;
   final BusinessInfo business;
+  final bool photos;
 
-  const QuoteCard({super.key, required this.order, this.invoice = false, this.business = const BusinessInfo()});
+  const QuoteCard({
+    super.key,
+    required this.order,
+    this.invoice = false,
+    this.business = const BusinessInfo(),
+    this.photos = false,
+  });
 
   static const _ink = Color(0xFF1E1B26);
   static const _muted = Color(0xFF6B6577);
@@ -267,6 +282,24 @@ class QuoteCard extends StatelessWidget {
                 Text(fmtMoney(it.priceEach * it.qty), style: base.copyWith(fontWeight: FontWeight.w600)),
               ]),
             ),
+          if (photos && o.photos.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(children: [
+              for (final p in o.photos.take(3)) ...[
+                Expanded(
+                  child: AspectRatio(
+                    aspectRatio: o.photos.length == 1 ? 4 / 3 : 1,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.file(File(p), fit: BoxFit.cover, cacheWidth: 900),
+                    ),
+                  ),
+                ),
+                if (p != o.photos.take(3).last) const SizedBox(width: 6),
+              ],
+            ]),
+            const SizedBox(height: 10),
+          ],
           const Divider(color: Color(0xFFE7E3EC), height: 1),
           const SizedBox(height: 8),
           if (t.discount > 0) row('Знижка від кількості', '−${fmtMoney(t.discount)}'),
