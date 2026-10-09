@@ -913,7 +913,6 @@ void main() {
       expect(models.map((m) => m.name).toList(), ['big.stl', 'small.3mf']);
     });
   });
-  });
 }
 
 final _epoch = DateTime.fromMillisecondsSinceEpoch(0);
