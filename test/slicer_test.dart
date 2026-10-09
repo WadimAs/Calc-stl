@@ -4,7 +4,11 @@ import 'dart:io' show ZLibEncoder;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:stl_weight/clients/clients.dart';
 import 'package:stl_weight/history/history.dart';
+import 'package:stl_weight/orders/reminders.dart';
+import 'package:stl_weight/platform/downloader.dart';
+import 'package:stl_weight/platform/pdf.dart';
 import 'package:stl_weight/mesh/holes.dart';
 import 'package:stl_weight/mesh/loader.dart';
 import 'package:stl_weight/mesh/mesh_check.dart';
@@ -752,6 +756,163 @@ void main() {
       expect(sb.remainingGrams, 120);
       expect(sb.isLow, isTrue);
     });
+  });
+
+  group('plates, vase, colours', () {
+    test('copies per plate', () {
+      expect(copiesPerPlate(20, 20, 256, 256, 5), 100);
+      expect(copiesPerPlate(300, 10, 256, 256, 5), 0);
+      // 100×20 fits better rotated on a narrow bed.
+      expect(copiesPerPlate(100, 20, 120, 250, 5), copiesPerPlate(20, 100, 120, 250, 5));
+      expect(copiesPerPlate(100, 20, 120, 250, 5), greaterThanOrEqualTo(10));
+    });
+
+    test('colour waste', () {
+      const s = SliceSettings();
+      expect(ColorWaste.estimate([1, 1, 1], 0.2, s).changes, 0);
+      final w = ColorWaste.estimate([1, 2, 2, 1, 1], 0.2, s);
+      expect(w.changes, 2);
+      expect(w.flushMm3, 2 * s.flushMm3);
+      expect(w.towerMm3, closeTo(3 * 245 * 0.2, 1e-9));
+      final noTower = ColorWaste.estimate([2], 0.2, s.copyWith(primeTower: false));
+      expect(noTower.towerMm3, 0);
+    });
+
+    test('vase mode prints one wall and a bottom', () {
+      const base = SliceSettings(layerHeight: 0.2, firstLayerHeight: 0.2, lineWidth: 0.45, bottomLayers: 3);
+      final normal = sliceMesh(box(40, 40, 40), base);
+      final vase = sliceMesh(box(40, 40, 40), base.copyWith(vaseMode: true));
+      const expected = 3 * 1600 * 0.2 + 197 * 160 * 0.45 * 0.2;
+      expect(vase.volumeMm3, closeTo(expected, expected * 0.15));
+      expect(vase.volumeMm3, lessThan(normal.volumeMm3 * 0.6));
+    });
+
+    test('big model: 160k triangle sphere slices fine', () {
+      const lat = 200, lon = 400;
+      const r = 40.0;
+      final out = Float32List(lat * lon * 2 * 9);
+      List<double> p(int i, int j) {
+        final th = math.pi * i / lat, ph = 2 * math.pi * j / lon;
+        return [r * math.sin(th) * math.cos(ph), r * math.sin(th) * math.sin(ph), r + r * math.cos(th)];
+      }
+
+      int o = 0;
+      void put(List<double> a) {
+        for (final v in a) {
+          out[o++] = v;
+        }
+      }
+
+      for (int i = 0; i < lat; i++) {
+        for (int j = 0; j < lon; j++) {
+          final a = p(i, j), b = p(i + 1, j), c = p(i + 1, j + 1), d = p(i, j + 1);
+          put(a);
+          put(b);
+          put(c);
+          put(a);
+          put(c);
+          put(d);
+        }
+      }
+      final sw = Stopwatch()..start();
+      final res = sliceMesh(out, const SliceSettings(infillPercent: 100));
+      sw.stop();
+      // ignore: avoid_print
+      print('sphere 160k tris: ${sw.elapsedMilliseconds} ms, ${res.layers} layers');
+      final v = 4 / 3 * math.pi * r * r * r;
+      expect(res.volumeMm3, closeTo(v, v * 0.05));
+      expect(sw.elapsed.inSeconds, lessThan(120));
+    });
+  });
+
+  group('business 2', () {
+    test('client links', () {
+      const c = Client(id: '1', name: 'Оля', phone: '+38 (050) 123-45-67', telegram: '@olya_print');
+      expect(c.callUrl, 'tel:+380501234567');
+      expect(c.telegramUrl, 'https://t.me/olya_print');
+      expect(c.viberUrl, 'viber://chat?number=%2B380501234567');
+      const p = Client(id: '2', name: 'Петро', phone: '0671112233');
+      expect(p.telegramUrl, 'https://t.me/+0671112233');
+      const none = Client(id: '3', name: 'X');
+      expect(none.callUrl, isNull);
+      expect(none.telegramUrl, isNull);
+      final back = Client.fromJson(jsonDecode(jsonEncode(c.toJson())))!;
+      expect(back.telegram, '@olya_print');
+    });
+
+    test('order deadline and reminders', () {
+      final now = DateTime(2026, 10, 9, 12);
+      final o = Order(id: 'x', createdAt: now, dueAt: DateTime(2026, 10, 12));
+      expect(OrderReminders.fireTime(o, now: now), DateTime(2026, 10, 12, 9));
+      expect(OrderReminders.fireTime(o, now: DateTime(2026, 10, 12, 10)), isNull);
+      o.status = OrderStatus.done;
+      expect(OrderReminders.fireTime(o, now: now), isNull);
+      final past = Order(id: 'y', createdAt: now, dueAt: DateTime(2000, 1, 1));
+      expect(past.overdue, isTrue);
+      expect(Order(id: 'z', createdAt: now).overdue, isFalse);
+      final back = Order.fromJson(jsonDecode(jsonEncode(o.toJson())))!;
+      expect(back.dueAt, DateTime(2026, 10, 12));
+      expect(back.number, '261009-1200');
+    });
+
+    test('spool price per kg', () {
+      final sp = Spool(
+        id: 's',
+        materialId: 'PLA',
+        name: '',
+        colorArgb: 0,
+        totalGrams: 1000,
+        remainingGrams: 1000,
+        createdAt: _epoch,
+        price: 650,
+      );
+      expect(sp.pricePerKg, closeTo(650, 1e-9));
+      expect(Spool.fromJson(jsonDecode(jsonEncode(sp.toJson())))!.price, 650);
+    });
+
+    test('pdf writer', () {
+      final rgba = Uint8List(40 * 30 * 4);
+      for (int i = 0; i < rgba.length; i += 4) {
+        rgba[i] = 200;
+        rgba[i + 3] = i % 8 == 0 ? 255 : 0;
+      }
+      for (final h in [30, 3000]) {
+        final big = h == 30 ? rgba : Uint8List(40 * h * 4);
+        final pdf = PdfImage.build(big, 40, h, title: 'Рахунок');
+        final text = latin1.decode(pdf);
+        expect(text.startsWith('%PDF-1.4'), isTrue);
+        expect(text.trimRight().endsWith('%%EOF'), isTrue);
+        final start = int.parse(RegExp(r'startxref\n(\d+)').firstMatch(text)!.group(1)!);
+        expect(text.substring(start, start + 4), 'xref');
+        // Every xref entry points at "N 0 obj".
+        final entries = RegExp(r'(\d{10}) 00000 n').allMatches(text).toList();
+        for (int k = 0; k < entries.length; k++) {
+          final off = int.parse(entries[k].group(1)!);
+          expect(text.substring(off).startsWith('${k + 1} 0 obj'), isTrue);
+        }
+        final pages = RegExp(r'/Count (\d+)').firstMatch(text)!.group(1)!;
+        expect(int.parse(pages), h == 30 ? 1 : greaterThan(1));
+      }
+    });
+
+    test('links and archives', () {
+      expect(resolveModelUrl('look https://www.thingiverse.com/thing:12345/files').toString(),
+          'https://www.thingiverse.com/thing:12345/zip');
+      expect(resolveModelUrl('https://example.com/a.stl').toString(), 'https://example.com/a.stl');
+      expect(() => resolveModelUrl('https://makerworld.com/en/models/1'), throwsA(isA<DownloadException>()));
+      expect(() => resolveModelUrl('нема посилання'), throwsA(isA<DownloadException>()));
+      const stl = 'solid a\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\n'
+          'endloop\nendfacet\nendsolid a\n';
+      final z = zip({
+        'files/big.stl': stl * 1,
+        'readme.txt': 'hi',
+        '__MACOSX/files/._big.stl': 'x',
+        'files/small.3mf': 'x',
+      });
+      final models = modelsInZip(z);
+      expect(models.map((m) => m.name).toList(), ['big.stl', 'small.3mf']);
+    });
+  });
   });
 }
 

@@ -3,6 +3,9 @@ import 'dart:io';
 
 import '../platform/files.dart';
 
+/// Called after every write (auto backup hooks in here).
+void Function(String name)? onJsonWrite;
+
 /// JSON documents in the app's private directory.
 class JsonStore {
   static Future<File?> _file(String name) async {
@@ -27,5 +30,6 @@ class JsonStore {
     final tmp = File('${f.path}.tmp');
     await tmp.writeAsString(jsonEncode(value));
     await tmp.rename(f.path);
+    onJsonWrite?.call(name);
   }
 }

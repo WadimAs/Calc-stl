@@ -359,12 +359,15 @@ Mesh parse3mf(Uint8List bytes) {
 
   // Bambu/Orca keep object names in model_settings.config.
   final settingsNames = <String, String>{};
+  final settingsExtruders = <String, int>{};
   final ms = byLower['metadata/model_settings.config'];
   if (ms != null) {
     final text = utf8.decode(zip.read(ms), allowMalformed: true);
     for (final m in RegExp(r'<object\s+id="([^"]+)"\s*>([\s\S]*?)</object>').allMatches(text)) {
       final name = RegExp(r'<metadata\s+key="name"\s+value="([^"]*)"').firstMatch(m.group(2)!)?.group(1);
       if (name != null && name.isNotEmpty) settingsNames[m.group(1)!] = name;
+      final ex = RegExp(r'<metadata\s+key="extruder"\s+value="(\d+)"').firstMatch(m.group(2)!)?.group(1);
+      if (ex != null) settingsExtruders[m.group(1)!] = int.tryParse(ex) ?? 1;
     }
   }
   final objects = <MeshObject>[];
@@ -374,7 +377,7 @@ Mesh parse3mf(Uint8List bytes) {
     final end = out.length ~/ 9;
     if (end > start) {
       final name = settingsNames[id] ?? load(fileKey)?.objects[id]?.name ?? 'Об\'єкт ${objects.length + 1}';
-      objects.add(MeshObject(name, start, end));
+      objects.add(MeshObject(name, start, end, extruder: settingsExtruders[id] ?? 1));
     }
   }
 

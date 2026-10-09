@@ -46,6 +46,9 @@ class SliceResult {
 
   double get totalVolumeMm3 => volumeMm3 + supportVolumeMm3 + brimVolumeMm3;
 
+  /// Seconds of extrusion moves for one copy (no layer changes, no start-up).
+  double movingSeconds(SliceSettings s) => printSeconds(s) - layerOverheadSeconds(layers, s);
+
   /// Estimated print time of one copy (without heating / start sequence).
   double printSeconds(SliceSettings s) => estimatePrintSeconds(
         outer: lengths.outer,
@@ -345,6 +348,9 @@ SliceResult sliceMesh(
   int maxCellsPerSide = 500,
 }) {
   final watch = Stopwatch()..start();
+  if (st.vaseMode) {
+    st = st.copyWith(walls: 1, topLayers: 0, infillPercent: 0, ensureVerticalShell: false);
+  }
   final scale = st.scalePercent / 100.0;
   final nT = source.length ~/ 9;
   final t = Float64List(nT * 9);

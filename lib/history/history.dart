@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../data/json_store.dart';
 import '../platform/files.dart';
 
 /// One saved calculation.
@@ -204,6 +205,7 @@ class HistoryStore {
     final tmp = File('${f.path}.tmp');
     await tmp.writeAsString(jsonEncode([for (final e in list) e.toJson()]));
     await tmp.rename(f.path);
+    onJsonWrite?.call('history.json');
   }
 
   /// Saves a thumbnail PNG and returns its path.

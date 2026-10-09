@@ -2,10 +2,16 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../catalog/catalog.dart';
+import '../clients/clients.dart';
+import '../data/records.dart';
 import '../history/history.dart';
 import '../orders/orders.dart';
+import '../orders/reminders.dart';
+import '../platform/files.dart';
 import '../slicer/settings.dart';
 import '../spools/spools.dart';
+import 'clients_page.dart';
 import 'quote_page.dart';
 import 'widgets.dart';
 
@@ -31,6 +37,48 @@ class StatusChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(status.label, style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+String shortDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}';
+
+/// "до 12.10" chip; red when overdue, orange for today/tomorrow.
+class DueChip extends StatelessWidget {
+  final Order order;
+
+  const DueChip(this.order, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final d = order.dueAt;
+    if (d == null || order.status.printed) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    final now = DateTime.now();
+    final days = DateTime(d.year, d.month, d.day).difference(DateTime(now.year, now.month, now.day)).inDays;
+    final c = days < 0
+        ? scheme.error
+        : days <= 1
+            ? const Color(0xFFE8681F)
+            : scheme.onSurfaceVariant;
+    final text = days < 0
+        ? 'прострочено ${shortDate(d)}'
+        : days == 0
+            ? 'сьогодні'
+            : days == 1
+                ? 'завтра'
+                : 'до ${shortDate(d)}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        border: Border.all(color: c.withValues(alpha: 0.6)),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.event_outlined, size: 12, color: c),
+        const SizedBox(width: 3),
+        Text(text, style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.w600)),
+      ]),
     );
   }
 }
@@ -86,9 +134,13 @@ class _OrdersPageState extends State<OrdersPage> {
   }
 
   Future<void> _newOrder() async {
-    final client = await askText(context, title: 'Нове замовлення', label: 'Клієнт (необов\'язково)');
-    if (client == null) return;
-    final o = Order.create(widget.settings, client: client);
+    final client = await pickClient(context);
+    if (client == null || !mounted) return;
+    final o = Order.create(widget.settings, client: client.name);
+    if (client.id.isNotEmpty) {
+      o.clientId = client.id;
+      o.contact = client.phone.isNotEmpty ? client.phone : client.telegram;
+    }
     await OrderStore.upsert(o);
     if (!mounted) return;
     await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => OrderPage(orderId: o.id)));
@@ -111,8 +163,31 @@ class _OrdersPageState extends State<OrdersPage> {
           return true;
       }
     }).toList();
+    // Active orders: nearest deadline first.
+    if (_filter == 1 && list != null) {
+      list.sort((a, b) {
+        final da = a.dueAt, db = b.dueAt;
+        if (da == null && db == null) return b.createdAt.compareTo(a.createdAt);
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return da.compareTo(db);
+      });
+    }
+    final overdue = all?.where((o) => o.overdue).length ?? 0;
     return Scaffold(
-      appBar: AppBar(title: const Text('Замовлення')),
+      appBar: AppBar(
+        title: const Text('Замовлення'),
+        actions: [
+          IconButton(
+            tooltip: 'Клієнти',
+            icon: const Icon(Icons.people_outline),
+            onPressed: () async {
+              await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ClientsPage()));
+              _reload();
+            },
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _newOrder,
         icon: const Icon(Icons.add),
@@ -136,6 +211,15 @@ class _OrdersPageState extends State<OrdersPage> {
                     ),
                 ]),
               ),
+              if (overdue > 0)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                  child: Row(children: [
+                    Icon(Icons.warning_amber_rounded, size: 18, color: theme.colorScheme.error),
+                    const SizedBox(width: 6),
+                    Text('Прострочено: $overdue', style: TextStyle(color: theme.colorScheme.error)),
+                  ]),
+                ),
               Expanded(
                 child: list!.isEmpty
                     ? Center(
@@ -170,7 +254,9 @@ class _OrdersPageState extends State<OrdersPage> {
                                 padding: const EdgeInsets.only(top: 4),
                                 child: Row(children: [
                                   StatusChip(o.status),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 6),
+                                  DueChip(o),
+                                  if (o.dueAt != null && !o.status.printed) const SizedBox(width: 6),
                                   Expanded(
                                     child: Text(
                                       '${t.pieces} шт · ${fmtGrams(t.grams)} · ${formatDate(o.createdAt).split(' ').first}',
@@ -235,12 +321,90 @@ class _OrderPageState extends State<OrderPage> {
       final found = list.where((x) => x.id == widget.orderId);
       final o = found.isEmpty ? null : found.first;
       if (mounted) setState(() => _order = o);
+      _loadClient();
     });
   }
 
+  Client? _linked;
+
   Future<void> _save() async {
     final o = _order;
-    if (o != null) await OrderStore.upsert(o);
+    if (o == null) return;
+    await OrderStore.upsert(o);
+    await OrderReminders.sync(o);
+  }
+
+  Future<void> _loadClient() async {
+    final id = _order?.clientId;
+    if (id == null) {
+      if (mounted) setState(() => _linked = null);
+      return;
+    }
+    final list = await clientStore.load();
+    final found = list.where((c) => c.id == id);
+    if (mounted) setState(() => _linked = found.isEmpty ? null : found.first);
+  }
+
+  Future<void> _chooseClient() async {
+    final c = await pickClient(context);
+    if (c == null || !mounted) return;
+    final o = _order!;
+    setState(() {
+      if (c.id.isEmpty) {
+        o.clientId = null;
+        o.client = '';
+      } else {
+        o.clientId = c.id;
+        o.client = c.name;
+        if (o.contact.isEmpty) o.contact = c.phone.isNotEmpty ? c.phone : c.telegram;
+      }
+    });
+    _save();
+    _loadClient();
+  }
+
+  Future<void> _chooseDue() async {
+    final o = _order!;
+    final now = DateTime.now();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: o.dueAt ?? now.add(const Duration(days: 3)),
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 2),
+      helpText: 'Коли віддати замовлення',
+    );
+    if (d == null) return;
+    await PlatformFiles.requestNotifications();
+    setState(() => o.dueAt = d);
+    _save();
+  }
+
+  Future<void> _addFromCatalog() async {
+    final products = await productStore.load();
+    if (!mounted) return;
+    if (products.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Прайс-лист порожній. Додайте вироби кнопкою «У прайс-лист» після розрахунку.'),
+      ));
+      return;
+    }
+    final p = await showModalBottomSheet<Product>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => ListView(children: [
+        for (final p in products)
+          ListTile(
+            leading: ItemThumb(p.thumbPath, size: 40),
+            title: Text(p.name),
+            subtitle: Text('${p.material} · ${fmtGrams(p.grams)}'),
+            trailing: Text(fmtMoney(p.price)),
+            onTap: () => Navigator.pop(ctx, p),
+          ),
+      ]),
+    );
+    if (p == null) return;
+    setState(() => _order!.items.add(productToItem(p)));
+    _save();
   }
 
   Future<void> _editField(String title, String current, void Function(String) apply,
@@ -299,6 +463,7 @@ class _OrderPageState extends State<OrderPage> {
     );
     if (ok != true) return;
     if (o.deducted.isNotEmpty) await SpoolStore.adjust(o.deducted);
+    await OrderReminders.cancel(o);
     await OrderStore.remove(o.id);
     if (mounted) Navigator.pop(context);
   }
@@ -338,17 +503,47 @@ class _OrderPageState extends State<OrderPage> {
           Card(
             child: Column(children: [
               ListTile(
-                leading: const Icon(Icons.person_outline),
-                title: Text(o.client.isEmpty ? 'Клієнт' : o.client),
-                subtitle: o.contact.isEmpty ? null : Text(o.contact),
-                trailing: const Icon(Icons.edit_outlined, size: 18),
-                onTap: () => _editField('Клієнт', o.client, (v) => o.client = v),
+                leading: Icon(o.clientId != null ? Icons.person : Icons.person_outline),
+                title: Text(o.client.isEmpty ? 'Вибрати клієнта' : o.client),
+                subtitle: o.clientId != null ? const Text('з бази клієнтів') : null,
+                trailing: IconButton(
+                  tooltip: 'Ввести ім\'я вручну',
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  onPressed: () => _editField('Клієнт', o.client, (v) => o.client = v),
+                ),
+                onTap: _chooseClient,
+                onLongPress: _linked == null
+                    ? null
+                    : () => Navigator.of(context)
+                        .push(MaterialPageRoute<void>(builder: (_) => ClientPage(client: _linked!))),
               ),
+              if (_linked != null && (_linked!.callUrl != null || _linked!.telegramUrl != null))
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: Align(alignment: Alignment.centerLeft, child: ContactButtons(_linked!)),
+                ),
               ListTile(
                 leading: const Icon(Icons.phone_outlined),
                 title: Text(o.contact.isEmpty ? 'Контакт (телефон, Telegram)' : o.contact),
                 trailing: const Icon(Icons.edit_outlined, size: 18),
                 onTap: () => _editField('Контакт', o.contact, (v) => o.contact = v),
+              ),
+              ListTile(
+                leading: Icon(Icons.event_outlined, color: o.overdue ? theme.colorScheme.error : null),
+                title: Text(o.dueAt == null ? 'Термін (нагадаю о 9:00)' : 'Термін: ${formatDate(o.dueAt!).split(' ').first}',
+                    style: o.overdue ? TextStyle(color: theme.colorScheme.error) : null),
+                subtitle: o.overdue ? const Text('прострочено') : null,
+                trailing: o.dueAt == null
+                    ? const Icon(Icons.edit_calendar_outlined, size: 18)
+                    : IconButton(
+                        tooltip: 'Прибрати термін',
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () {
+                          setState(() => o.dueAt = null);
+                          _save();
+                        },
+                      ),
+                onTap: _chooseDue,
               ),
               ListTile(
                 leading: const Icon(Icons.notes_outlined),
@@ -394,6 +589,14 @@ class _OrderPageState extends State<OrderPage> {
                 style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
             ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _addFromCatalog,
+              icon: const Icon(Icons.storefront_outlined),
+              label: const Text('Додати з прайс-листа'),
+            ),
+          ),
           for (final it in o.items)
             Dismissible(
               key: ValueKey(it.id),
@@ -489,6 +692,20 @@ class _OrderPageState extends State<OrderPage> {
     );
   }
 }
+
+OrderItem productToItem(Product p, {int qty = 1}) => OrderItem(
+      id: newId(),
+      name: p.name,
+      material: p.material,
+      materialId: p.materialId,
+      qty: qty,
+      gramsEach: p.grams,
+      hoursEach: p.hours,
+      costEach: p.cost,
+      priceEach: p.price,
+      thumbPath: p.thumbPath,
+      source: 'прайс',
+    );
 
 /// Which spool each material is written off from.
 class _DeductDialog extends StatefulWidget {

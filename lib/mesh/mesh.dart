@@ -81,7 +81,10 @@ class MeshObject {
   final int start;
   final int end;
 
-  const MeshObject(this.name, this.start, this.end);
+  /// Filament slot (1-based) assigned in the slicer project.
+  final int extruder;
+
+  const MeshObject(this.name, this.start, this.end, {this.extruder = 1});
 
   int get triangles => end - start;
 }

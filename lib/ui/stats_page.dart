@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../expenses/expenses.dart';
 import '../history/history.dart';
 import '../orders/orders.dart';
+import 'expenses_page.dart';
 import 'widgets.dart';
 
 const _months = [
@@ -12,11 +14,15 @@ const _months = [
 class _Month {
   final int year, month;
   int orders = 0;
-  double revenue = 0, cost = 0, grams = 0, hours = 0, paid = 0;
+  double revenue = 0, cost = 0, grams = 0, hours = 0, paid = 0, expenses = 0;
 
   _Month(this.year, this.month);
 
   double get profit => revenue - cost;
+
+  /// Revenue minus all recorded expenses (purchases replace the per-order cost
+  /// estimate once the user tracks them).
+  double get net => revenue - expenses;
   String get label => '${_months[month - 1]} $year';
 }
 
@@ -61,6 +67,10 @@ class _StatsPageState extends State<StatsPage> {
       m.hours += t.hours;
       if (o.status == OrderStatus.paid) m.paid += t.total;
     }
+    for (final e in await expenseStore.load()) {
+      final key = e.date.year * 12 + e.date.month - 1;
+      map.putIfAbsent(key, () => _Month(e.date.year, e.date.month)).expenses += e.amount;
+    }
     final list = map.entries.toList()..sort((a, b) => b.key.compareTo(a.key));
     if (mounted) {
       setState(() {
@@ -91,7 +101,19 @@ class _StatsPageState extends State<StatsPage> {
         );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Статистика')),
+      appBar: AppBar(
+        title: const Text('Статистика'),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ExpensesPage()));
+              _load();
+            },
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+            label: const Text('Витрати'),
+          ),
+        ],
+      ),
       body: months == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -113,6 +135,11 @@ class _StatsPageState extends State<StatsPage> {
                     tile('виручка', fmtMoney(months.first.revenue), Icons.payments_outlined),
                     tile('прибуток', fmtMoney(months.first.profit), Icons.trending_up),
                   ]),
+                  if (months.first.expenses > 0)
+                    Row(children: [
+                      tile('витрати', fmtMoney(months.first.expenses), Icons.account_balance_wallet_outlined),
+                      tile('чистий (виручка − витрати)', fmtMoney(months.first.net), Icons.savings_outlined),
+                    ]),
                   Row(children: [
                     tile('замовлень', '${months.first.orders}', Icons.receipt_long_outlined),
                     tile('пластику', fmtGrams(months.first.grams), Icons.circle_outlined),
@@ -158,7 +185,8 @@ class _StatsPageState extends State<StatsPage> {
                         }),
                         const SizedBox(height: 2),
                         Text(
-                          'прибуток ${fmtMoney(m.profit)} · ${m.orders} зам. · ${fmtGrams(m.grams)}',
+                          'прибуток ${fmtMoney(m.profit)} · ${m.orders} зам. · ${fmtGrams(m.grams)}'
+                          '${m.expenses > 0 ? '\nвитрати ${fmtMoney(m.expenses)} · чистий ${fmtMoney(m.net)}' : ''}',
                           style: theme.textTheme.bodySmall,
                         ),
                       ]),

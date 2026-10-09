@@ -1,12 +1,15 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../data/business.dart';
 import '../history/history.dart';
 import '../orders/orders.dart';
 import '../platform/files.dart';
+import '../platform/pdf.dart';
 import 'widgets.dart';
 
 String quoteText(Order o) {
@@ -39,17 +42,30 @@ class QuotePage extends StatefulWidget {
 class _QuotePageState extends State<QuotePage> {
   final _key = GlobalKey();
   bool _busy = false;
+  bool _invoice = false;
+  BusinessInfo _business = const BusinessInfo();
 
-  Future<void> _shareImage() async {
+  @override
+  void initState() {
+    super.initState();
+    BusinessInfo.load().then((b) {
+      if (mounted) setState(() => _business = b);
+    });
+  }
+
+  String get _fileBase => _invoice ? 'rahunok-${widget.order.number}' : 'rozrahunok';
+
+  Future<void> _capture(Future<void> Function(ui.Image img) use) async {
     setState(() => _busy = true);
     try {
       final obj = _key.currentContext?.findRenderObject();
       if (obj is! RenderRepaintBoundary) return;
       final img = await obj.toImage(pixelRatio: 2.5);
-      final data = await img.toByteData(format: ui.ImageByteFormat.png);
-      img.dispose();
-      if (data == null) return;
-      await PlatformFiles.shareFile('rozrahunok.png', 'image/png', data.buffer.asUint8List());
+      try {
+        await use(img);
+      } finally {
+        img.dispose();
+      }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Не вдалося: $e')));
     } finally {
@@ -57,20 +73,100 @@ class _QuotePageState extends State<QuotePage> {
     }
   }
 
+  Future<void> _shareImage() => _capture((img) async {
+        final data = await img.toByteData(format: ui.ImageByteFormat.png);
+        if (data == null) return;
+        await PlatformFiles.shareFile('$_fileBase.png', 'image/png', data.buffer.asUint8List());
+      });
+
+  Future<Uint8List?> _pdf(ui.Image img) async {
+    final data = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (data == null) return null;
+    return PdfImage.build(data.buffer.asUint8List(), img.width, img.height,
+        title: _invoice ? 'Рахунок № ${widget.order.number}' : 'Розрахунок вартості 3D-друку');
+  }
+
+  Future<void> _sharePdf() => _capture((img) async {
+        final pdf = await _pdf(img);
+        if (pdf != null) await PlatformFiles.shareFile('$_fileBase.pdf', 'application/pdf', pdf);
+      });
+
+  Future<void> _savePdf() => _capture((img) async {
+        final pdf = await _pdf(img);
+        if (pdf == null) return;
+        final ok = await PlatformFiles.saveFile('$_fileBase.pdf', 'application/pdf', pdf);
+        if (ok && mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PDF збережено')));
+      });
+
+  Future<void> _editBusiness() async {
+    final r = await showDialog<BusinessInfo>(context: context, builder: (_) => _BusinessDialog(info: _business));
+    if (r == null) return;
+    await r.save();
+    if (mounted) setState(() => _business = r);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Пропозиція для клієнта')),
+      appBar: AppBar(
+        title: Text(_invoice ? 'Рахунок' : 'Пропозиція для клієнта'),
+        actions: [
+          IconButton(
+            tooltip: 'Мої реквізити',
+            onPressed: _editBusiness,
+            icon: const Icon(Icons.storefront_outlined),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          RepaintBoundary(key: _key, child: QuoteCard(order: widget.order)),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: false, label: Text('Пропозиція'), icon: Icon(Icons.request_quote_outlined)),
+              ButtonSegment(value: true, label: Text('Рахунок'), icon: Icon(Icons.receipt_long_outlined)),
+            ],
+            selected: {_invoice},
+            onSelectionChanged: (v) => setState(() => _invoice = v.first),
+          ),
+          if (_invoice && _business.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: TextButton.icon(
+                onPressed: _editBusiness,
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Додати свої реквізити для оплати'),
+              ),
+            ),
+          const SizedBox(height: 12),
+          RepaintBoundary(
+            key: _key,
+            child: QuoteCard(order: widget.order, invoice: _invoice, business: _business),
+          ),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: _busy ? null : _shareImage,
-            icon: const Icon(Icons.image_outlined),
-            label: const Text('Надіслати картинкою'),
+            onPressed: _busy ? null : _sharePdf,
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            label: const Text('Надіслати PDF'),
           ),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : _shareImage,
+                icon: const Icon(Icons.image_outlined),
+                label: const Text('Картинкою'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : _savePdf,
+                icon: const Icon(Icons.save_alt),
+                label: const Text('Зберегти PDF'),
+              ),
+            ),
+          ]),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: () => PlatformFiles.shareText(quoteText(widget.order)).catchError((Object _) {}),
@@ -86,8 +182,10 @@ class _QuotePageState extends State<QuotePage> {
 /// Light card regardless of the app theme (it is sent as an image).
 class QuoteCard extends StatelessWidget {
   final Order order;
+  final bool invoice;
+  final BusinessInfo business;
 
-  const QuoteCard({super.key, required this.order});
+  const QuoteCard({super.key, required this.order, this.invoice = false, this.business = const BusinessInfo()});
 
   static const _ink = Color(0xFF1E1B26);
   static const _muted = Color(0xFF6B6577);
@@ -123,15 +221,22 @@ class QuoteCard extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Розрахунок вартості 3D-друку',
-                    style: TextStyle(color: _ink, fontSize: 17, fontWeight: FontWeight.w700)),
+                Text(invoice ? 'Рахунок № ${o.number}' : 'Розрахунок вартості 3D-друку',
+                    style: const TextStyle(color: _ink, fontSize: 17, fontWeight: FontWeight.w700)),
                 Text(formatDate(DateTime.now()).split(' ').first, style: base.copyWith(color: _muted, fontSize: 12)),
+                if (business.name.trim().isNotEmpty)
+                  Text(business.name.trim(), style: base.copyWith(color: _muted, fontSize: 12)),
               ]),
             ),
           ]),
           if (o.client.trim().isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text('Для: ${o.client.trim()}', style: base.copyWith(fontWeight: FontWeight.w600)),
+            Text(invoice ? 'Платник: ${o.client.trim()}' : 'Для: ${o.client.trim()}',
+                style: base.copyWith(fontWeight: FontWeight.w600)),
+          ],
+          if (o.dueAt != null) ...[
+            const SizedBox(height: 4),
+            Text('Готовність: ${formatDate(o.dueAt!).split(' ').first}', style: base.copyWith(color: _muted)),
           ],
           const SizedBox(height: 12),
           const Divider(color: Color(0xFFE7E3EC), height: 1),
@@ -177,8 +282,78 @@ class QuoteCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(o.note.trim(), style: base.copyWith(color: _muted, fontSize: 12)),
           ],
+          if (invoice && business.payment.trim().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Divider(color: Color(0xFFE7E3EC), height: 1),
+            const SizedBox(height: 8),
+            Text('Оплата', style: base.copyWith(fontWeight: FontWeight.w700)),
+            Text(business.payment.trim(), style: base),
+          ],
+          if (business.contacts.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(business.contacts.trim(), style: base.copyWith(color: _muted, fontSize: 12)),
+          ],
         ]),
       ),
+    );
+  }
+}
+
+class _BusinessDialog extends StatefulWidget {
+  final BusinessInfo info;
+
+  const _BusinessDialog({required this.info});
+
+  @override
+  State<_BusinessDialog> createState() => _BusinessDialogState();
+}
+
+class _BusinessDialogState extends State<_BusinessDialog> {
+  late final _name = TextEditingController(text: widget.info.name);
+  late final _contacts = TextEditingController(text: widget.info.contacts);
+  late final _payment = TextEditingController(text: widget.info.payment);
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _contacts.dispose();
+    _payment.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Мої реквізити'),
+      content: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: _name,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(labelText: 'Назва / ФОП', hintText: 'ФОП Іваненко І. І.'),
+          ),
+          TextField(
+            controller: _contacts,
+            decoration: const InputDecoration(labelText: 'Контакти', hintText: '+380…, @telegram'),
+          ),
+          TextField(
+            controller: _payment,
+            minLines: 2,
+            maxLines: 5,
+            decoration: const InputDecoration(labelText: 'Як оплатити', hintText: 'IBAN UA… або номер картки'),
+          ),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
+        FilledButton(
+          onPressed: () => Navigator.pop(
+            context,
+            BusinessInfo(name: _name.text.trim(), contacts: _contacts.text.trim(), payment: _payment.text.trim()),
+          ),
+          child: const Text('Зберегти'),
+        ),
+      ],
     );
   }
 }

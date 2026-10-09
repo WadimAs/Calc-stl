@@ -6,13 +6,29 @@ import '../slicer/settings.dart';
 import 'zip_reader.dart';
 
 /// Weight / time of one plate as computed by the slicer that made the file.
+/// One filament used on a sliced plate.
+class SlicedFilament {
+  final String type;
+  final String color; // #RRGGBB or ''
+  final double grams;
+
+  const SlicedFilament(this.type, this.color, this.grams);
+}
+
 class SlicedPlate {
   final int index;
   final double grams;
   final double seconds;
   final double meters;
+  final List<SlicedFilament> filaments;
 
-  const SlicedPlate({required this.index, required this.grams, required this.seconds, required this.meters});
+  const SlicedPlate({
+    required this.index,
+    required this.grams,
+    required this.seconds,
+    required this.meters,
+    this.filaments = const [],
+  });
 }
 
 /// Print settings and (for sliced files) exact results found in a 3MF
@@ -41,6 +57,7 @@ class SlicerProject {
   final double? filamentDiameter;
   final double? brimWidth;
   final int? skirtLoops;
+  final bool? vase;
   final List<SlicedPlate> plates;
   final Uint8List? thumbnail;
 
@@ -66,6 +83,7 @@ class SlicerProject {
     this.filamentDiameter,
     this.brimWidth,
     this.skirtLoops,
+    this.vase,
     this.plates = const [],
     this.thumbnail,
   });
@@ -77,6 +95,19 @@ class SlicerProject {
   double get grams => plates.fold(0.0, (a, p) => a + p.grams);
   double get seconds => plates.fold(0.0, (a, p) => a + p.seconds);
   double get meters => plates.fold(0.0, (a, p) => a + p.meters);
+
+  /// Grams per filament (by type + colour) over all plates.
+  List<SlicedFilament> get filaments {
+    final m = <String, SlicedFilament>{};
+    for (final p in plates) {
+      for (final f in p.filaments) {
+        final k = '${f.type}|${f.color}';
+        final o = m[k];
+        m[k] = SlicedFilament(f.type, f.color, (o?.grams ?? 0) + f.grams);
+      }
+    }
+    return m.values.toList();
+  }
 
   /// Our material id for the file's filament type.
   String? get materialId {
@@ -163,6 +194,7 @@ class SlicerProject {
       powerW: printerId == null ? null : printerById(printerId!).powerW,
       brimWidth: brimWidth,
       skirtLoops: skirtLoops,
+      vaseMode: vase,
     );
   }
 
@@ -179,6 +211,7 @@ class SlicerProject {
       if (walls != null) 'Стінки: $walls',
       if (topLayers != null || bottomLayers != null) 'Верх / низ: ${topLayers ?? '—'} / ${bottomLayers ?? '—'} шарів',
       if (infillPercent != null) 'Заповнення: ${n(infillPercent!, 0)}%',
+      if (vase == true) 'Режим вази',
       if (brimWidth != null && brimWidth! > 0) 'Кайма: ${n(brimWidth!, 0)} мм',
       if (skirtLoops != null && skirtLoops! > 0) 'Спідниця: $skirtLoops',
       if (supports != null)
@@ -325,6 +358,7 @@ SlicerProject _fromConfig(String app, Map<String, String> c,
     filamentDiameter: _num(g(['filament_diameter'])),
     brimWidth: brim,
     skirtLoops: skirt,
+    vase: _flag(g(['spiral_mode', 'spiral_vase'])),
     plates: plates,
     thumbnail: thumbnail,
   );
@@ -528,14 +562,18 @@ SlicerProject? readProjectFrom3mf(Uint8List bytes) {
       final seconds = double.tryParse(meta('prediction') ?? '') ?? 0;
       double meters = 0;
       double filamentGrams = 0;
+      final fils = <SlicedFilament>[];
       for (final fm in RegExp(r'<filament\s[^>]*>').allMatches(body)) {
         final tag = fm.group(0)!;
-        meters += double.tryParse(RegExp(r'used_m="([^"]*)"').firstMatch(tag)?.group(1) ?? '') ?? 0;
-        filamentGrams += double.tryParse(RegExp(r'used_g="([^"]*)"').firstMatch(tag)?.group(1) ?? '') ?? 0;
+        String? attr(String n) => RegExp('$n="([^"]*)"').firstMatch(tag)?.group(1);
+        final g = double.tryParse(attr('used_g') ?? '') ?? 0;
+        meters += double.tryParse(attr('used_m') ?? '') ?? 0;
+        filamentGrams += g;
+        if (g > 0) fils.add(SlicedFilament(attr('type') ?? '', attr('color') ?? '', g));
       }
       if (grams <= 0) grams = filamentGrams;
       if (grams > 0 || seconds > 0) {
-        plates.add(SlicedPlate(index: index, grams: grams, seconds: seconds, meters: meters));
+        plates.add(SlicedPlate(index: index, grams: grams, seconds: seconds, meters: meters, filaments: fils));
       }
     }
   }

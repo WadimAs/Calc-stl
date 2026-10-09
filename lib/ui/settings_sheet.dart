@@ -353,6 +353,14 @@ class _SettingsBodyState extends State<_SettingsBody> {
             if (axis != 'Z') const SizedBox(width: 8),
           ],
         ]),
+        const SizedBox(height: 8),
+        NumberField(
+          label: 'Відстань між копіями на столі',
+          suffix: 'мм',
+          value: s.plateGap,
+          defaultValue: d.plateGap,
+          onChanged: (v) => _set(_s.copyWith(plateGap: v)),
+        ),
         _section('Калібрування під слайсер'),
         _withReset(
           Padding(
@@ -558,6 +566,21 @@ class _SettingsBodyState extends State<_SettingsBody> {
             max: 5,
             step: 1,
             onChanged: (v) => _set(_s.copyWith(skirtLoops: v.round())),
+          ),
+          _section('Багатоколірний друк'),
+          NumberField(
+            label: 'Продувка на одну зміну кольору',
+            helper: 'Bambu AMS ≈ 300 мм³ (~0,4 г PLA)',
+            suffix: 'мм³',
+            value: s.flushMm3,
+            defaultValue: d.flushMm3,
+            onChanged: (v) => _set(_s.copyWith(flushMm3: v)),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Вежа очищення (prime tower)'),
+            value: s.primeTower,
+            onChanged: (v) => _set(_s.copyWith(primeTower: v)),
           ),
         _section('Модель'),
         StepperRow(

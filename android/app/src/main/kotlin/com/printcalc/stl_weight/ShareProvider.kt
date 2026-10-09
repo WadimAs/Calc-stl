@@ -51,6 +51,7 @@ class ShareProvider : ContentProvider() {
             p.endsWith(".jpg") -> "image/jpeg"
             p.endsWith(".csv") -> "text/csv"
             p.endsWith(".json") -> "application/json"
+            p.endsWith(".pdf") -> "application/pdf"
             else -> "application/octet-stream"
         }
     }

@@ -116,7 +116,7 @@ LoadedModel _build(String name, Mesh source, SlicerProject? project, Mat3 rotati
       if (i >= enabled.length || !enabled[i]) continue;
       final o = source.objects[i];
       picked.setRange(at * 9, (at + o.triangles) * 9, source.tris, o.start * 9);
-      derivedObjects.add(MeshObject(o.name, at, at + o.triangles));
+      derivedObjects.add(MeshObject(o.name, at, at + o.triangles, extruder: o.extruder));
       at += o.triangles;
     }
   }

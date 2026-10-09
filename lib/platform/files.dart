@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 
+import '../data/json_store.dart';
 import '../slicer/settings.dart';
 
 class PickedFile {
@@ -41,15 +42,66 @@ class PlatformFiles {
     }
   }
 
-  /// Files that arrive while the app is already running.
-  static void listen(void Function(PickedFile file) onFile) {
+  /// Link shared to the app as text (e.g. from a browser), if any.
+  static Future<String?> initialLink() async {
+    try {
+      return await _channel.invokeMethod<String>('getInitialLink');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Files (and shared links) that arrive while the app is already running.
+  static void listen(void Function(PickedFile file) onFile, {void Function(String url)? onLink}) {
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'fileOpened') {
         final f = _fromMap(call.arguments);
         if (f != null) onFile(f);
+      } else if (call.method == 'linkShared' && call.arguments is String) {
+        onLink?.call(call.arguments as String);
       }
       return null;
     });
+  }
+
+  /// Order deadline notification at [at].
+  static Future<void> scheduleReminder(int id, DateTime at, String title, String text) async {
+    try {
+      await _channel.invokeMethod<bool>(
+          'scheduleReminder', {'id': id, 'at': at.millisecondsSinceEpoch, 'title': title, 'text': text});
+    } catch (_) {}
+  }
+
+  static Future<void> cancelReminder(int id) async {
+    try {
+      await _channel.invokeMethod<bool>('cancelReminder', {'id': id});
+    } catch (_) {}
+  }
+
+  /// Asks for the notification permission (Android 13+).
+  static Future<void> requestNotifications() async {
+    try {
+      await _channel.invokeMethod<bool>('requestNotifications');
+    } catch (_) {}
+  }
+
+  /// Lets the user choose a file (Google Drive, local folder…) for automatic
+  /// backups. Returns a persistent document URI.
+  static Future<String?> pickBackupTarget(String name) async {
+    try {
+      return await _channel.invokeMethod<String>('pickBackupTarget', {'name': name});
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Overwrites a document chosen earlier with [pickBackupTarget].
+  static Future<bool> writeUri(String uri, Uint8List bytes) async {
+    try {
+      return await _channel.invokeMethod<bool>('writeUri', {'uri': uri, 'bytes': bytes}) ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Lets the user pick where to save [bytes] (system "Save as" dialog).
@@ -100,6 +152,7 @@ class PlatformFiles {
     try {
       final f = await _settingsFile();
       await f?.writeAsString(jsonEncode(s.toJson()));
+      onJsonWrite?.call('settings.json');
     } catch (_) {}
   }
 }

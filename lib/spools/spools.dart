@@ -10,6 +10,9 @@ class Spool {
   final double remainingGrams;
   final DateTime createdAt;
 
+  /// What the whole spool cost (0 = unknown).
+  final double price;
+
   const Spool({
     required this.id,
     required this.materialId,
@@ -18,13 +21,19 @@ class Spool {
     required this.totalGrams,
     required this.remainingGrams,
     required this.createdAt,
+    this.price = 0,
   });
+
+  /// Price per kilogram from the purchase, or null.
+  double? get pricePerKg => price > 0 && totalGrams > 0 ? price / totalGrams * 1000 : null;
 
   double get fraction => totalGrams > 0 ? (remainingGrams / totalGrams).clamp(0.0, 1.0).toDouble() : 0;
 
   bool get isLow => remainingGrams < 150;
 
-  Spool copyWith({String? materialId, String? name, int? colorArgb, double? totalGrams, double? remainingGrams}) => Spool(
+  Spool copyWith(
+          {String? materialId, String? name, int? colorArgb, double? totalGrams, double? remainingGrams, double? price}) =>
+      Spool(
         id: id,
         materialId: materialId ?? this.materialId,
         name: name ?? this.name,
@@ -32,6 +41,7 @@ class Spool {
         totalGrams: totalGrams ?? this.totalGrams,
         remainingGrams: remainingGrams ?? this.remainingGrams,
         createdAt: createdAt,
+        price: price ?? this.price,
       );
 
   Map<String, dynamic> toJson() => {
@@ -42,6 +52,7 @@ class Spool {
         'total': totalGrams,
         'remaining': remainingGrams,
         'createdAt': createdAt.millisecondsSinceEpoch,
+        'price': price,
       };
 
   static Spool? fromJson(Object? raw) {
@@ -55,6 +66,7 @@ class Spool {
       totalGrams: d('total', 1000),
       remainingGrams: d('remaining', 1000),
       createdAt: DateTime.fromMillisecondsSinceEpoch(raw['createdAt'] is num ? (raw['createdAt'] as num).toInt() : 0),
+      price: d('price', 0),
     );
   }
 }

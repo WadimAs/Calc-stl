@@ -101,6 +101,10 @@ class Order {
   final String id;
   final DateTime createdAt;
   DateTime? doneAt;
+
+  /// Deadline (date the client expects the order).
+  DateTime? dueAt;
+  String? clientId;
   String client;
   String contact;
   String note;
@@ -120,6 +124,8 @@ class Order {
     required this.id,
     required this.createdAt,
     this.doneAt,
+    this.dueAt,
+    this.clientId,
     this.client = '',
     this.contact = '',
     this.note = '',
@@ -144,6 +150,24 @@ class Order {
       );
 
   String get title => client.trim().isNotEmpty ? client.trim() : 'Замовлення від ${_date(createdAt)}';
+
+  /// Not printed yet and the deadline has passed.
+  bool get overdue {
+    final d = dueAt;
+    if (d == null || status.printed) return false;
+    final now = DateTime.now();
+    return DateTime(d.year, d.month, d.day).isBefore(DateTime(now.year, now.month, now.day));
+  }
+
+  /// Invoice number derived from the creation time, e.g. 261009-1432.
+  String get number {
+    String two(int v) => v.toString().padLeft(2, '0');
+    final d = createdAt;
+    return '${two(d.year % 100)}${two(d.month)}${two(d.day)}-${two(d.hour)}${two(d.minute)}';
+  }
+
+  /// Stable small id for notifications.
+  int get reminderId => id.hashCode & 0x7fffffff;
 
   OrderTotals get totals {
     double sub = 0, disc = 0, cost = 0, grams = 0, hours = 0;
@@ -178,6 +202,8 @@ class Order {
         'id': id,
         'createdAt': createdAt.millisecondsSinceEpoch,
         'doneAt': doneAt?.millisecondsSinceEpoch,
+        'dueAt': dueAt?.millisecondsSinceEpoch,
+        'clientId': clientId,
         'client': client,
         'contact': contact,
         'note': note,
@@ -203,6 +229,8 @@ class Order {
       id: raw['id'] as String,
       createdAt: DateTime.fromMillisecondsSinceEpoch(raw['createdAt'] is num ? (raw['createdAt'] as num).toInt() : 0),
       doneAt: raw['doneAt'] is num ? DateTime.fromMillisecondsSinceEpoch((raw['doneAt'] as num).toInt()) : null,
+      dueAt: raw['dueAt'] is num ? DateTime.fromMillisecondsSinceEpoch((raw['dueAt'] as num).toInt()) : null,
+      clientId: raw['clientId'] is String ? raw['clientId'] as String : null,
       client: raw['client'] is String ? raw['client'] as String : '',
       contact: raw['contact'] is String ? raw['contact'] as String : '',
       note: raw['note'] is String ? raw['note'] as String : '',

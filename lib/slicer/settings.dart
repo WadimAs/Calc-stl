@@ -236,6 +236,19 @@ class SliceSettings {
   /// Build volume override (0 = printer profile's).
   final double bedX, bedY, bedZ;
 
+  /// Spiral vase: one wall, no top, no infill.
+  final bool vaseMode;
+
+  /// Gap between copies on the bed, mm.
+  final double plateGap;
+
+  // Multicolour waste.
+  final double flushMm3; // purged per colour change
+  final bool primeTower;
+
+  /// The intro was shown.
+  final bool seenIntro;
+
   const SliceSettings({
     this.layerHeight = 0.2,
     this.firstLayerHeight = 0.2,
@@ -278,6 +291,11 @@ class SliceSettings {
     this.bedX = 0,
     this.bedY = 0,
     this.bedZ = 0,
+    this.vaseMode = false,
+    this.plateGap = 5,
+    this.flushMm3 = 300,
+    this.primeTower = true,
+    this.seenIntro = false,
   });
 
   /// Build volume in use: override or the printer profile's.
@@ -366,6 +384,11 @@ class SliceSettings {
     double? bedX,
     double? bedY,
     double? bedZ,
+    bool? vaseMode,
+    double? plateGap,
+    double? flushMm3,
+    bool? primeTower,
+    bool? seenIntro,
   }) {
     return SliceSettings(
       layerHeight: layerHeight ?? this.layerHeight,
@@ -409,13 +432,18 @@ class SliceSettings {
       bedX: bedX ?? this.bedX,
       bedY: bedY ?? this.bedY,
       bedZ: bedZ ?? this.bedZ,
+      vaseMode: vaseMode ?? this.vaseMode,
+      plateGap: plateGap ?? this.plateGap,
+      flushMm3: flushMm3 ?? this.flushMm3,
+      primeTower: primeTower ?? this.primeTower,
+      seenIntro: seenIntro ?? this.seenIntro,
     );
   }
 
   /// Settings that change the slice geometry (copies, material, prices do not).
   String get geometryKey => '$layerHeight|$firstLayerHeight|$lineWidth|$walls|$topLayers|$bottomLayers|'
       '$infillPercent|$scalePercent|$supportsEnabled|$supportPlateOnly|$supportType|$supportAngle|$supportDensity|'
-      '$ensureVerticalShell|$brimWidth|$skirtLoops';
+      '$ensureVerticalShell|$brimWidth|$skirtLoops|$vaseMode';
 
   Map<String, dynamic> toJson() => {
         'layerHeight': layerHeight,
@@ -459,6 +487,11 @@ class SliceSettings {
         'bedX': bedX,
         'bedY': bedY,
         'bedZ': bedZ,
+        'vaseMode': vaseMode,
+        'plateGap': plateGap,
+        'flushMm3': flushMm3,
+        'primeTower': primeTower,
+        'seenIntro': seenIntro,
         'v': 2,
       };
 
@@ -525,6 +558,12 @@ class SliceSettings {
       bedX: dbl('bedX', d.bedX),
       bedY: dbl('bedY', d.bedY),
       bedZ: dbl('bedZ', d.bedZ),
+      vaseMode: flag('vaseMode', d.vaseMode),
+      plateGap: dbl('plateGap', d.plateGap),
+      flushMm3: dbl('flushMm3', d.flushMm3),
+      primeTower: flag('primeTower', d.primeTower),
+      // Users of earlier versions have seen the app already.
+      seenIntro: flag('seenIntro', j.isNotEmpty),
     );
   }
 }
@@ -575,6 +614,50 @@ double estimatePrintSeconds({
       support / v(p.support) +
       firstLayer / v(p.firstLayer);
   return moving * p.accelFactor + layers * p.layerSeconds;
+}
+
+/// Seconds spent on layer changes (shared by all copies on one plate).
+double layerOverheadSeconds(int layers, SliceSettings settings) =>
+    layers * printerById(settings.printerId).layerSeconds;
+
+/// How many copies of a [sx]×[sy] footprint fit on a [bx]×[by] bed in a grid
+/// with [gap] between them (also tried turned by 90°).
+int copiesPerPlate(double sx, double sy, double bx, double by, double gap) {
+  int grid(double a, double b) {
+    if (a <= 0 || b <= 0 || a > bx || b > by) return 0;
+    return ((bx + gap) / (a + gap)).floor() * ((by + gap) / (b + gap)).floor();
+  }
+
+  final n = grid(sx, sy);
+  final r = grid(sy, sx);
+  return n > r ? n : r;
+}
+
+/// Waste of multicolour printing: purges per colour change and the prime tower.
+class ColorWaste {
+  final int changes;
+  final double flushMm3;
+  final double towerMm3;
+
+  const ColorWaste(this.changes, this.flushMm3, this.towerMm3);
+
+  double get totalMm3 => flushMm3 + towerMm3;
+
+  /// [layerColors]: number of colours present in each layer (bottom up).
+  static ColorWaste estimate(List<int> layerColors, double layerHeight, SliceSettings s) {
+    int changes = 0;
+    int lastChangeLayer = -1;
+    for (int l = 0; l < layerColors.length; l++) {
+      if (layerColors[l] > 1) {
+        changes += layerColors[l] - 1;
+        lastChangeLayer = l;
+      }
+    }
+    if (changes == 0) return const ColorWaste(0, 0, 0);
+    // A ~35×35 mm tower printed with ~20 % fill up to the last change.
+    final tower = s.primeTower ? (lastChangeLayer + 1) * 245.0 * layerHeight : 0.0;
+    return ColorWaste(changes, changes * s.flushMm3, tower);
+  }
 }
 
 /// Cost price (plastic + electricity + amortization + failures) and the

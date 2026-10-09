@@ -8,12 +8,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 import '../backup/backup.dart';
+import '../catalog/catalog.dart';
+import '../data/json_store.dart';
+import '../data/records.dart';
 import '../history/history.dart';
 import '../mesh/loader.dart';
 import '../mesh/mesh_check.dart';
 import '../mesh/slicer_project.dart';
 import '../mesh/transform.dart';
 import '../orders/orders.dart';
+import '../orders/reminders.dart';
+import '../platform/downloader.dart';
 import '../platform/files.dart';
 import '../platform/updates.dart';
 import '../slicer/settings.dart';
@@ -21,7 +26,11 @@ import '../slicer/slice_runner.dart';
 import '../slicer/slicer.dart';
 import '../viewer/measure.dart';
 import '../viewer/model_viewer.dart';
+import 'catalog_page.dart';
+import 'clients_page.dart';
+import 'expenses_page.dart';
 import 'history_page.dart';
+import 'intro_page.dart';
 import 'orders_page.dart';
 import 'quote_page.dart';
 import 'settings_sheet.dart';
@@ -64,13 +73,18 @@ class _HomePageState extends State<HomePage> {
   bool _orientOpen = false;
   bool _pickFace = false;
   bool _reorienting = false;
+  final Map<int, int> _objectColors = {}; // source object index -> filament slot
 
   bool get _adv => _settings.advancedUi;
 
   @override
   void initState() {
     super.initState();
-    PlatformFiles.listen(_open);
+    PlatformFiles.listen(_open, onLink: _openUrl);
+    AutoBackup.settingsSource = () => _settings;
+    onJsonWrite = (name) {
+      if (name != 'autobackup.json') AutoBackup.schedule();
+    };
     _init();
   }
 
@@ -81,8 +95,99 @@ class _HomePageState extends State<HomePage> {
     Updates.check().then((u) {
       if (u != null && mounted) setState(() => _update = u);
     });
+    OrderReminders.rescheduleAll();
+    if (!s.seenIntro && mounted) {
+      final adv = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(fullscreenDialog: true, builder: (_) => const IntroPage()),
+      );
+      if (!mounted) return;
+      _updateSettings(_settings.copyWith(seenIntro: true, advancedUi: adv ?? _settings.advancedUi));
+    }
     final f = await PlatformFiles.initialFile();
-    if (f != null && mounted) await _open(f);
+    if (f != null && mounted) {
+      await _open(f);
+      return;
+    }
+    final link = await PlatformFiles.initialLink();
+    if (link != null && mounted) await _openUrl(link);
+  }
+
+  // ---- Open by link / archives ----
+
+  Future<void> _askUrl() async {
+    final c = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Відкрити за посиланням'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: c,
+            autofocus: true,
+            keyboardType: TextInputType.url,
+            decoration: const InputDecoration(labelText: 'Посилання', hintText: 'https://…'),
+            onSubmitted: (_) => Navigator.pop(ctx, c.text.trim()),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Пряме посилання на .stl / .3mf / .zip або сторінка Thingiverse. '
+            'З MakerWorld і Printables завантажте файл у браузері й поділіться ним із застосунком.',
+            style: Theme.of(ctx).textTheme.bodySmall,
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Скасувати')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Відкрити')),
+        ],
+      ),
+    );
+    if (url != null && url.isNotEmpty) await _openUrl(url);
+  }
+
+  Future<void> _openUrl(String text) async {
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
+    try {
+      final f = await download(resolveModelUrl(text));
+      if (!mounted) return;
+      await _open(f);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadError = 'Не вдалося завантажити:\n$e';
+      });
+    }
+  }
+
+  /// A .zip with models: pick which one to open.
+  Future<PickedFile?> _chooseFromArchive(PickedFile f) async {
+    final models = await Isolate.run(() => modelsInZip(f.bytes));
+    if (!mounted) return null;
+    if (models.isEmpty) throw const FormatException('В архіві немає STL, 3MF чи G-code');
+    if (models.length == 1) return models.first;
+    return showModalBottomSheet<PickedFile>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: ListView(shrinkWrap: true, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text('В архіві ${models.length} моделей', style: Theme.of(ctx).textTheme.titleMedium),
+          ),
+          for (final m in models)
+            ListTile(
+              leading: const Icon(Icons.view_in_ar_outlined),
+              title: Text(m.name),
+              subtitle: Text('${(m.bytes.length / 1024).toStringAsFixed(0)} КБ'),
+              onTap: () => Navigator.pop(ctx, m),
+            ),
+        ]),
+      ),
+    );
   }
 
   @override
@@ -108,6 +213,14 @@ class _HomePageState extends State<HomePage> {
       _loadError = null;
     });
     try {
+      if (isArchive(f)) {
+        final inner = await _chooseFromArchive(f);
+        if (inner == null) {
+          if (mounted) setState(() => _loading = false);
+          return;
+        }
+        f = inner;
+      }
       final m = await loadModel(f.name, f.bytes);
       if (!mounted) return;
       _setModel(m, fresh: true);
@@ -118,7 +231,7 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _loadError = isSupportedFile(f.name)
+        _loadError = isSupportedFile(f.name) || isArchive(f)
             ? 'Не вдалося прочитати «${f.name}»:\n$e'
             : 'Файл «${f.name}» не схожий на STL, 3MF чи G-code.';
       });
@@ -139,6 +252,7 @@ class _HomePageState extends State<HomePage> {
       _layersView = false;
       _pickFace = false;
       if (fresh) {
+        _objectColors.clear();
         _manualHours = null;
         _autoCalibrated = false;
         _orientOpen = false;
@@ -218,7 +332,50 @@ class _HomePageState extends State<HomePage> {
   void _openOrders() =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => OrdersPage(settings: _settings)));
 
-  void _openSpools() => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SpoolsPage()));
+  void _openSpools() => Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => SpoolsPage(onUsePrice: (materialId, perKg) {
+          final m = Map<String, double>.from(_settings.pricesPerKg)..[materialId] = perKg;
+          _updateSettings(_settings.copyWith(pricesPerKg: m));
+        }),
+      ));
+
+  void _push(Widget page) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
+
+  Future<void> _autoBackupMenu() async {
+    final uri = await AutoBackup.target();
+    if (!mounted) return;
+    final last = AutoBackup.lastOk;
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Автоматична копія'),
+        content: Text(uri == null
+            ? 'Виберіть файл на Google Диску (або в іншій папці) — застосунок сам оновлюватиме в ньому '
+                'копію всіх даних після кожної зміни. Якщо телефон загубиться, дані можна відновити з цього файлу.'
+            : 'Увімкнено.${last != null ? '\nОстання копія: ${formatDate(last)}' : ''}'
+                '${AutoBackup.lastFailed ? '\nОстання спроба не вдалася — можливо, немає доступу до файлу.' : ''}'),
+        actions: [
+          if (uri != null) TextButton(onPressed: () => Navigator.pop(ctx, 'off'), child: const Text('Вимкнути')),
+          if (uri != null) TextButton(onPressed: () => Navigator.pop(ctx, 'now'), child: const Text('Зараз')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, 'pick'),
+            child: Text(uri == null ? 'Вибрати файл' : 'Інший файл'),
+          ),
+        ],
+      ),
+    );
+    switch (action) {
+      case 'pick':
+        final ok = await AutoBackup.setup();
+        _snack(ok ? 'Автокопію увімкнено' : 'Не вдалося записати у вибраний файл');
+      case 'now':
+        final ok = await AutoBackup.runNow();
+        _snack(ok ? 'Копію оновлено' : 'Не вдалося записати копію');
+      case 'off':
+        await AutoBackup.disable();
+        _snack('Автокопію вимкнено');
+    }
+  }
 
   void _openStats() => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const StatsPage()));
 
@@ -273,6 +430,22 @@ class _HomePageState extends State<HomePage> {
         _exportBackup();
       case 'import':
         _importBackup();
+      case 'url':
+        _askUrl();
+      case 'clients':
+        _push(const ClientsPage());
+      case 'catalog':
+        _push(const CatalogPage());
+      case 'expenses':
+        _push(const ExpensesPage());
+      case 'autobackup':
+        _autoBackupMenu();
+      case 'intro':
+        Navigator.of(context)
+            .push<bool>(MaterialPageRoute(fullscreenDialog: true, builder: (_) => const IntroPage()))
+            .then((adv) {
+          if (adv != null && adv != _adv) _updateSettings(_settings.copyWith(advancedUi: adv));
+        });
       case 'mode':
         _updateSettings(_settings.copyWith(advancedUi: !_adv));
         if (_adv) {
@@ -293,14 +466,14 @@ class _HomePageState extends State<HomePage> {
     final copies = s.copies;
     final mat = materialById(s.materialId);
     // Per piece, without the quantity discount and per-order extras.
-    final c = CostBreakdown.of(fig.grams1, fig.hours / copies, s, orderExtras: false);
+    final c = CostBreakdown.of(fig.gramsTotal / copies, fig.hours / copies, s, orderExtras: false);
     return OrderItem(
       id: id ?? DateTime.now().microsecondsSinceEpoch.toString(),
       name: m.name,
       material: mat.id == 'custom' ? 'Свій (${fmtNum(s.density, 2)} г/см³)' : mat.name,
       materialId: s.materialId,
       qty: copies,
-      gramsEach: fig.grams1,
+      gramsEach: fig.gramsTotal / copies,
       hoursEach: fig.hours / copies,
       costEach: c.costPrice,
       priceEach: c.costPrice + c.profit,
@@ -338,9 +511,13 @@ class _HomePageState extends State<HomePage> {
     if (picked is Order) {
       order = picked;
     } else {
-      final client = await askText(context, title: 'Нове замовлення', label: 'Клієнт (необов\'язково)');
+      final client = await pickClient(context);
       if (client == null) return;
-      order = Order.create(_settings, client: client);
+      order = Order.create(_settings, client: client.name);
+      if (client.id.isNotEmpty) {
+        order.clientId = client.id;
+        order.contact = client.phone.isNotEmpty ? client.phone : client.telegram;
+      }
     }
     final id = DateTime.now().microsecondsSinceEpoch.toString();
     final png = await _captureThumb();
@@ -357,6 +534,58 @@ class _HomePageState extends State<HomePage> {
         onPressed: () => Navigator.of(context)
             .push(MaterialPageRoute<void>(builder: (_) => OrderPage(orderId: order.id))),
       ),
+    ));
+  }
+
+  Future<void> _addToCatalog() async {
+    final m = _model;
+    final base = _orderItem();
+    if (m == null || base == null) return;
+    final copies = _settings.copies;
+    final (_, rounding) = finishPriceRaw(base.priceEach, 0, _settings.roundTo);
+    final suggested = base.priceEach + rounding;
+    final name = TextEditingController(text: m.name.replaceAll(RegExp(r'\.(stl|3mf|gcode)$', caseSensitive: false), ''));
+    final price = TextEditingController(text: fmtNum(suggested, suggested == suggested.roundToDouble() ? 0 : 2));
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('У прайс-лист'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: name, decoration: const InputDecoration(labelText: 'Назва виробу')),
+          TextField(
+            controller: price,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              labelText: 'Ціна за штуку, $currency',
+              helperText: 'собівартість ${fmtMoney(base.costEach)}${copies > 1 ? ' (з $copies шт на столі)' : ''}',
+            ),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Скасувати')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Додати')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final id = newId();
+    final png = await _captureThumb();
+    final thumb = png == null ? null : await HistoryStore.saveThumb('p$id', png);
+    await productStore.upsert(Product(
+      id: id,
+      name: name.text.trim().isEmpty ? m.name : name.text.trim(),
+      material: base.material,
+      materialId: base.materialId,
+      grams: base.gramsEach,
+      hours: base.hoursEach,
+      cost: base.costEach,
+      price: double.tryParse(price.text.replaceAll(',', '.').replaceAll(' ', '')) ?? suggested,
+      thumbPath: thumb,
+    ));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text('Додано до прайс-листа'),
+      action: SnackBarAction(label: 'Відкрити', onPressed: () => _push(const CatalogPage())),
     ));
   }
 
@@ -529,6 +758,60 @@ class _HomePageState extends State<HomePage> {
   double _estimateHours(SliceResult r) =>
       (r.printSeconds(_settings) * _settings.timeFactor + printerById(_settings.printerId).startMinutes * 60) / 3600;
 
+  /// Copies per plate and number of plates for the current copies.
+  (int, int) _plates() {
+    final m = _model;
+    final s = _settings;
+    if (m == null || !m.hasMesh) return (1, s.copies);
+    final k = s.scalePercent / 100;
+    final (bx, by, _) = s.bed;
+    var per = copiesPerPlate(m.bounds.sizeX * k, m.bounds.sizeY * k, bx, by, s.plateGap);
+    if (per < 1) per = 1;
+    return (per, (s.copies + per - 1) ~/ per);
+  }
+
+  /// Colour (filament slot) of every printed object, in mesh order.
+  List<int> _printedColors(LoadedModel m) {
+    final out = <int>[];
+    for (int i = 0; i < m.source.objects.length; i++) {
+      if (i < m.enabled.length && m.enabled[i]) out.add(_objectColors[i] ?? m.source.objects[i].extruder);
+    }
+    return out;
+  }
+
+  /// Purge + prime tower for one plate, mm³ (0 for a single colour).
+  ColorWaste? _colorWaste() {
+    final m = _model;
+    final r = _result;
+    if (m == null || r == null || m.mesh.objects.length < 2) return null;
+    final colors = _printedColors(m);
+    if (colors.toSet().length < 2 || colors.length != m.mesh.objects.length) return null;
+    final s = _settings;
+    final k = s.scalePercent / 100;
+    final t = m.mesh.tris;
+    final z0 = m.bounds.minZ;
+    final ranges = <(double, double)>[];
+    for (final o in m.mesh.objects) {
+      double lo = double.infinity, hi = -double.infinity;
+      for (int i = o.start * 9 + 2; i < o.end * 9; i += 3) {
+        final z = t[i];
+        if (z < lo) lo = z;
+        if (z > hi) hi = z;
+      }
+      ranges.add(((lo - z0) * k, (hi - z0) * k));
+    }
+    final layerColors = <int>[];
+    for (int l = 0; l < r.layers; l++) {
+      final z = s.firstLayerHeight + (l - 0.5) * s.layerHeight;
+      final present = <int>{};
+      for (int j = 0; j < ranges.length; j++) {
+        if (ranges[j].$1 < z && ranges[j].$2 > z) present.add(colors[j]);
+      }
+      layerColors.add(present.length);
+    }
+    return ColorWaste.estimate(layerColors, s.layerHeight, s);
+  }
+
   /// Weight, time and price of the order, from the slicer or our estimate.
   _Figures? _figures() {
     final s = _settings;
@@ -548,10 +831,13 @@ class _HomePageState extends State<HomePage> {
       return _Figures(
         source: p.app,
         grams1: grams1,
+        gramsTotal: grams,
         model1: grams1,
         support1: 0,
         meters: meters1 * copies,
         hours: hours,
+        perPlate: 1,
+        plates: copies,
         cost: CostBreakdown.of(grams, hours, s, copies: copies),
         estimateGrams: r == null ? null : r.grams(s.density, copies: copies) * s.weightFactor,
       );
@@ -559,16 +845,34 @@ class _HomePageState extends State<HomePage> {
     if (r == null) return null;
     final f = s.weightFactor;
     final grams1 = r.grams(s.density) * f;
-    final hours = (_manualHours ?? _estimateHours(r)) * copies;
+    final (per, plates) = _plates();
+    final waste = _colorWaste();
+    final wasteG = waste == null ? 0.0 : waste.totalMm3 * s.density / 1000 * plates;
+    final gramsTotal = grams1 * copies + wasteG;
+    final start = printerById(s.printerId).startMinutes * 60;
+    final double hours;
+    if (_manualHours != null) {
+      hours = _manualHours! * copies;
+    } else {
+      // Copies on one plate share layer changes and the start-up.
+      final moving = r.movingSeconds(s), layersOh = layerOverheadSeconds(r.layers, s);
+      hours = ((copies * moving + plates * layersOh) * s.timeFactor + plates * start) / 3600;
+    }
+    final rad = s.filamentDiameter / 2;
     return _Figures(
       source: null,
       grams1: grams1,
+      gramsTotal: gramsTotal,
       model1: r.modelGrams(s.density) * f,
       support1: r.supportGrams(s.density) * f,
       brim1: r.brimGrams(s.density) * f,
-      meters: r.filamentMeters(s.filamentDiameter, copies: copies) * f,
+      meters: gramsTotal / s.density * 1000 / (math.pi * rad * rad) / 1000,
       hours: hours,
-      cost: CostBreakdown.of(grams1 * copies, hours, s, copies: copies),
+      perPlate: per,
+      plates: plates,
+      waste: waste,
+      wasteGrams: wasteG,
+      cost: CostBreakdown.of(gramsTotal, hours, s, copies: copies),
     );
   }
 
@@ -714,10 +1018,18 @@ class _HomePageState extends State<HomePage> {
           PopupMenuButton<String>(
             onSelected: _onMenu,
             itemBuilder: (_) => [
+              const PopupMenuItem(value: 'url', child: ListTile(leading: Icon(Icons.link), title: Text('Відкрити за посиланням'))),
               const PopupMenuItem(value: 'history', child: ListTile(leading: Icon(Icons.history), title: Text('Історія'))),
               const PopupMenuItem(
                   value: 'orders', child: ListTile(leading: Icon(Icons.receipt_long_outlined), title: Text('Замовлення'))),
+              const PopupMenuItem(
+                  value: 'clients', child: ListTile(leading: Icon(Icons.people_outline), title: Text('Клієнти'))),
               if (_adv) ...[
+                const PopupMenuItem(
+                    value: 'catalog', child: ListTile(leading: Icon(Icons.storefront_outlined), title: Text('Прайс-лист'))),
+                const PopupMenuItem(
+                    value: 'expenses',
+                    child: ListTile(leading: Icon(Icons.account_balance_wallet_outlined), title: Text('Витрати'))),
                 const PopupMenuItem(
                     value: 'spools', child: ListTile(leading: Icon(Icons.album_outlined), title: Text('Котушки'))),
                 const PopupMenuItem(
@@ -727,6 +1039,11 @@ class _HomePageState extends State<HomePage> {
                 const PopupMenuItem(
                     value: 'import', child: ListTile(leading: Icon(Icons.restore), title: Text('Відновити з копії'))),
               ],
+              const PopupMenuItem(
+                  value: 'autobackup',
+                  child: ListTile(leading: Icon(Icons.cloud_sync_outlined), title: Text('Автокопія (Google Диск)'))),
+              const PopupMenuItem(
+                  value: 'intro', child: ListTile(leading: Icon(Icons.help_outline), title: Text('Як користуватися'))),
               const PopupMenuDivider(),
               CheckedPopupMenuItem(value: 'mode', checked: _adv, child: const Text('Розширений режим')),
             ],
@@ -875,10 +1192,17 @@ class _HomePageState extends State<HomePage> {
           Positioned(
             right: 10,
             top: 12,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: chipDecoration,
-              child: Text('${mm(b.sizeX)} × ${mm(b.sizeY)} × ${mm(b.sizeZ)} мм', style: theme.textTheme.labelMedium),
+            child: GestureDetector(
+              onTap: () => _scaleDialog(m),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: chipDecoration,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text('${mm(b.sizeX)} × ${mm(b.sizeY)} × ${mm(b.sizeZ)} мм', style: theme.textTheme.labelMedium),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.edit_outlined, size: 14),
+                ]),
+              ),
             ),
           ),
           if (!layersMode)
@@ -1031,6 +1355,18 @@ class _HomePageState extends State<HomePage> {
           ]),
         ),
     ]);
+  }
+
+  Future<void> _scaleDialog(LoadedModel m) async {
+    final v = await showDialog<double>(
+      context: context,
+      builder: (_) => _ScaleDialog(
+        sizes: (m.bounds.sizeX, m.bounds.sizeY, m.bounds.sizeZ),
+        scalePercent: _settings.scalePercent,
+        bed: _settings.bed,
+      ),
+    );
+    if (v != null) _updateSettings(_settings.copyWith(scalePercent: v));
   }
 
   /// (fits, label, fits after a 90° turn) for the current printer's bed.
@@ -1341,7 +1677,7 @@ class _HomePageState extends State<HomePage> {
                 opacity: busy && fig.source == null ? 0.4 : 1,
                 duration: const Duration(milliseconds: 200),
                 child: Text(
-                  fmtGrams(fig.grams1 * s.copies),
+                  fmtGrams(fig.gramsTotal),
                   style: theme.textTheme.displayMedium?.copyWith(fontWeight: FontWeight.w700, color: onCard),
                 ),
               )
@@ -1399,6 +1735,39 @@ class _HomePageState extends State<HomePage> {
                 ),
               if (s.copies > 1)
                 Text('${s.copies} шт. · одна: ${fmtGrams(fig.grams1)}', style: theme.textTheme.bodyMedium),
+              if (fig.source == null && (s.copies > 1 || fig.perPlate > 1))
+                Text(
+                  fig.plates == 1
+                      ? 'на стіл влазить ${fig.perPlate} шт · одна пластина'
+                      : 'на стіл влазить ${fig.perPlate} шт · пластин: ${fig.plates}',
+                  style: small,
+                ),
+              if (fig.waste != null && fig.waste!.changes > 0)
+                Text(
+                  'відходи на зміну кольору: ${fmtGrams(fig.wasteGrams)} '
+                  '(${fig.waste!.changes} змін${s.primeTower ? ', з вежею' : ''})',
+                  style: small,
+                ),
+              if (fig.source != null && project != null && project.filaments.length > 1)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Wrap(spacing: 6, runSpacing: 4, children: [
+                    for (final f in project.filaments)
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: _hexColor(f.color) ?? onCard,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: onCard.withValues(alpha: 0.4)),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text('${f.type} ${fmtGrams(f.grams * s.copies)}', style: small),
+                      ]),
+                  ]),
+                ),
               if (_adv && canChooseSource) ...[
                 const SizedBox(height: 8),
                 SegmentedButton<bool>(
@@ -1423,7 +1792,7 @@ class _HomePageState extends State<HomePage> {
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   Stat('філамент', '${fmtNum(fig.meters, 2)} м'),
-                  Stat('об\'єм', '${fmtNum(fig.grams1 * s.copies / s.density, 1)} см³'),
+                  Stat('об\'єм', '${fmtNum(fig.gramsTotal / s.density, 1)} см³'),
                   if (r != null) Stat('шарів', '${r.layers}'),
                 ],
               ),
@@ -1501,11 +1870,23 @@ class _HomePageState extends State<HomePage> {
                 ),
               ]),
               const SizedBox(height: 8),
-              FilledButton.tonalIcon(
-                onPressed: busy && fig.source == null ? null : _addToOrder,
-                icon: const Icon(Icons.add_shopping_cart),
-                label: const Text('До замовлення'),
-              ),
+              Row(children: [
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: busy && fig.source == null ? null : _addToOrder,
+                    icon: const Icon(Icons.add_shopping_cart),
+                    label: const Text('До замовлення'),
+                  ),
+                ),
+                if (_adv) ...[
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    tooltip: 'У прайс-лист',
+                    onPressed: busy && fig.source == null ? null : _addToCatalog,
+                    icon: const Icon(Icons.storefront_outlined),
+                  ),
+                ],
+              ]),
               if (_adv && r != null && fig.source == null)
                 Align(
                   alignment: Alignment.centerLeft,
@@ -1644,6 +2025,13 @@ class _HomePageState extends State<HomePage> {
             value: s.supportsEnabled,
             onChanged: (v) => _updateSettings(s.copyWith(supportsEnabled: v)),
           ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Режим вази'),
+            subtitle: const Text('Одна стінка, без кришки й заповнення'),
+            value: s.vaseMode,
+            onChanged: (v) => _updateSettings(s.copyWith(vaseMode: v)),
+          ),
           StepperRow(
             label: 'Кількість',
             value: s.copies.toDouble(),
@@ -1700,11 +2088,58 @@ class _HomePageState extends State<HomePage> {
                       }
                       _derive(enabled: next);
                     },
-              title: Text(objs[i].name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              title: Row(children: [
+                Expanded(child: Text(objs[i].name, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                if (_adv)
+                  PopupMenuButton<int>(
+                    tooltip: 'Колір (слот філаменту)',
+                    onSelected: (c) => setState(() => _objectColors[i] = c),
+                    itemBuilder: (_) => [
+                      for (int c = 1; c <= 4; c++)
+                        PopupMenuItem(
+                          value: c,
+                          child: Row(children: [
+                            CircleAvatar(radius: 8, backgroundColor: _slotColors[c - 1]),
+                            const SizedBox(width: 8),
+                            Text('Колір $c'),
+                          ]),
+                        ),
+                    ],
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: CircleAvatar(
+                        radius: 10,
+                        backgroundColor: _slotColors[((_objectColors[i] ?? objs[i].extruder) - 1).clamp(0, 3).toInt()],
+                        child: Text(
+                          '${_objectColors[i] ?? objs[i].extruder}',
+                          style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  ),
+              ]),
               secondary: volBySource[i] != null
                   ? Text(fmtGrams(volBySource[i]! * s.density / 1000 * s.weightFactor),
                       style: theme.textTheme.bodyMedium)
                   : null,
+            ),
+          if (_adv && vols != null && _printedColors(m).toSet().length > 1)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 0, 4),
+              child: Wrap(spacing: 10, runSpacing: 4, children: [
+                for (final c in (_printedColors(m).toSet().toList()..sort()))
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    CircleAvatar(radius: 6, backgroundColor: _slotColors[(c - 1).clamp(0, 3).toInt()]),
+                    const SizedBox(width: 4),
+                    Text(
+                      fmtGrams([
+                        for (int i = 0; i < objs.length; i++)
+                          if (volBySource[i] != null && (_objectColors[i] ?? objs[i].extruder) == c) volBySource[i]!,
+                      ].fold(0.0, (a, v) => a + v) * s.density / 1000 * s.weightFactor * s.copies),
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ]),
+              ]),
             ),
           if (enabledCount > 1)
             Padding(
@@ -1796,6 +2231,12 @@ class _HomePageState extends State<HomePage> {
                 selected: {s.isTreeSupport ? 'tree' : 'normal'},
                 onSelectionChanged: (v) => _updateSettings(s.copyWith(supportType: v.first)),
               ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Режим вази (спіраль)'),
+              value: s.vaseMode,
+              onChanged: (v) => _updateSettings(s.copyWith(vaseMode: v)),
+            ),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
@@ -2035,9 +2476,23 @@ class _TimeDialogState extends State<_TimeDialog> {
   }
 }
 
+const _slotColors = [Color(0xFFFF8A3D), Color(0xFF1E88E5), Color(0xFF43A047), Color(0xFF8E24AA)];
+
+Color? _hexColor(String hex) {
+  var h = hex.replaceAll('#', '').trim();
+  if (h.length == 8) h = h.substring(0, 6);
+  if (h.length != 6) return null;
+  final v = int.tryParse(h, radix: 16);
+  return v == null ? null : Color(0xFF000000 | v);
+}
+
 /// Numbers shown on the result card.
 class _Figures {
   final String? source; // slicer name when the numbers are exact
+  final double gramsTotal; // all copies incl. colour-change waste
+  final int perPlate, plates;
+  final ColorWaste? waste; // per plate
+  final double wasteGrams; // all plates
   final double grams1; // one copy, model + supports
   final double model1, support1;
   final double brim1;
@@ -2048,6 +2503,11 @@ class _Figures {
 
   const _Figures({
     required this.source,
+    required this.gramsTotal,
+    required this.perPlate,
+    required this.plates,
+    this.waste,
+    this.wasteGrams = 0,
     required this.grams1,
     required this.model1,
     required this.support1,
@@ -2213,6 +2673,120 @@ class _CalibrateDialogState extends State<_CalibrateDialog> {
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
         FilledButton(onPressed: _save, child: const Text('Зберегти')),
+      ],
+    );
+  }
+}
+
+/// Uniform scale by a target size on any axis, or to fit the bed.
+class _ScaleDialog extends StatefulWidget {
+  final (double, double, double) sizes; // at 100 %
+  final double scalePercent;
+  final (double, double, double) bed;
+
+  const _ScaleDialog({required this.sizes, required this.scalePercent, required this.bed});
+
+  @override
+  State<_ScaleDialog> createState() => _ScaleDialogState();
+}
+
+class _ScaleDialogState extends State<_ScaleDialog> {
+  late double _scale = widget.scalePercent;
+  final _c = [TextEditingController(), TextEditingController(), TextEditingController()];
+  final _p = TextEditingController();
+
+  List<double> get _base => [widget.sizes.$1, widget.sizes.$2, widget.sizes.$3];
+
+  @override
+  void initState() {
+    super.initState();
+    _fill(except: -1);
+  }
+
+  void _fill({required int except}) {
+    for (int i = 0; i < 3; i++) {
+      if (i != except) _c[i].text = fmtNum(_base[i] * _scale / 100, 2);
+    }
+    if (except != 3) _p.text = fmtNum(_scale, 1);
+  }
+
+  void _fromAxis(int i, String t) {
+    final v = double.tryParse(t.replaceAll(',', '.').trim());
+    if (v == null || v <= 0 || _base[i] <= 0) return;
+    setState(() => _scale = v / _base[i] * 100);
+    _fill(except: i);
+  }
+
+  void _fromPercent(String t) {
+    final v = double.tryParse(t.replaceAll(',', '.').trim());
+    if (v == null || v <= 0) return;
+    setState(() => _scale = v);
+    _fill(except: 3);
+  }
+
+  void _fitBed() {
+    final b = [widget.bed.$1 * 0.95, widget.bed.$2 * 0.95, widget.bed.$3 * 0.95];
+    double k = double.infinity;
+    for (int i = 0; i < 3; i++) {
+      if (_base[i] > 0) k = math.min(k, b[i] / _base[i]);
+    }
+    // Also allow the footprint turned by 90°.
+    if (_base[0] > 0 && _base[1] > 0 && _base[2] > 0) {
+      final turned = math.min(math.min(b[0] / _base[1], b[1] / _base[0]), b[2] / _base[2]);
+      if (turned > k) k = turned;
+    }
+    if (!k.isFinite) return;
+    setState(() => _scale = (k * 1000).floorToDouble() / 10);
+    _fill(except: -1);
+  }
+
+  @override
+  void dispose() {
+    for (final c in _c) {
+      c.dispose();
+    }
+    _p.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget field(int i, String axis) => Expanded(
+          child: TextField(
+            controller: _c[i],
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(labelText: '$axis, мм', border: const OutlineInputBorder(), isDense: true),
+            onChanged: (t) => _fromAxis(i, t),
+          ),
+        );
+    return AlertDialog(
+      title: const Text('Розмір моделі'),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('Введіть потрібний розмір по будь-якій осі — інші зміняться пропорційно.'),
+        const SizedBox(height: 14),
+        Row(children: [field(0, 'X'), const SizedBox(width: 8), field(1, 'Y'), const SizedBox(width: 8), field(2, 'Z')]),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _p,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'Масштаб', suffixText: '%', border: OutlineInputBorder(), isDense: true),
+          onChanged: _fromPercent,
+        ),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, children: [
+          ActionChip(label: const Text('100%'), onPressed: () {
+            setState(() => _scale = 100);
+            _fill(except: -1);
+          }),
+          ActionChip(label: const Text('Вписати в стіл'), onPressed: _fitBed),
+        ]),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, (_scale * 100).roundToDouble() / 100),
+          child: const Text('Застосувати'),
+        ),
       ],
     );
   }

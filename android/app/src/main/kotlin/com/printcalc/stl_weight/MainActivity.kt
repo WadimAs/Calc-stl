@@ -15,16 +15,20 @@ class MainActivity : FlutterActivity() {
     private val channelName = "stl_weight/files"
     private val pickRequest = 4711
     private val saveRequest = 4712
+    private val backupRequest = 4714
+    private var pendingBackup: MethodChannel.Result? = null
     private var pendingSave: MethodChannel.Result? = null
     private var pendingSaveBytes: ByteArray? = null
     private var channel: MethodChannel? = null
     private var pendingPick: MethodChannel.Result? = null
     private var initialUri: Uri? = null
+    private var initialLink: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         initialUri = extractUri(intent)
+        if (initialUri == null) initialLink = extractLink(intent)
         val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
         channel = ch
         ch.setMethodCallHandler { call, result ->
@@ -47,6 +51,10 @@ class MainActivity : FlutterActivity() {
                     val uri = initialUri
                     initialUri = null
                     if (uri == null) result.success(null) else readUri(uri) { result.success(it) }
+                }
+                "getInitialLink" -> {
+                    result.success(initialLink)
+                    initialLink = null
                 }
                 "filesDir" -> result.success(filesDir.absolutePath)
                 "appInfo" -> {
@@ -125,6 +133,62 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "scheduleReminder" -> {
+                    val id = call.argument<Int>("id") ?: 0
+                    val at = (call.argument<Number>("at") ?: 0).toLong()
+                    ReminderReceiver.schedule(
+                        this, id, at,
+                        call.argument<String>("title") ?: "Замовлення",
+                        call.argument<String>("text") ?: ""
+                    )
+                    result.success(true)
+                }
+                "cancelReminder" -> {
+                    ReminderReceiver.cancel(this, call.argument<Int>("id") ?: 0)
+                    result.success(true)
+                }
+                "requestNotifications" -> {
+                    if (Build.VERSION.SDK_INT >= 33 &&
+                        checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) {
+                        requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 4713)
+                    }
+                    result.success(true)
+                }
+                "pickBackupTarget" -> {
+                    pendingBackup?.success(null)
+                    pendingBackup = result
+                    val i = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/json"
+                        putExtra(Intent.EXTRA_TITLE, call.argument<String>("name") ?: "stl-vaga-autobackup.json")
+                    }
+                    try {
+                        startActivityForResult(i, backupRequest)
+                    } catch (e: Exception) {
+                        pendingBackup = null
+                        result.error("backup", e.message, null)
+                    }
+                }
+                "writeUri" -> {
+                    val uriStr = call.argument<String>("uri")
+                    val bytes = call.argument<ByteArray>("bytes")
+                    if (uriStr == null || bytes == null) {
+                        result.error("args", "uri/bytes", null)
+                    } else {
+                        Thread {
+                            var ok = false
+                            try {
+                                contentResolver.openOutputStream(Uri.parse(uriStr), "wt")?.use { it.write(bytes) }
+                                ok = true
+                            } catch (e: Exception) {
+                                ok = false
+                            }
+                            val done = ok
+                            mainHandler.post { result.success(done) }
+                        }.start()
+                    }
+                }
                 "shareText" -> {
                     val text = call.argument<String>("text") ?: ""
                     val send = Intent(Intent.ACTION_SEND).apply {
@@ -146,7 +210,12 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val uri = extractUri(intent) ?: return
+        val uri = extractUri(intent)
+        if (uri == null) {
+            val link = extractLink(intent) ?: return
+            channel?.invokeMethod("linkShared", link)
+            return
+        }
         readUri(uri) { map ->
             if (map != null) channel?.invokeMethod("fileOpened", map)
         }
@@ -154,6 +223,24 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == backupRequest) {
+            val res = pendingBackup ?: return
+            pendingBackup = null
+            val uri = data?.data
+            if (resultCode != Activity.RESULT_OK || uri == null) {
+                res.success(null)
+                return
+            }
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            } catch (e: Exception) {
+                // Some providers do not offer persistable permissions.
+            }
+            res.success(uri.toString())
+            return
+        }
         if (requestCode == saveRequest) {
             val res = pendingSave ?: return
             val bytes = pendingSaveBytes
@@ -202,6 +289,13 @@ class MainActivity : FlutterActivity() {
             }
             else -> null
         }
+    }
+
+    /** First http(s) link in shared text (e.g. a Thingiverse page). */
+    private fun extractLink(intent: Intent?): String? {
+        if (intent?.action != Intent.ACTION_SEND) return null
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return null
+        return Regex("https?://\\S+").find(text)?.value
     }
 
     /** Reads the whole document off the main thread, replies on the main thread. */

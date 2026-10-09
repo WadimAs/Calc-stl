@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../data/records.dart';
+import '../expenses/expenses.dart';
 import '../slicer/settings.dart';
 import '../spools/spools.dart';
 import 'widgets.dart';
@@ -10,7 +12,10 @@ const spoolColors = <int>[
 ];
 
 class SpoolsPage extends StatefulWidget {
-  const SpoolsPage({super.key});
+  /// Puts a spool's purchase price into the cost calculation.
+  final void Function(String materialId, double pricePerKg)? onUsePrice;
+
+  const SpoolsPage({super.key, this.onUsePrice});
 
   @override
   State<SpoolsPage> createState() => _SpoolsPageState();
@@ -28,10 +33,46 @@ class _SpoolsPageState extends State<SpoolsPage> {
   }
 
   Future<void> _edit([Spool? s]) async {
-    final result = await showDialog<Spool>(context: context, builder: (_) => _SpoolDialog(spool: s));
-    if (result == null) return;
+    final r = await showDialog<(Spool, bool)>(context: context, builder: (_) => _SpoolDialog(spool: s));
+    if (r == null) return;
+    final (result, asExpense) = r;
     final list = await SpoolStore.upsert(result);
+    if (asExpense && result.price > 0) {
+      await expenseStore.upsert(Expense(
+        id: newId(),
+        date: DateTime.now(),
+        category: 'Пластик',
+        amount: result.price,
+        note: '${materialById(result.materialId).name}${result.name.isEmpty ? '' : ' ${result.name}'}, '
+            '${fmtGrams(result.totalGrams)}',
+      ));
+    }
     if (mounted) setState(() => _spools = list);
+    final perKg = result.pricePerKg;
+    if (perKg != null && widget.onUsePrice != null && mounted && (s == null || s.price != result.price)) {
+      final use = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Рахувати за цією ціною?'),
+          content: Text('${materialById(result.materialId).name}: ${fmtMoney(perKg)} за кг '
+              'буде використано в розрахунку собівартості.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Ні')),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Так')),
+          ],
+        ),
+      );
+      if (use == true) widget.onUsePrice!(result.materialId, perKg);
+    }
+  }
+
+  void _usePrice(Spool s) {
+    final perKg = s.pricePerKg;
+    if (perKg == null || widget.onUsePrice == null) return;
+    widget.onUsePrice!(s.materialId, perKg);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('${materialById(s.materialId).name}: тепер ${fmtMoney(perKg)} за кг'),
+    ));
   }
 
   Future<void> _delete(Spool s) async {
@@ -133,7 +174,8 @@ class _SpoolsPageState extends State<SpoolsPage> {
                                   const SizedBox(height: 4),
                                   Text(
                                     '${fmtGrams(s.remainingGrams)} з ${fmtGrams(s.totalGrams)}'
-                                    '${s.isLow ? ' — закінчується' : ''}',
+                                    '${s.isLow ? ' — закінчується' : ''}'
+                                    '${s.pricePerKg != null ? ' · ${fmtMoney(s.pricePerKg!)}/кг' : ''}',
                                     style: theme.textTheme.bodySmall
                                         ?.copyWith(color: s.isLow ? theme.colorScheme.error : null),
                                   ),
@@ -142,11 +184,14 @@ class _SpoolsPageState extends State<SpoolsPage> {
                               PopupMenuButton<String>(
                                 onSelected: (v) {
                                   if (v == 'off') _writeOff(s);
+                                  if (v == 'price') _usePrice(s);
                                   if (v == 'del') _delete(s);
                                 },
-                                itemBuilder: (_) => const [
-                                  PopupMenuItem(value: 'off', child: Text('Списати вручну')),
-                                  PopupMenuItem(value: 'del', child: Text('Видалити')),
+                                itemBuilder: (_) => [
+                                  const PopupMenuItem(value: 'off', child: Text('Списати вручну')),
+                                  if (s.pricePerKg != null && widget.onUsePrice != null)
+                                    const PopupMenuItem(value: 'price', child: Text('Рахувати за ціною котушки')),
+                                  const PopupMenuItem(value: 'del', child: Text('Видалити')),
                                 ],
                               ),
                             ]),
@@ -174,6 +219,9 @@ class _SpoolDialogState extends State<_SpoolDialog> {
   late final _name = TextEditingController(text: widget.spool?.name ?? '');
   late final _total = TextEditingController(text: _fmt(widget.spool?.totalGrams ?? 1000));
   late final _left = TextEditingController(text: _fmt(widget.spool?.remainingGrams ?? 1000));
+  late final _price =
+      TextEditingController(text: (widget.spool?.price ?? 0) > 0 ? _fmt(widget.spool!.price) : '');
+  bool _asExpense = true;
 
   static String _fmt(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
 
@@ -182,6 +230,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
     _name.dispose();
     _total.dispose();
     _left.dispose();
+    _price.dispose();
     super.dispose();
   }
 
@@ -242,6 +291,20 @@ class _SpoolDialogState extends State<_SpoolDialog> {
               ),
             ),
           ]),
+          TextField(
+            controller: _price,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(labelText: 'Ціна котушки, $currency', hintText: 'необов\'язково'),
+          ),
+          if (widget.spool == null && _price.text.trim().isNotEmpty)
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              value: _asExpense,
+              onChanged: (v) => setState(() => _asExpense = v ?? true),
+              title: const Text('Записати покупку у витрати'),
+            ),
         ]),
       ),
       actions: [
@@ -251,8 +314,8 @@ class _SpoolDialogState extends State<_SpoolDialog> {
             final total = double.tryParse(_total.text.replaceAll(',', '.')) ?? 1000;
             final left = double.tryParse(_left.text.replaceAll(',', '.')) ?? total;
             final old = widget.spool;
-            Navigator.pop(
-              context,
+            final price = double.tryParse(_price.text.replaceAll(',', '.').replaceAll(' ', '')) ?? 0;
+            Navigator.pop(context, (
               old == null
                   ? Spool(
                       id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -262,6 +325,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
                       totalGrams: total,
                       remainingGrams: left,
                       createdAt: DateTime.now(),
+                      price: price,
                     )
                   : old.copyWith(
                       materialId: _material,
@@ -269,8 +333,10 @@ class _SpoolDialogState extends State<_SpoolDialog> {
                       colorArgb: _color,
                       totalGrams: total,
                       remainingGrams: left,
+                      price: price,
                     ),
-            );
+              old == null && _asExpense,
+            ));
           },
           child: const Text('Зберегти'),
         ),
