@@ -5,6 +5,7 @@ import '../expenses/expenses.dart';
 import '../history/history.dart';
 import '../slicer/settings.dart';
 import 'widgets.dart';
+import '../i18n/i18n.dart';
 
 IconData expenseIcon(String c) => switch (c) {
       'Пластик' => Icons.circle_outlined,
@@ -59,11 +60,11 @@ class _ExpensesPageState extends State<ExpensesPage> {
             .fold(0.0, (a, e) => a + e.amount) ??
         0;
     return Scaffold(
-      appBar: AppBar(title: const Text('Витрати')),
+      appBar: AppBar(title: Text(tr('Витрати'))),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _edit(),
         icon: const Icon(Icons.add),
-        label: const Text('Витрата'),
+        label: Text(tr('Витрата')),
       ),
       body: list == null
           ? const Center(child: CircularProgressIndicator())
@@ -73,7 +74,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.account_balance_wallet_outlined),
-                    title: const Text('Цього місяця'),
+                    title: Text(tr('Цього місяця')),
                     trailing: Text(fmtMoney(month), style: theme.textTheme.titleMedium),
                   ),
                 ),
@@ -81,7 +82,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
                   Padding(
                     padding: const EdgeInsets.all(32),
                     child: Text(
-                      'Записуйте покупки пластику, запчастини, пакування — у статистиці буде чистий прибуток.',
+                      tr('Записуйте покупки пластику, запчастини, пакування — у статистиці буде чистий прибуток.'),
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
@@ -117,8 +118,8 @@ class _ExpensesPageState extends State<ExpensesPage> {
                       margin: const EdgeInsets.symmetric(vertical: 3),
                       child: ListTile(
                         leading: Icon(expenseIcon(e.category)),
-                        title: Text(e.note.isEmpty ? e.category : e.note, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text('${e.category} · ${formatDate(e.date).split(' ').first}'),
+                        title: Text(e.note.isEmpty ? tr(e.category) : e.note, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text('${tr(e.category)} · ${formatDate(e.date).split(' ').first}'),
                         trailing: Text(fmtMoney(e.amount), style: theme.textTheme.titleSmall),
                         onTap: () => _edit(e),
                       ),
@@ -138,9 +139,9 @@ bool _firstOfMonth(List<Expense> list, Expense e) {
   return p.year != e.date.year || p.month != e.date.month;
 }
 
-const _monthNames = [
-  'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', //
-  'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень',
+List<String> get _monthNames => [
+  tr('Січень'), tr('Лютий'), tr('Березень'), tr('Квітень'), tr('Травень'), tr('Червень'), //
+  tr('Липень'), tr('Серпень'), tr('Вересень'), tr('Жовтень'), tr('Листопад'), tr('Грудень'),
 ];
 
 String monthName(DateTime d) => '${_monthNames[d.month - 1]} ${d.year}';
@@ -171,14 +172,14 @@ class _ExpenseDialogState extends State<_ExpenseDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.expense == null ? 'Нова витрата' : 'Витрата'),
+      title: Text(widget.expense == null ? tr('Нова витрата') : tr('Витрата')),
       content: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Wrap(spacing: 6, runSpacing: 6, children: [
             for (final c in expenseCategories)
               ChoiceChip(
                 avatar: Icon(expenseIcon(c), size: 16),
-                label: Text(c),
+                label: Text(tr(c)),
                 selected: _cat == c,
                 onSelected: (_) => setState(() => _cat = c),
               ),
@@ -187,12 +188,12 @@ class _ExpenseDialogState extends State<_ExpenseDialog> {
             controller: _amount,
             autofocus: widget.expense == null,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Сума, $currency'),
+            decoration: InputDecoration(labelText: trf('Сума, {0}', [currency])),
           ),
           TextField(
             controller: _note,
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(labelText: 'Що саме', hintText: 'PETG 2 кг, сопло 0.4…'),
+            decoration: InputDecoration(labelText: tr('Що саме'), hintText: tr('PETG 2 кг, сопло 0.4…')),
           ),
           const SizedBox(height: 8),
           TextButton.icon(
@@ -211,7 +212,7 @@ class _ExpenseDialogState extends State<_ExpenseDialog> {
         ]),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Скасувати'))),
         FilledButton(
           onPressed: () {
             final a = double.tryParse(_amount.text.replaceAll(',', '.').replaceAll(' ', ''));
@@ -227,7 +228,7 @@ class _ExpenseDialogState extends State<_ExpenseDialog> {
               ),
             );
           },
-          child: const Text('Зберегти'),
+          child: Text(tr('Зберегти')),
         ),
       ],
     );

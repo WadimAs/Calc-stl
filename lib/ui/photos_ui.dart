@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../data/photos.dart';
 import '../platform/files.dart';
+import '../i18n/i18n.dart';
 
 /// Asks camera or gallery and stores the photo; returns its path.
 Future<String?> addPhoto(BuildContext context) async {
@@ -14,12 +15,12 @@ Future<String?> addPhoto(BuildContext context) async {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         ListTile(
           leading: const Icon(Icons.photo_camera_outlined),
-          title: const Text('Зробити фото'),
+          title: Text(tr('Зробити фото')),
           onTap: () => Navigator.pop(ctx, 'camera'),
         ),
         ListTile(
           leading: const Icon(Icons.photo_library_outlined),
-          title: const Text('З галереї'),
+          title: Text(tr('З галереї')),
           onTap: () => Navigator.pop(ctx, 'gallery'),
         ),
       ]),
@@ -32,7 +33,7 @@ Future<String?> addPhoto(BuildContext context) async {
     return await Photos.save(bytes);
   } catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Не вдалося додати фото: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(trf('Не вдалося додати фото: {0}', [e]))));
     }
     return null;
   }
@@ -98,7 +99,7 @@ class PhotoStrip extends StatelessWidget {
               child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Icon(Icons.add_a_photo_outlined, color: theme.colorScheme.primary),
                 const SizedBox(height: 4),
-                Text('Фото', style: theme.textTheme.labelSmall),
+                Text(tr('Фото'), style: theme.textTheme.labelSmall),
               ]),
             ),
           ),
@@ -137,10 +138,10 @@ class _PhotoViewerState extends State<PhotoViewer> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: const Text('Видалити фото?'),
+        title: Text(tr('Видалити фото?')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Скасувати')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Видалити')),
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('Скасувати'))),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('Видалити'))),
         ],
       ),
     );
@@ -159,12 +160,12 @@ class _PhotoViewerState extends State<PhotoViewer> {
         title: Text('${_i + 1} / ${widget.photos.length}'),
         actions: [
           IconButton(
-            tooltip: 'Надіслати',
+            tooltip: tr('Надіслати'),
             onPressed: () => sharePhoto(widget.photos[_i]).catchError((Object _) {}),
             icon: const Icon(Icons.share_outlined),
           ),
           if (widget.onDelete != null)
-            IconButton(tooltip: 'Видалити', onPressed: _delete, icon: const Icon(Icons.delete_outline)),
+            IconButton(tooltip: tr('Видалити'), onPressed: _delete, icon: const Icon(Icons.delete_outline)),
         ],
       ),
       body: PageView(

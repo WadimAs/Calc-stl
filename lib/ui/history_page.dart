@@ -8,16 +8,17 @@ import '../history/history.dart';
 import '../platform/files.dart';
 import '../slicer/settings.dart';
 import 'widgets.dart';
+import '../i18n/i18n.dart';
 
 String historySummary(HistoryEntry e) {
   final b = StringBuffer()
     ..writeln(e.name)
-    ..writeln('Матеріал: ${e.material}, ${fmtNum(e.layerHeight, 2)} мм, заповнення ${fmtNum(e.infillPercent, 0)}%')
-    ..writeln('Вага: ${fmtGrams(e.totalGrams)}${e.copies > 1 ? ' (${e.copies} шт.)' : ''}');
-  if (e.supports && e.supportGrams > 0) b.writeln('  у т.ч. підтримки: ${fmtGrams(e.supportGrams * e.copies)}');
-  if (e.printHours > 0) b.writeln('Час друку: ${formatDuration(e.printHours)}');
-  if (e.source.isNotEmpty) b.writeln('Дані: ${e.source}');
-  b.writeln('Ціна: ${fmtMoney(e.totalCost)}');
+    ..writeln(trf('Матеріал: {0}, {1} мм, заповнення {2}%', [e.material, fmtNum(e.layerHeight, 2), fmtNum(e.infillPercent, 0)]))
+    ..writeln(trf('Вага: {0}{1}', [fmtGrams(e.totalGrams), e.copies > 1 ? trf(' ({0} шт.)', [e.copies]) : '']));
+  if (e.supports && e.supportGrams > 0) b.writeln(trf('  у т.ч. підтримки: {0}', [fmtGrams(e.supportGrams * e.copies)]));
+  if (e.printHours > 0) b.writeln(trf('Час друку: {0}', [formatDuration(e.printHours)]));
+  if (e.source.isNotEmpty) b.writeln(trf('Дані: {0}', [e.source]));
+  b.writeln(trf('Ціна: {0}', [fmtMoney(e.totalCost)]));
   if (e.note.isNotEmpty) b.writeln(e.note);
   return b.toString().trim();
 }
@@ -49,11 +50,11 @@ class _HistoryPageState extends State<HistoryPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: const Text('Очистити історію?'),
-        content: const Text('Усі збережені розрахунки буде видалено.'),
+        title: Text(tr('Очистити історію?')),
+        content: Text(tr('Усі збережені розрахунки буде видалено.')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Скасувати')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Очистити')),
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('Скасувати'))),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('Очистити'))),
         ],
       ),
     );
@@ -70,10 +71,10 @@ class _HistoryPageState extends State<HistoryPage> {
     try {
       final ok = await PlatformFiles.saveFile('stl-vaga-history.csv', 'text/csv', bytes);
       if (ok && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('CSV збережено')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('CSV збережено'))));
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Не вдалося зберегти: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(trf('Не вдалося зберегти: {0}', [e]))));
     }
   }
 
@@ -103,15 +104,15 @@ class _HistoryPageState extends State<HistoryPage> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Історія'),
+        title: Text(tr('Історія')),
         actions: [
           IconButton(
-            tooltip: 'Експорт у CSV',
+            tooltip: tr('Експорт у CSV'),
             onPressed: (items?.isNotEmpty ?? false) ? _export : null,
             icon: const Icon(Icons.file_download_outlined),
           ),
           IconButton(
-            tooltip: 'Очистити',
+            tooltip: tr('Очистити'),
             onPressed: (items?.isNotEmpty ?? false) ? _clear : null,
             icon: const Icon(Icons.delete_sweep_outlined),
           ),
@@ -126,10 +127,10 @@ class _HistoryPageState extends State<HistoryPage> {
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
                       Icon(Icons.history, size: 72, color: theme.colorScheme.outline),
                       const SizedBox(height: 12),
-                      Text('Поки що порожньо', style: theme.textTheme.titleMedium),
+                      Text(tr('Поки що порожньо'), style: theme.textTheme.titleMedium),
                       const SizedBox(height: 6),
                       Text(
-                        'Натисніть «Зберегти» під результатом розрахунку, щоб він з\'явився тут.',
+                        tr('Натисніть «Зберегти» під результатом розрахунку, щоб він з\'явився тут.'),
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                       ),
@@ -146,7 +147,7 @@ class _HistoryPageState extends State<HistoryPage> {
                       return Padding(
                         padding: const EdgeInsets.fromLTRB(4, 4, 4, 12),
                         child: Text(
-                          '${items.length} розрахунків · ${fmtGrams(grams)} · ${fmtMoney(sum)}',
+                          trf('{0} розрахунків · {1} · {2}', [items.length, fmtGrams(grams), fmtMoney(sum)]),
                           style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                         ),
                       );
@@ -228,8 +229,7 @@ class _EntryTile extends StatelessWidget {
                 Text(e.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.titleSmall),
                 const SizedBox(height: 2),
                 Text(
-                  '${e.material} · ${fmtNum(e.layerHeight, 2)} мм · ${fmtNum(e.infillPercent, 0)}%'
-                  '${e.supports ? ' · підтримки' : ''}${e.copies > 1 ? ' · ${e.copies} шт.' : ''}',
+                  trf('{0} · {1} мм · {2}%{3}{4}', [e.material, fmtNum(e.layerHeight, 2), fmtNum(e.infillPercent, 0), e.supports ? tr(' · підтримки') : '', e.copies > 1 ? trf(' · {0} шт.', [e.copies]) : '']),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
@@ -309,30 +309,30 @@ class _EntryDetailsState extends State<_EntryDetails> {
             ),
           ]),
           const SizedBox(height: 16),
-          row('Матеріал', '${e.material}, ${fmtNum(e.density, 2)} г/см³'),
-          row('Ціна пластику', '${fmtNum(e.pricePerKg, 0)} $currency/кг'),
-          row('Шар / заповнення / стінки', '${fmtNum(e.layerHeight, 2)} мм / ${fmtNum(e.infillPercent, 0)}% / ${e.walls}'),
-          row('Розмір', '${fmtNum(e.sizeX, 1)} × ${fmtNum(e.sizeY, 1)} × ${fmtNum(e.sizeZ, 1)} мм'),
-          if (e.scalePercent != 100) row('Масштаб', '${fmtNum(e.scalePercent, 0)}%'),
-          row('Кількість', '${e.copies} шт.'),
+          row(tr('Матеріал'), trf('{0}, {1} г/см³', [e.material, fmtNum(e.density, 2)])),
+          row(tr('Ціна пластику'), trf('{0} {1}/кг', [fmtNum(e.pricePerKg, 0), currency])),
+          row(tr('Шар / заповнення / стінки'), trf('{0} мм / {1}% / {2}', [fmtNum(e.layerHeight, 2), fmtNum(e.infillPercent, 0), e.walls])),
+          row(tr('Розмір'), trf('{0} × {1} × {2} мм', [fmtNum(e.sizeX, 1), fmtNum(e.sizeY, 1), fmtNum(e.sizeZ, 1)])),
+          if (e.scalePercent != 100) row(tr('Масштаб'), '${fmtNum(e.scalePercent, 0)}%'),
+          row(tr('Кількість'), trf('{0} шт.', [e.copies])),
           const Divider(height: 20),
-          row('Модель (1 шт.)', fmtGrams(e.modelGrams)),
-          row('Підтримки (1 шт.)', e.source.isNotEmpty ? 'у вазі слайсера' : (e.supports ? fmtGrams(e.supportGrams) : 'вимкнено')),
-          row('Разом', '${fmtGrams(e.totalGrams)} · ${fmtNum(e.filamentMeters, 2)} м'),
-          row('Джерело цифр', e.source.isEmpty ? 'розрахунок додатка' : 'точно, ${e.source}'),
+          row(tr('Модель (1 шт.)'), fmtGrams(e.modelGrams)),
+          row(tr('Підтримки (1 шт.)'), e.source.isNotEmpty ? tr('у вазі слайсера') : (e.supports ? fmtGrams(e.supportGrams) : tr('вимкнено'))),
+          row(tr('Разом'), trf('{0} · {1} м', [fmtGrams(e.totalGrams), fmtNum(e.filamentMeters, 2)])),
+          row(tr('Джерело цифр'), e.source.isEmpty ? tr('розрахунок додатка') : trf('точно, {0}', [e.source])),
           const Divider(height: 20),
-          if (e.printHours > 0) row('Час друку', formatDuration(e.printHours)),
-          row('Пластик', fmtMoney(e.materialCost)),
-          if (e.electricityCost != 0) row('Електроенергія', fmtMoney(e.electricityCost)),
-          if (e.amortizationCost != 0) row('Амортизація', fmtMoney(e.amortizationCost)),
-          row('Собівартість', fmtMoney(e.costPrice)),
-          if (e.markupPercent != 0) row('Заробіток ${fmtNum(e.markupPercent, 0)}%', fmtMoney(e.costPrice * e.markupPercent / 100)),
-          if (e.extraCost != 0) row('Доплата', fmtMoney(e.extraCost)),
-          row('Ціна', fmtMoney(e.totalCost)),
+          if (e.printHours > 0) row(tr('Час друку'), formatDuration(e.printHours)),
+          row(tr('Пластик'), fmtMoney(e.materialCost)),
+          if (e.electricityCost != 0) row(tr('Електроенергія'), fmtMoney(e.electricityCost)),
+          if (e.amortizationCost != 0) row(tr('Амортизація'), fmtMoney(e.amortizationCost)),
+          row(tr('Собівартість'), fmtMoney(e.costPrice)),
+          if (e.markupPercent != 0) row(trf('Заробіток {0}%', [fmtNum(e.markupPercent, 0)]), fmtMoney(e.costPrice * e.markupPercent / 100)),
+          if (e.extraCost != 0) row(tr('Доплата'), fmtMoney(e.extraCost)),
+          row(tr('Ціна'), fmtMoney(e.totalCost)),
           const SizedBox(height: 16),
           TextField(
             controller: _note,
-            decoration: const InputDecoration(labelText: 'Примітка (клієнт, колір…)', border: OutlineInputBorder()),
+            decoration: InputDecoration(labelText: tr('Примітка (клієнт, колір…)'), border: OutlineInputBorder()),
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 16),
@@ -344,7 +344,7 @@ class _EntryDetailsState extends State<_EntryDetails> {
                   widget.onDelete();
                 },
                 icon: const Icon(Icons.delete_outline),
-                label: const Text('Видалити'),
+                label: Text(tr('Видалити')),
               ),
             ),
             const SizedBox(width: 12),
@@ -352,7 +352,7 @@ class _EntryDetailsState extends State<_EntryDetails> {
               child: FilledButton.icon(
                 onPressed: () => PlatformFiles.shareText(historySummary(e.withNote(_note.text.trim()))),
                 icon: const Icon(Icons.share_outlined),
-                label: const Text('Поділитися'),
+                label: Text(tr('Поділитися')),
               ),
             ),
           ]),

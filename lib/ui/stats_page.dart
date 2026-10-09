@@ -5,10 +5,11 @@ import '../history/history.dart';
 import '../orders/orders.dart';
 import 'expenses_page.dart';
 import 'widgets.dart';
+import '../i18n/i18n.dart';
 
-const _months = [
-  'Січень', 'Лютий', 'Березень', 'Квітень', 'Травень', 'Червень', //
-  'Липень', 'Серпень', 'Вересень', 'Жовтень', 'Листопад', 'Грудень',
+List<String> get _months => [
+  tr('Січень'), tr('Лютий'), tr('Березень'), tr('Квітень'), tr('Травень'), tr('Червень'), //
+  tr('Липень'), tr('Серпень'), tr('Вересень'), tr('Жовтень'), tr('Листопад'), tr('Грудень'),
 ];
 
 class _Month {
@@ -102,7 +103,7 @@ class _StatsPageState extends State<StatsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Статистика'),
+        title: Text(tr('Статистика')),
         actions: [
           TextButton.icon(
             onPressed: () async {
@@ -110,7 +111,7 @@ class _StatsPageState extends State<StatsPage> {
               _load();
             },
             icon: const Icon(Icons.account_balance_wallet_outlined),
-            label: const Text('Витрати'),
+            label: Text(tr('Витрати')),
           ),
         ],
       ),
@@ -123,7 +124,7 @@ class _StatsPageState extends State<StatsPage> {
                   Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text(
-                      'Статистика з\'явиться, коли замовлення отримають статус «Готово» або «Оплачено».',
+                      tr('Статистика з\'явиться, коли замовлення отримають статус «Готово» або «Оплачено».'),
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
@@ -132,18 +133,18 @@ class _StatsPageState extends State<StatsPage> {
                   Text(months.first.label, style: theme.textTheme.titleMedium),
                   const SizedBox(height: 4),
                   Row(children: [
-                    tile('виручка', fmtMoney(months.first.revenue), Icons.payments_outlined),
-                    tile('прибуток', fmtMoney(months.first.profit), Icons.trending_up),
+                    tile(tr('виручка'), fmtMoney(months.first.revenue), Icons.payments_outlined),
+                    tile(tr('прибуток'), fmtMoney(months.first.profit), Icons.trending_up),
                   ]),
                   if (months.first.expenses > 0)
                     Row(children: [
-                      tile('витрати', fmtMoney(months.first.expenses), Icons.account_balance_wallet_outlined),
-                      tile('чистий (виручка − витрати)', fmtMoney(months.first.net), Icons.savings_outlined),
+                      tile(tr('витрати'), fmtMoney(months.first.expenses), Icons.account_balance_wallet_outlined),
+                      tile(tr('чистий (виручка − витрати)'), fmtMoney(months.first.net), Icons.savings_outlined),
                     ]),
                   Row(children: [
-                    tile('замовлень', '${months.first.orders}', Icons.receipt_long_outlined),
-                    tile('пластику', fmtGrams(months.first.grams), Icons.circle_outlined),
-                    tile('друку', formatDuration(months.first.hours), Icons.schedule),
+                    tile(tr('замовлень'), '${months.first.orders}', Icons.receipt_long_outlined),
+                    tile(tr('пластику'), fmtGrams(months.first.grams), Icons.circle_outlined),
+                    tile(tr('друку'), formatDuration(months.first.hours), Icons.schedule),
                   ]),
                 ],
                 if (_open > 0)
@@ -151,13 +152,13 @@ class _StatsPageState extends State<StatsPage> {
                     margin: const EdgeInsets.all(4),
                     child: ListTile(
                       leading: const Icon(Icons.pending_actions_outlined),
-                      title: Text('В роботі: $_open'),
+                      title: Text(trf('В роботі: {0}', [_open])),
                       trailing: Text(fmtMoney(_openTotal), style: theme.textTheme.titleSmall),
                     ),
                   ),
                 if (months.isNotEmpty) ...[
                   const SizedBox(height: 16),
-                  Text('По місяцях', style: theme.textTheme.titleMedium),
+                  Text(tr('По місяцях'), style: theme.textTheme.titleMedium),
                   const SizedBox(height: 8),
                   for (final m in months.take(12))
                     Padding(
@@ -185,8 +186,7 @@ class _StatsPageState extends State<StatsPage> {
                         }),
                         const SizedBox(height: 2),
                         Text(
-                          'прибуток ${fmtMoney(m.profit)} · ${m.orders} зам. · ${fmtGrams(m.grams)}'
-                          '${m.expenses > 0 ? '\nвитрати ${fmtMoney(m.expenses)} · чистий ${fmtMoney(m.net)}' : ''}',
+                          trf('прибуток {0} · {1} зам. · {2}{3}', [fmtMoney(m.profit), m.orders, fmtGrams(m.grams), m.expenses > 0 ? trf('\nвитрати {0} · чистий {1}', [fmtMoney(m.expenses), fmtMoney(m.net)]) : '']),
                           style: theme.textTheme.bodySmall,
                         ),
                       ]),

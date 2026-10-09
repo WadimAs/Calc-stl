@@ -11,20 +11,20 @@ import '../orders/orders.dart';
 import '../platform/files.dart';
 import '../platform/pdf.dart';
 import 'widgets.dart';
+import '../i18n/i18n.dart';
 
 String quoteText(Order o) {
   final t = o.totals;
-  final b = StringBuffer('Розрахунок вартості 3D-друку');
-  if (o.client.trim().isNotEmpty) b.write(' для ${o.client.trim()}');
+  final b = StringBuffer(tr('Розрахунок вартості 3D-друку'));
+  if (o.client.trim().isNotEmpty) b.write(trf(' для {0}', [o.client.trim()]));
   b.writeln();
   for (final it in o.items) {
-    b.writeln('• ${it.name} — ${it.material}, ${it.qty} шт × ${fmtGrams(it.gramsEach)}: '
-        '${fmtMoney(it.priceEach * it.qty)}');
+    b.writeln(trf('• {0} — {1}, {2} шт × {3}: {4}', [it.name, it.material, it.qty, fmtGrams(it.gramsEach), fmtMoney(it.priceEach * it.qty)]));
   }
-  if (t.discount > 0) b.writeln('Знижка: −${fmtMoney(t.discount)}');
-  if (t.extra > 0) b.writeln('Підготовка / робота: ${fmtMoney(t.extra)}');
-  b.writeln('Разом: ${fmtMoney(t.total)}');
-  b.writeln('Орієнтовний час друку: ${formatDuration(t.hours)}');
+  if (t.discount > 0) b.writeln(trf('Знижка: −{0}', [fmtMoney(t.discount)]));
+  if (t.extra > 0) b.writeln(trf('Підготовка / робота: {0}', [fmtMoney(t.extra)]));
+  b.writeln(trf('Разом: {0}', [fmtMoney(t.total)]));
+  b.writeln(trf('Орієнтовний час друку: {0}', [formatDuration(t.hours)]));
   if (o.note.trim().isNotEmpty) b.writeln(o.note.trim());
   return b.toString().trim();
 }
@@ -68,7 +68,7 @@ class _QuotePageState extends State<QuotePage> {
         img.dispose();
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Не вдалося: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(trf('Не вдалося: {0}', [e]))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -84,7 +84,7 @@ class _QuotePageState extends State<QuotePage> {
     final data = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
     if (data == null) return null;
     return PdfImage.build(data.buffer.asUint8List(), img.width, img.height,
-        title: _invoice ? 'Рахунок № ${widget.order.number}' : 'Розрахунок вартості 3D-друку');
+        title: _invoice ? trf('Рахунок № {0}', [widget.order.number]) : tr('Розрахунок вартості 3D-друку'));
   }
 
   Future<void> _sharePdf() => _capture((img) async {
@@ -96,7 +96,7 @@ class _QuotePageState extends State<QuotePage> {
         final pdf = await _pdf(img);
         if (pdf == null) return;
         final ok = await PlatformFiles.saveFile('$_fileBase.pdf', 'application/pdf', pdf);
-        if (ok && mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PDF збережено')));
+        if (ok && mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('PDF збережено'))));
       });
 
   Future<void> _editBusiness() async {
@@ -110,10 +110,10 @@ class _QuotePageState extends State<QuotePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_invoice ? 'Рахунок' : 'Пропозиція для клієнта'),
+        title: Text(_invoice ? tr('Рахунок') : tr('Пропозиція для клієнта')),
         actions: [
           IconButton(
-            tooltip: 'Мої реквізити',
+            tooltip: tr('Мої реквізити'),
             onPressed: _editBusiness,
             icon: const Icon(Icons.storefront_outlined),
           ),
@@ -124,8 +124,8 @@ class _QuotePageState extends State<QuotePage> {
         children: [
           SegmentedButton<bool>(
             segments: const [
-              ButtonSegment(value: false, label: Text('Пропозиція'), icon: Icon(Icons.request_quote_outlined)),
-              ButtonSegment(value: true, label: Text('Рахунок'), icon: Icon(Icons.receipt_long_outlined)),
+              ButtonSegment(value: false, label: Text(tr('Пропозиція')), icon: Icon(Icons.request_quote_outlined)),
+              ButtonSegment(value: true, label: Text(tr('Рахунок')), icon: Icon(Icons.receipt_long_outlined)),
             ],
             selected: {_invoice},
             onSelectionChanged: (v) => setState(() => _invoice = v.first),
@@ -136,13 +136,13 @@ class _QuotePageState extends State<QuotePage> {
               child: TextButton.icon(
                 onPressed: _editBusiness,
                 icon: const Icon(Icons.edit_outlined),
-                label: const Text('Додати свої реквізити для оплати'),
+                label: Text(tr('Додати свої реквізити для оплати')),
               ),
             ),
           if (widget.order.photos.isNotEmpty)
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Додати фото виробу'),
+              title: Text(tr('Додати фото виробу')),
               value: _withPhotos,
               onChanged: (v) => setState(() => _withPhotos = v),
             ),
@@ -155,7 +155,7 @@ class _QuotePageState extends State<QuotePage> {
           FilledButton.icon(
             onPressed: _busy ? null : _sharePdf,
             icon: const Icon(Icons.picture_as_pdf_outlined),
-            label: const Text('Надіслати PDF'),
+            label: Text(tr('Надіслати PDF')),
           ),
           const SizedBox(height: 8),
           Row(children: [
@@ -163,7 +163,7 @@ class _QuotePageState extends State<QuotePage> {
               child: OutlinedButton.icon(
                 onPressed: _busy ? null : _shareImage,
                 icon: const Icon(Icons.image_outlined),
-                label: const Text('Картинкою'),
+                label: Text(tr('Картинкою')),
               ),
             ),
             const SizedBox(width: 8),
@@ -171,7 +171,7 @@ class _QuotePageState extends State<QuotePage> {
               child: OutlinedButton.icon(
                 onPressed: _busy ? null : _savePdf,
                 icon: const Icon(Icons.save_alt),
-                label: const Text('Зберегти PDF'),
+                label: Text(tr('Зберегти PDF')),
               ),
             ),
           ]),
@@ -179,7 +179,7 @@ class _QuotePageState extends State<QuotePage> {
           OutlinedButton.icon(
             onPressed: () => PlatformFiles.shareText(quoteText(widget.order)).catchError((Object _) {}),
             icon: const Icon(Icons.text_snippet_outlined),
-            label: const Text('Надіслати текстом'),
+            label: Text(tr('Надіслати текстом')),
           ),
         ],
       ),
@@ -236,7 +236,7 @@ class QuoteCard extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(invoice ? 'Рахунок № ${o.number}' : 'Розрахунок вартості 3D-друку',
+                Text(invoice ? trf('Рахунок № {0}', [o.number]) : tr('Розрахунок вартості 3D-друку'),
                     style: const TextStyle(color: _ink, fontSize: 17, fontWeight: FontWeight.w700)),
                 Text(formatDate(DateTime.now()).split(' ').first, style: base.copyWith(color: _muted, fontSize: 12)),
                 if (business.name.trim().isNotEmpty)
@@ -246,12 +246,12 @@ class QuoteCard extends StatelessWidget {
           ]),
           if (o.client.trim().isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text(invoice ? 'Платник: ${o.client.trim()}' : 'Для: ${o.client.trim()}',
+            Text(invoice ? trf('Платник: {0}', [o.client.trim()]) : trf('Для: {0}', [o.client.trim()]),
                 style: base.copyWith(fontWeight: FontWeight.w600)),
           ],
           if (o.dueAt != null) ...[
             const SizedBox(height: 4),
-            Text('Готовність: ${formatDate(o.dueAt!).split(' ').first}', style: base.copyWith(color: _muted)),
+            Text(trf('Готовність: {0}', [formatDate(o.dueAt!).split(' ').first]), style: base.copyWith(color: _muted)),
           ],
           const SizedBox(height: 12),
           const Divider(color: Color(0xFFE7E3EC), height: 1),
@@ -275,7 +275,7 @@ class QuoteCard extends StatelessWidget {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(it.name, maxLines: 2, overflow: TextOverflow.ellipsis,
                         style: base.copyWith(fontWeight: FontWeight.w600)),
-                    Text('${it.material} · ${it.qty} шт · ${fmtGrams(it.gramsEach)}',
+                    Text(trf('{0} · {1} шт · {2}', [it.material, it.qty, fmtGrams(it.gramsEach)]),
                         style: base.copyWith(color: _muted, fontSize: 12)),
                   ]),
                 ),
@@ -302,13 +302,13 @@ class QuoteCard extends StatelessWidget {
           ],
           const Divider(color: Color(0xFFE7E3EC), height: 1),
           const SizedBox(height: 8),
-          if (t.discount > 0) row('Знижка від кількості', '−${fmtMoney(t.discount)}'),
-          if (t.extra > 0) row('Підготовка, робота', fmtMoney(t.extra)),
-          if (t.minimumAdd > 0) row('Мінімальне замовлення', fmtMoney(t.minimumAdd)),
-          row('Орієнтовний час друку', formatDuration(t.hours)),
+          if (t.discount > 0) row(tr('Знижка від кількості'), '−${fmtMoney(t.discount)}'),
+          if (t.extra > 0) row(tr('Підготовка, робота'), fmtMoney(t.extra)),
+          if (t.minimumAdd > 0) row(tr('Мінімальне замовлення'), fmtMoney(t.minimumAdd)),
+          row(tr('Орієнтовний час друку'), formatDuration(t.hours)),
           const SizedBox(height: 8),
           Row(children: [
-            const Expanded(child: Text('Разом', style: TextStyle(color: _ink, fontSize: 18, fontWeight: FontWeight.w700))),
+            Expanded(child: Text(tr('Разом'), style: TextStyle(color: _ink, fontSize: 18, fontWeight: FontWeight.w700))),
             Text(fmtMoney(t.total), style: const TextStyle(color: _accent, fontSize: 24, fontWeight: FontWeight.w800)),
           ]),
           if (o.note.trim().isNotEmpty) ...[
@@ -319,7 +319,7 @@ class QuoteCard extends StatelessWidget {
             const SizedBox(height: 12),
             const Divider(color: Color(0xFFE7E3EC), height: 1),
             const SizedBox(height: 8),
-            Text('Оплата', style: base.copyWith(fontWeight: FontWeight.w700)),
+            Text(tr('Оплата'), style: base.copyWith(fontWeight: FontWeight.w700)),
             Text(business.payment.trim(), style: base),
           ],
           if (business.contacts.trim().isNotEmpty) ...[
@@ -357,34 +357,34 @@ class _BusinessDialogState extends State<_BusinessDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Мої реквізити'),
+      title: Text(tr('Мої реквізити')),
       content: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(
             controller: _name,
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(labelText: 'Назва / ФОП', hintText: 'ФОП Іваненко І. І.'),
+            decoration: InputDecoration(labelText: tr('Назва / ФОП'), hintText: tr('ФОП Іваненко І. І.')),
           ),
           TextField(
             controller: _contacts,
-            decoration: const InputDecoration(labelText: 'Контакти', hintText: '+380…, @telegram'),
+            decoration: InputDecoration(labelText: tr('Контакти'), hintText: '+380…, @telegram'),
           ),
           TextField(
             controller: _payment,
             minLines: 2,
             maxLines: 5,
-            decoration: const InputDecoration(labelText: 'Як оплатити', hintText: 'IBAN UA… або номер картки'),
+            decoration: InputDecoration(labelText: tr('Як оплатити'), hintText: tr('IBAN UA… або номер картки')),
           ),
         ]),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Скасувати'))),
         FilledButton(
           onPressed: () => Navigator.pop(
             context,
             BusinessInfo(name: _name.text.trim(), contacts: _contacts.text.trim(), payment: _payment.text.trim()),
           ),
-          child: const Text('Зберегти'),
+          child: Text(tr('Зберегти')),
         ),
       ],
     );

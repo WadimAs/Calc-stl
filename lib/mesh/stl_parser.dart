@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'mesh.dart';
+import '../i18n/i18n.dart';
 
 /// Parses binary or ASCII STL. Units are assumed to be millimetres.
 Mesh parseStl(Uint8List bytes) {
@@ -22,7 +23,7 @@ Mesh parseStl(Uint8List bytes) {
     final n = declared > 0 && declared < fit ? declared : fit;
     return _parseBinary(bd, n);
   }
-  throw const FormatException('Не вдалося розпізнати STL-файл');
+  throw FormatException(tr('Не вдалося розпізнати STL-файл'));
 }
 
 bool _looksAscii(Uint8List bytes) {

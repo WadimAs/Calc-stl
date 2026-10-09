@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'printers.dart';
+import '../i18n/i18n.dart';
 
 class MoonrakerException implements Exception {
   final String message;
@@ -39,19 +40,19 @@ class MoonrakerClient {
       final res = await req.close().timeout(const Duration(seconds: 60));
       final text = await res.transform(utf8.decoder).join();
       if (res.statusCode == 401 || res.statusCode == 403) {
-        throw const MoonrakerException('Moonraker просить API-ключ або доступ заборонено');
+        throw MoonrakerException(tr('Moonraker просить API-ключ або доступ заборонено'));
       }
       if (res.statusCode != 200 && res.statusCode != 201) {
-        throw MoonrakerException('Moonraker відповів ${res.statusCode}');
+        throw MoonrakerException(trf('Moonraker відповів {0}', [res.statusCode]));
       }
       final j = jsonDecode(text);
       return j is Map ? j['result'] : null;
     } on SocketException catch (e) {
-      throw MoonrakerException('Немає з\'єднання з ${printer.host}: ${e.osError?.message ?? e.message}');
+      throw MoonrakerException(trf('Немає з\'єднання з {0}: {1}', [printer.host, e.osError?.message ?? e.message]));
     } on TimeoutException {
-      throw const MoonrakerException('Принтер не відповідає');
+      throw MoonrakerException(tr('Принтер не відповідає'));
     } on FormatException {
-      throw const MoonrakerException('Це не схоже на Moonraker');
+      throw MoonrakerException(tr('Це не схоже на Moonraker'));
     } finally {
       client.close(force: true);
     }

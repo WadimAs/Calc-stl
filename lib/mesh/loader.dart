@@ -7,6 +7,7 @@ import 'slicer_project.dart';
 import 'stl_parser.dart';
 import 'threemf_parser.dart';
 import 'transform.dart';
+import '../i18n/i18n.dart';
 
 /// Everything the UI needs about an opened model.
 class LoadedModel {
@@ -63,7 +64,8 @@ bool isSupportedFile(String name) {
 
 /// Parses the file in a background isolate.
 Future<LoadedModel> loadModel(String name, Uint8List bytes) {
-  return Isolate.run(() => _load(name, bytes));
+  final l = lang;
+  return Isolate.run(() => inLang(l, () => _load(name, bytes)));
 }
 
 /// Same file with another orientation and/or selection of objects.
@@ -71,7 +73,8 @@ Future<LoadedModel> deriveModel(LoadedModel m, {Mat3? rotation, List<bool>? enab
   final name = m.name, source = m.source, project = m.project;
   final rot = rotation ?? m.rotation;
   final en = enabled ?? m.enabled;
-  return Isolate.run(() => _build(name, source, project, rot, en));
+  final l = lang;
+  return Isolate.run(() => inLang(l, () => _build(name, source, project, rot, en)));
 }
 
 LoadedModel _load(String name, Uint8List bytes) {
@@ -81,7 +84,7 @@ LoadedModel _load(String name, Uint8List bytes) {
   if (lower.endsWith('.gcode') || lower.endsWith('.gco') || lower.endsWith('.g') || _looksLikeGcode(bytes)) {
     project = readGcode(bytes);
     if (project == null) {
-      throw const FormatException('У G-code немає даних про вагу чи час друку');
+      throw FormatException(tr('У G-code немає даних про вагу чи час друку'));
     }
     mesh = Mesh(Float32List(0));
   } else if (lower.endsWith('.3mf') || _isZip(bytes)) {
@@ -97,7 +100,7 @@ LoadedModel _load(String name, Uint8List bytes) {
     mesh = parseStl(bytes);
   }
   if (mesh.triangleCount == 0 && !(project?.isSliced ?? false)) {
-    throw const FormatException('Модель порожня');
+    throw FormatException(tr('Модель порожня'));
   }
   return _build(name, mesh, project, identity3, List<bool>.filled(mesh.objects.length, true));
 }

@@ -9,6 +9,7 @@ import '../mesh/loader.dart';
 import '../mesh/mesh.dart';
 import '../slicer/slicer.dart';
 import 'measure.dart';
+import '../i18n/i18n.dart';
 
 /// Orthographic camera shared by drawing and picking.
 class _View {
@@ -50,15 +51,15 @@ const sliceColors = <Color>[
   Color(0xFF4DD0E1), // brim / skirt
 ];
 
-const sliceClassNames = <String>[
+List<String> get sliceClassNames => <String>[
   '',
-  'Зовнішня стінка',
-  'Внутрішня стінка',
-  'Суцільне заповнення',
-  'Заповнення',
-  'Підтримки',
-  'Контакт підтримок',
-  'Кайма / спідниця',
+  tr('Зовнішня стінка'),
+  tr('Внутрішня стінка'),
+  tr('Суцільне заповнення'),
+  tr('Заповнення'),
+  tr('Підтримки'),
+  tr('Контакт підтримок'),
+  tr('Кайма / спідниця'),
 ];
 
 /// Interactive 3D preview: drag to rotate, pinch to zoom/pan, double tap to reset.
@@ -516,7 +517,7 @@ class _ModelPainter extends CustomPainter {
       canvas.drawCircle(o, 5, ring);
     }
 
-    String mm(double x) => '${(x * k).toStringAsFixed(2).replaceAll('.', ',')} мм';
+    String mm(double x) => trf('{0} мм', [(x * k).toStringAsFixed(2).replaceAll('.', ',')]);
 
     for (final m in mc.done) {
       final pts = m.points;

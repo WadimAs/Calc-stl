@@ -9,9 +9,10 @@ import '../slicer/settings.dart';
 import 'orders_page.dart';
 import 'photos_ui.dart';
 import 'widgets.dart';
+import '../i18n/i18n.dart';
 
 String priceListText(List<Product> list) {
-  final b = StringBuffer('Прайс-лист 3D-друку\n');
+  final b = StringBuffer(tr('Прайс-лист 3D-друку\n'));
   for (final p in list) {
     b.writeln('• ${p.name} (${p.material}) — ${fmtMoney(p.price)}');
   }
@@ -43,26 +44,26 @@ class _CatalogPageState extends State<CatalogPage> {
     final r = await showDialog<Product>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Виріб'),
+        title: Text(tr('Виріб')),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(
             controller: name,
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(labelText: 'Назва'),
+            decoration: InputDecoration(labelText: tr('Назва')),
           ),
           TextField(
             controller: price,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(labelText: 'Ціна за штуку, $currency'),
+            decoration: InputDecoration(labelText: trf('Ціна за штуку, {0}', [currency])),
           ),
           const SizedBox(height: 8),
           Text(
-            'Собівартість ${fmtMoney(p.cost)} · ${fmtGrams(p.grams)} · ${formatDuration(p.hours)}',
+            trf('Собівартість {0} · {1} · {2}', [fmtMoney(p.cost), fmtGrams(p.grams), formatDuration(p.hours)]),
             style: Theme.of(ctx).textTheme.bodySmall,
           ),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Скасувати')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Скасувати'))),
           FilledButton(
             onPressed: () => Navigator.pop(
               ctx,
@@ -71,7 +72,7 @@ class _CatalogPageState extends State<CatalogPage> {
                 price: double.tryParse(price.text.replaceAll(',', '.').replaceAll(' ', '')) ?? p.price,
               ),
             ),
-            child: const Text('Зберегти'),
+            child: Text(tr('Зберегти')),
           ),
         ],
       ),
@@ -122,19 +123,19 @@ class _CatalogPageState extends State<CatalogPage> {
             child: TextField(
               controller: qtyCtl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Кількість, шт'),
+              decoration: InputDecoration(labelText: tr('Кількість, шт')),
             ),
           ),
           ListTile(
             leading: const Icon(Icons.add),
-            title: const Text('Нове замовлення'),
+            title: Text(tr('Нове замовлення')),
             onTap: () => Navigator.pop(ctx, ''),
           ),
           for (final o in orders.take(8))
             ListTile(
               leading: const Icon(Icons.receipt_long_outlined),
               title: Text(o.title),
-              subtitle: Text('${o.totals.pieces} шт · ${fmtMoney(o.totals.total)}'),
+              subtitle: Text(trf('{0} шт · {1}', [o.totals.pieces, fmtMoney(o.totals.total)])),
               onTap: () => Navigator.pop(ctx, o.id),
             ),
         ]),
@@ -161,10 +162,10 @@ class _CatalogPageState extends State<CatalogPage> {
     final list = _list;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Прайс-лист'),
+        title: Text(tr('Прайс-лист')),
         actions: [
           IconButton(
-            tooltip: 'Надіслати прайс',
+            tooltip: tr('Надіслати прайс'),
             onPressed: list == null || list.isEmpty
                 ? null
                 : () => PlatformFiles.shareText(priceListText(list)).catchError((Object _) {}),
@@ -179,8 +180,7 @@ class _CatalogPageState extends State<CatalogPage> {
                   child: Padding(
                     padding: const EdgeInsets.all(32),
                     child: Text(
-                      'Порахуйте модель і натисніть «У прайс-лист» — виріб збережеться з ціною, '
-                      'і наступного разу його можна додати до замовлення в один дотик.',
+                      tr('Порахуйте модель і натисніть «У прайс-лист» — виріб збережеться з ціною, і наступного разу його можна додати до замовлення в один дотик.'),
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
@@ -199,7 +199,7 @@ class _CatalogPageState extends State<CatalogPage> {
                           ),
                           title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
                           subtitle: Text(
-                            '${p.material} · ${fmtGrams(p.grams)} · собів. ${fmtMoney(p.cost)}',
+                            trf('{0} · {1} · собів. {2}', [p.material, fmtGrams(p.grams), fmtMoney(p.cost)]),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -215,14 +215,14 @@ class _CatalogPageState extends State<CatalogPage> {
                                 if (v == 'share') sharePhoto(p.photoPath!).catchError((Object _) {});
                               },
                               itemBuilder: (_) => [
-                                const PopupMenuItem(value: 'order', child: Text('До замовлення')),
-                                const PopupMenuItem(value: 'edit', child: Text('Змінити ціну')),
+                                PopupMenuItem(value: 'order', child: Text(tr('До замовлення'))),
+                                PopupMenuItem(value: 'edit', child: Text(tr('Змінити ціну'))),
                                 PopupMenuItem(
                                     value: 'photo',
-                                    child: Text(p.photoPath == null ? 'Додати фото' : 'Замінити фото')),
+                                    child: Text(p.photoPath == null ? tr('Додати фото') : tr('Замінити фото'))),
                                 if (p.photoPath != null)
-                                  const PopupMenuItem(value: 'share', child: Text('Надіслати фото')),
-                                const PopupMenuItem(value: 'del', child: Text('Видалити')),
+                                  PopupMenuItem(value: 'share', child: Text(tr('Надіслати фото'))),
+                                PopupMenuItem(value: 'del', child: Text(tr('Видалити'))),
                               ],
                             ),
                           ]),

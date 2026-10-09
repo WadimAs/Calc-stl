@@ -1,4 +1,5 @@
 import '../data/records.dart';
+import '../i18n/i18n.dart';
 
 /// A ready product with a fixed price (price list).
 class Product {
@@ -62,7 +63,7 @@ class Product {
     double d(String k) => raw[k] is num ? (raw[k] as num).toDouble() : 0.0;
     return Product(
       id: raw['id'] as String,
-      name: raw['name'] is String ? raw['name'] as String : 'виріб',
+      name: raw['name'] is String ? raw['name'] as String : tr('виріб'),
       material: raw['material'] is String ? raw['material'] as String : '',
       materialId: raw['materialId'] is String ? raw['materialId'] as String : 'PLA',
       grams: d('grams'),

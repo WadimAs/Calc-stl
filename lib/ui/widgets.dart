@@ -1,13 +1,17 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../i18n/i18n.dart';
 
-String fmtNum(double v, int decimals) => v.toStringAsFixed(decimals).replaceAll('.', ',');
+String fmtNum(double v, int decimals) {
+  final t = v.toStringAsFixed(decimals);
+  return lang == 'en' ? t : t.replaceAll('.', ',');
+}
 
 String fmtGrams(double g) {
-  if (g >= 1000) return '${fmtNum(g / 1000, 2)} кг';
-  if (g >= 100) return '${fmtNum(g, 0)} г';
-  return '${fmtNum(g, 1)} г';
+  if (g >= 1000) return trf('{0} кг', [fmtNum(g / 1000, 2)]);
+  if (g >= 100) return trf('{0} г', [fmtNum(g, 0)]);
+  return trf('{0} г', [fmtNum(g, 1)]);
 }
 
 String fmtMoney(double v) {
@@ -21,8 +25,8 @@ String fmtMoney(double v) {
     if (i > 0 && (digits.length - i) % 3 == 0 && digits[i - 1] != '-') b.write('\u202F');
     b.write(digits[i]);
   }
-  if (parts.length > 1) b.write(',${parts[1]}');
-  return '$b грн';
+  if (parts.length > 1) b.write('${lang == 'en' ? '.' : ','}${parts[1]}');
+  return trf('{0} грн', [b]);
 }
 
 /// Bambu-style "back to default" icon: shown only when the value differs.
@@ -41,7 +45,7 @@ class ResetButton extends StatelessWidget {
           ? IconButton(
               padding: EdgeInsets.zero,
               visualDensity: VisualDensity.compact,
-              tooltip: 'Повернути значення за замовчуванням',
+              tooltip: tr('Повернути значення за замовчуванням'),
               onPressed: onReset,
               icon: Icon(Icons.undo, size: 20, color: Theme.of(context).colorScheme.primary),
             )
@@ -206,7 +210,7 @@ class _NumberFieldState extends State<NumberField> {
         isDense: true,
         suffixIcon: widget.defaultValue != null && (widget.value - widget.defaultValue!).abs() > 1e-9
             ? IconButton(
-                tooltip: 'Повернути значення за замовчуванням',
+                tooltip: tr('Повернути значення за замовчуванням'),
                 icon: Icon(Icons.undo, size: 20, color: Theme.of(context).colorScheme.primary),
                 onPressed: () {
                   _c.text = _fmt(widget.defaultValue!);

@@ -8,7 +8,7 @@ class PdfImage {
   static const double _pageW = 595.28, _pageH = 841.89, _margin = 36;
 
   /// [rgba] is raw RGBA (as from `ui.Image.toByteData(rawRgba)`).
-  static Uint8List build(Uint8List rgba, int width, int height, {String title = 'Документ'}) {
+  static Uint8List build(Uint8List rgba, int width, int height, {String title = 'Документ'}) { // no-tr
     // RGBA over white → RGB, then Flate.
     final rgb = Uint8List(width * height * 3);
     for (int i = 0, j = 0; i + 3 < rgba.length && j + 2 < rgb.length; i += 4, j += 3) {

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import '../mesh/mesh.dart';
 import 'settings.dart';
 import 'slicer.dart';
+import '../i18n/i18n.dart';
 
 class SliceCancelled implements Exception {
   const SliceCancelled();
@@ -35,7 +36,7 @@ class SliceJob {
         _close();
       } else if (msg is List) {
         // Uncaught error from the isolate: [error, stackTrace].
-        completer.completeError(Exception(msg.isNotEmpty ? msg.first.toString() : 'Помилка нарізання'));
+        completer.completeError(Exception(msg.isNotEmpty ? msg.first.toString() : tr('Помилка нарізання')));
         _close();
       } else if (msg == null) {
         completer.completeError(const SliceCancelled());
@@ -47,7 +48,7 @@ class SliceJob {
     try {
       _isolate = await Isolate.spawn<List<Object>>(
         _entry,
-        [port.sendPort, data, settings.toJson()],
+        [port.sendPort, data, settings.toJson(), lang],
         onError: port.sendPort,
         onExit: port.sendPort,
         errorsAreFatal: true,
@@ -77,6 +78,7 @@ void _entry(List<Object> args) {
   final send = args[0] as SendPort;
   final tris = (args[1] as TransferableTypedData).materialize().asFloat32List();
   final settings = SliceSettings.fromJson(Map<String, dynamic>.from(args[2] as Map));
+  lang = args[3] as String;
   try {
     final r = sliceMesh(tris, settings, onProgress: (p) => send.send(p));
     send.send(r.toMap());

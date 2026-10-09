@@ -1,14 +1,15 @@
 import '../data/json_store.dart';
 import '../slicer/settings.dart';
+import '../i18n/i18n.dart';
 
 enum OrderStatus { fresh, inWork, done, paid }
 
 extension OrderStatusInfo on OrderStatus {
   String get label => switch (this) {
-        OrderStatus.fresh => 'Нове',
-        OrderStatus.inWork => 'У роботі',
-        OrderStatus.done => 'Готово',
-        OrderStatus.paid => 'Оплачено',
+        OrderStatus.fresh => tr('Нове'),
+        OrderStatus.inWork => tr('У роботі'),
+        OrderStatus.done => tr('Готово'),
+        OrderStatus.paid => tr('Оплачено'),
       };
 
   /// Printed: plastic is spent, counts in the statistics.
@@ -83,7 +84,7 @@ class OrderItem {
     double d(String k) => raw[k] is num ? (raw[k] as num).toDouble() : 0.0;
     return OrderItem(
       id: raw['id'] as String,
-      name: raw['name'] is String ? raw['name'] as String : 'модель',
+      name: raw['name'] is String ? raw['name'] as String : tr('модель'),
       material: raw['material'] is String ? raw['material'] as String : '',
       materialId: raw['materialId'] is String ? raw['materialId'] as String : 'PLA',
       qty: raw['qty'] is num ? (raw['qty'] as num).toInt() : 1,
@@ -154,7 +155,7 @@ class Order {
         discounts: s.discounts,
       );
 
-  String get title => client.trim().isNotEmpty ? client.trim() : 'Замовлення від ${_date(createdAt)}';
+  String get title => client.trim().isNotEmpty ? client.trim() : trf('Замовлення від {0}', [_date(createdAt)]);
 
   /// Not printed yet and the deadline has passed.
   bool get overdue {

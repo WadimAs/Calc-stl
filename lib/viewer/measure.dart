@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 import '../mesh/holes.dart';
+import '../i18n/i18n.dart';
 
 /// Point in model coordinates (mm, relative to the model's bounding-box centre).
 class P3 {
@@ -41,10 +42,10 @@ extension MeasureToolInfo on MeasureTool {
 
   String get label => switch (this) {
         MeasureTool.none => '',
-        MeasureTool.distance => 'Відстань',
-        MeasureTool.circle => 'Коло',
-        MeasureTool.angle => 'Кут',
-        MeasureTool.holes => 'Отвори',
+        MeasureTool.distance => tr('Відстань'),
+        MeasureTool.circle => tr('Коло'),
+        MeasureTool.angle => tr('Кут'),
+        MeasureTool.holes => tr('Отвори'),
       };
 }
 
@@ -151,7 +152,7 @@ class MeasureController extends ChangeNotifier {
       holes = found;
     } catch (e) {
       if (gen != _generation) return;
-      holesError = 'Не вдалося проаналізувати модель: $e';
+      holesError = trf('Не вдалося проаналізувати модель: {0}', [e]);
     } finally {
       if (gen == _generation) {
         holesBusy = false;

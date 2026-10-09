@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../i18n/i18n.dart';
 
 class _Slide {
   final IconData icon;
@@ -8,24 +9,21 @@ class _Slide {
   const _Slide(this.icon, this.title, this.text);
 }
 
-const _slides = [
+List<_Slide> get _slides => [
   _Slide(
     Icons.view_in_ar_outlined,
-    'Відкрийте модель',
-    'STL, 3MF, G-code або архів .zip — з файлів, Telegram, Viber чи за посиланням. '
-        'Застосунок по-справжньому нарізає модель і рахує вагу пластику, як слайсер.',
+    tr('Відкрийте модель'),
+    tr('STL, 3MF, G-code або архів .zip — з файлів, Telegram, Viber чи за посиланням. Застосунок по-справжньому нарізає модель і рахує вагу пластику, як слайсер.'),
   ),
   _Slide(
     Icons.payments_outlined,
-    'Отримайте ціну',
-    'Собівартість — пластик, світло, знос принтера — і ціна з вашим заробітком. '
-        'Якщо файл з Bambu Studio чи Orca, цифри беруться точно з нього.',
+    tr('Отримайте ціну'),
+    tr('Собівартість — пластик, світло, знос принтера — і ціна з вашим заробітком. Якщо файл з Bambu Studio чи Orca, цифри беруться точно з нього.'),
   ),
   _Slide(
     Icons.receipt_long_outlined,
-    'Ведіть замовлення',
-    'Клієнти, терміни з нагадуваннями, рахунок у PDF, котушки зі списанням пластику '
-        'та статистика заробітку.',
+    tr('Ведіть замовлення'),
+    tr('Клієнти, терміни з нагадуваннями, рахунок у PDF, котушки зі списанням пластику та статистика заробітку.'),
   ),
 ];
 
@@ -54,13 +52,20 @@ class _IntroPageState extends State<IntroPage> {
     return Scaffold(
       body: SafeArea(
         child: Column(children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Пропустити'),
+          Row(children: [
+            const SizedBox(width: 8),
+            // Language for the whole app; applied when the intro closes.
+            TextButton.icon(
+              onPressed: () => setState(() => lang = lang == 'uk' ? 'en' : 'uk'),
+              icon: const Icon(Icons.language, size: 18),
+              label: Text(lang == 'uk' ? 'English' : 'Українська'),
             ),
-          ),
+            const Spacer(),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(tr('Пропустити')),
+            ),
+          ]),
           Expanded(
             child: PageView(
               controller: _pages,
@@ -88,24 +93,24 @@ class _IntroPageState extends State<IntroPage> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Text('Який вигляд вам зручніший?',
+                    Text(tr('Який вигляд вам зручніший?'),
                         style: theme.textTheme.headlineSmall, textAlign: TextAlign.center),
                     const SizedBox(height: 24),
                     _ModeCard(
                       icon: Icons.bolt_outlined,
-                      title: 'Простий',
-                      text: 'Лише вага, час і ціна. Мінімум налаштувань.',
+                      title: tr('Простий'),
+                      text: tr('Лише вага, час і ціна. Мінімум налаштувань.'),
                       onTap: () => Navigator.pop(context, false),
                     ),
                     const SizedBox(height: 12),
                     _ModeCard(
                       icon: Icons.tune,
-                      title: 'Розширений',
-                      text: 'Шари й підтримки, вимірювання, калібрування, котушки, прайс-лист, витрати.',
+                      title: tr('Розширений'),
+                      text: tr('Шари й підтримки, вимірювання, калібрування, котушки, прайс-лист, витрати.'),
                       onTap: () => Navigator.pop(context, true),
                     ),
                     const SizedBox(height: 16),
-                    Text('Змінити можна будь-коли в меню ⋮',
+                    Text(tr('Змінити можна будь-коли в меню ⋮'),
                         style: theme.textTheme.bodySmall, textAlign: TextAlign.center),
                   ]),
                 ),
@@ -131,7 +136,7 @@ class _IntroPageState extends State<IntroPage> {
                 FilledButton(
                   onPressed: () =>
                       _pages.nextPage(duration: const Duration(milliseconds: 250), curve: Curves.easeOut),
-                  child: const Text('Далі'),
+                  child: Text(tr('Далі')),
                 ),
             ]),
           ),

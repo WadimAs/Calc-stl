@@ -1,6 +1,7 @@
 import '../data/records.dart';
 
-const expenseCategories = ['Пластик', 'Запчастини', 'Ремонт', 'Обладнання', 'Пакування', 'Доставка', 'Інше'];
+/// Stored as these Ukrainian keys; shown through tr().
+const expenseCategories = ['Пластик', 'Запчастини', 'Ремонт', 'Обладнання', 'Пакування', 'Доставка', 'Інше']; // no-tr
 
 class Expense {
   final String id;
@@ -24,7 +25,7 @@ class Expense {
     return Expense(
       id: raw['id'] as String,
       date: DateTime.fromMillisecondsSinceEpoch(raw['date'] is num ? (raw['date'] as num).toInt() : 0),
-      category: raw['category'] is String ? raw['category'] as String : 'Інше',
+      category: raw['category'] is String ? raw['category'] as String : 'Інше', // no-tr
       amount: raw['amount'] is num ? (raw['amount'] as num).toDouble() : 0,
       note: raw['note'] is String ? raw['note'] as String : '',
     );

@@ -1,13 +1,17 @@
+import '../i18n/i18n.dart';
+
 class FilamentMaterial {
   final String id;
-  final String name;
+  final String _name;
   final double density; // g/cm³
   final double defaultPricePerKg; // грн
 
   /// Typical max volumetric flow, mm³/s (limits speed on fast printers).
   final double maxFlow;
 
-  const FilamentMaterial(this.id, this.name, this.density, this.defaultPricePerKg, this.maxFlow);
+  const FilamentMaterial(this.id, String name, this.density, this.defaultPricePerKg, this.maxFlow) : _name = name;
+
+  String get name => tr(_name);
 }
 
 const materials = <FilamentMaterial>[
@@ -22,14 +26,14 @@ const materials = <FilamentMaterial>[
   FilamentMaterial('PETG-CF', 'PETG-CF', 1.30, 1200, 12),
   FilamentMaterial('HIPS', 'HIPS', 1.04, 650, 15),
   FilamentMaterial('PVA', 'PVA', 1.23, 2200, 8),
-  FilamentMaterial('custom', 'Свій матеріал', 1.24, 600, 15),
+  FilamentMaterial('custom', 'Свій матеріал', 1.24, 600, 15), // no-tr
 ];
 
 /// Speeds (mm/s) and overheads used for the print-time estimate.
 class PrinterProfile {
   final String id;
-  final String brand;
-  final String name;
+  final String _brand;
+  final String _name;
   final double outerWall, innerWall, sparse, solid, support, firstLayer;
 
   /// Seconds per layer (layer change, wipe, retraction, travel overhead).
@@ -49,8 +53,8 @@ class PrinterProfile {
 
   const PrinterProfile({
     required this.id,
-    required this.brand,
-    required this.name,
+    required String brand,
+    required String name,
     required this.outerWall,
     required this.innerWall,
     required this.sparse,
@@ -64,7 +68,11 @@ class PrinterProfile {
     required this.bedX,
     required this.bedY,
     required this.bedZ,
-  });
+  })  : _brand = brand,
+        _name = name;
+
+  String get brand => tr(_brand);
+  String get name => tr(_name);
 
   String get fullName => '$brand $name';
 }
@@ -134,9 +142,10 @@ final printers = <PrinterProfile>[
   _p('prusa_mk4', 'Prusa', 'MK4 / MK4S', _mid, power: 110, accel: 1.5, bed: (250, 210, 220)),
   _p('prusa_core', 'Prusa', 'Core One', _mid, power: 130, accel: 1.5, bed: (250, 220, 270)),
   _p('prusa_mk3', 'Prusa', 'MK3S / MK3S+', _classic, power: 100, layer: 1.5, accel: 1.15, start: 5, bed: (250, 210, 210)),
-  _p('klipper', 'Інші', 'Швидкий Klipper (Voron тощо)', _fastSlinger,
+  _p('klipper', 'Інші', 'Швидкий Klipper (Voron тощо)', _fastSlinger, // no-tr
       power: 160, layer: 2, accel: 1.5, bed: (300, 300, 300)),
-  _p('classic', 'Інші', 'Класичний Marlin', _classic, power: 120, layer: 1.5, accel: 1.15, start: 5, bed: (220, 220, 250)),
+  _p('classic', 'Інші', 'Класичний Marlin', _classic, // no-tr
+      power: 120, layer: 1.5, accel: 1.15, start: 5, bed: (220, 220, 250)),
 ];
 
 /// A quantity discount: from [qty] pieces, [percent] off.
@@ -168,7 +177,7 @@ PrinterProfile printerById(String id) => printers.firstWhere((p) => p.id == id, 
 FilamentMaterial materialById(String id) =>
     materials.firstWhere((m) => m.id == id, orElse: () => materials.first);
 
-const currency = 'грн';
+String get currency => tr('грн'); // no-tr
 
 class SliceSettings {
   final double layerHeight;
@@ -249,6 +258,9 @@ class SliceSettings {
   /// The intro was shown.
   final bool seenIntro;
 
+  /// Interface language: 'auto', 'uk' or 'en'.
+  final String language;
+
   const SliceSettings({
     this.layerHeight = 0.2,
     this.firstLayerHeight = 0.2,
@@ -296,6 +308,7 @@ class SliceSettings {
     this.flushMm3 = 300,
     this.primeTower = true,
     this.seenIntro = false,
+    this.language = 'auto',
   });
 
   /// Build volume in use: override or the printer profile's.
@@ -389,6 +402,7 @@ class SliceSettings {
     double? flushMm3,
     bool? primeTower,
     bool? seenIntro,
+    String? language,
   }) {
     return SliceSettings(
       layerHeight: layerHeight ?? this.layerHeight,
@@ -437,6 +451,7 @@ class SliceSettings {
       flushMm3: flushMm3 ?? this.flushMm3,
       primeTower: primeTower ?? this.primeTower,
       seenIntro: seenIntro ?? this.seenIntro,
+      language: language ?? this.language,
     );
   }
 
@@ -492,6 +507,7 @@ class SliceSettings {
         'flushMm3': flushMm3,
         'primeTower': primeTower,
         'seenIntro': seenIntro,
+        'language': language,
         'v': 2,
       };
 
@@ -564,6 +580,8 @@ class SliceSettings {
       primeTower: flag('primeTower', d.primeTower),
       // Users of earlier versions have seen the app already.
       seenIntro: flag('seenIntro', j.isNotEmpty),
+      // Earlier versions were Ukrainian only.
+      language: j['language'] is String ? j['language'] as String : (j.isNotEmpty ? 'uk' : 'auto'),
     );
   }
 }
@@ -756,7 +774,7 @@ extension SliceSettingsDefaults on SliceSettings {
 
   /// Everything back to defaults; prices and calibration kept unless [prices].
   SliceSettings resetAll({bool prices = false}) {
-    final d = const SliceSettings().copyWith(advancedUi: advancedUi);
+    final d = const SliceSettings().copyWith(advancedUi: advancedUi, seenIntro: seenIntro, language: language);
     return prices
         ? d
         : d.copyWith(

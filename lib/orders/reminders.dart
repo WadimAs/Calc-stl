@@ -1,5 +1,6 @@
 import '../platform/files.dart';
 import 'orders.dart';
+import '../i18n/i18n.dart';
 
 /// Deadline notifications: 09:00 on the due date while the order is not printed.
 class OrderReminders {
@@ -18,8 +19,8 @@ class OrderReminders {
     await PlatformFiles.scheduleReminder(
       o.reminderId,
       at,
-      'Сьогодні термін: ${o.title}',
-      '${t.pieces} шт · ${o.status.label}${o.note.trim().isEmpty ? '' : ' · ${o.note.trim()}'}',
+      trf('Сьогодні термін: {0}', [o.title]),
+      trf('{0} шт · {1}{2}', [t.pieces, o.status.label, o.note.trim().isEmpty ? '' : ' · ${o.note.trim()}']),
     );
   }
 

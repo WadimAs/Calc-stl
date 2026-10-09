@@ -16,6 +16,7 @@ import 'clients_page.dart';
 import 'photos_ui.dart';
 import 'quote_page.dart';
 import 'widgets.dart';
+import '../i18n/i18n.dart';
 
 Color statusColor(OrderStatus s, ColorScheme c) => switch (s) {
       OrderStatus.fresh => c.tertiary,
@@ -64,12 +65,12 @@ class DueChip extends StatelessWidget {
             ? const Color(0xFFE8681F)
             : scheme.onSurfaceVariant;
     final text = days < 0
-        ? 'прострочено ${shortDate(d)}'
+        ? trf('прострочено {0}', [shortDate(d)])
         : days == 0
-            ? 'сьогодні'
+            ? tr('сьогодні')
             : days == 1
-                ? 'завтра'
-                : 'до ${shortDate(d)}';
+                ? tr('завтра')
+                : trf('до {0}', [shortDate(d)]);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -178,10 +179,10 @@ class _OrdersPageState extends State<OrdersPage> {
     final overdue = all?.where((o) => o.overdue).length ?? 0;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Замовлення'),
+        title: Text(tr('Замовлення')),
         actions: [
           IconButton(
-            tooltip: 'Клієнти',
+            tooltip: tr('Клієнти'),
             icon: const Icon(Icons.people_outline),
             onPressed: () async {
               await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ClientsPage()));
@@ -193,7 +194,7 @@ class _OrdersPageState extends State<OrdersPage> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _newOrder,
         icon: const Icon(Icons.add),
-        label: const Text('Нове'),
+        label: Text(tr('Нове')),
       ),
       body: all == null
           ? const Center(child: CircularProgressIndicator())
@@ -202,7 +203,7 @@ class _OrdersPageState extends State<OrdersPage> {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
                 child: Row(children: [
-                  for (final (i, label) in [(0, 'Усі'), (1, 'Активні'), (2, 'Готові'), (3, 'Оплачені')])
+                  for (final (i, label) in [(0, tr('Усі')), (1, tr('Активні')), (2, tr('Готові')), (3, tr('Оплачені'))])
                     Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: ChoiceChip(
@@ -219,7 +220,7 @@ class _OrdersPageState extends State<OrdersPage> {
                   child: Row(children: [
                     Icon(Icons.warning_amber_rounded, size: 18, color: theme.colorScheme.error),
                     const SizedBox(width: 6),
-                    Text('Прострочено: $overdue', style: TextStyle(color: theme.colorScheme.error)),
+                    Text(trf('Прострочено: {0}', [overdue]), style: TextStyle(color: theme.colorScheme.error)),
                   ]),
                 ),
               Expanded(
@@ -229,8 +230,8 @@ class _OrdersPageState extends State<OrdersPage> {
                           padding: const EdgeInsets.all(32),
                           child: Text(
                             all.isEmpty
-                                ? 'Замовлень ще немає.\nДодайте розрахунок кнопкою «До замовлення» або створіть нове.'
-                                : 'Тут порожньо',
+                                ? tr('Замовлень ще немає.\nДодайте розрахунок кнопкою «До замовлення» або створіть нове.')
+                                : tr('Тут порожньо'),
                             textAlign: TextAlign.center,
                             style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                           ),
@@ -263,7 +264,7 @@ class _OrdersPageState extends State<OrdersPage> {
                                   if (o.dueAt != null && !o.status.printed) const SizedBox(width: 6),
                                   Expanded(
                                     child: Text(
-                                      '${t.pieces} шт · ${fmtGrams(t.grams)} · ${formatDate(o.createdAt).split(' ').first}',
+                                      trf('{0} шт · {1} · {2}', [t.pieces, fmtGrams(t.grams), formatDate(o.createdAt).split(' ').first]),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -298,8 +299,8 @@ Future<String?> askText(BuildContext context,
         onSubmitted: (_) => Navigator.pop(ctx, c.text.trim()),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Скасувати')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Готово')),
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Скасувати'))),
+        FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: Text(tr('Готово'))),
       ],
     ),
   );
@@ -375,7 +376,7 @@ class _OrderPageState extends State<OrderPage> {
       initialDate: o.dueAt ?? now.add(const Duration(days: 3)),
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 2),
-      helpText: 'Коли віддати замовлення',
+      helpText: tr('Коли віддати замовлення'),
     );
     if (d == null) return;
     await PlatformFiles.requestNotifications();
@@ -387,8 +388,8 @@ class _OrderPageState extends State<OrderPage> {
     final products = await productStore.load();
     if (!mounted) return;
     if (products.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Прайс-лист порожній. Додайте вироби кнопкою «У прайс-лист» після розрахунку.'),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(tr('Прайс-лист порожній. Додайте вироби кнопкою «У прайс-лист» після розрахунку.')),
       ));
       return;
     }
@@ -443,7 +444,7 @@ class _OrderPageState extends State<OrderPage> {
       o.deducted = {};
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Пластик повернуто на котушки')));
+            .showSnackBar(SnackBar(content: Text(tr('Пластик повернуто на котушки'))));
       }
     }
     if (s.printed && o.doneAt == null) o.doneAt = DateTime.now();
@@ -457,11 +458,11 @@ class _OrderPageState extends State<OrderPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: const Text('Видалити замовлення?'),
-        content: Text(o.deducted.isNotEmpty ? 'Списаний пластик буде повернуто на котушки.' : o.title),
+        title: Text(tr('Видалити замовлення?')),
+        content: Text(o.deducted.isNotEmpty ? tr('Списаний пластик буде повернуто на котушки.') : o.title),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Скасувати')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Видалити')),
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('Скасувати'))),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('Видалити'))),
         ],
       ),
     );
@@ -495,13 +496,13 @@ class _OrderPageState extends State<OrderPage> {
         title: Text(o.title, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
-            tooltip: 'Пропозиція для клієнта',
+            tooltip: tr('Пропозиція для клієнта'),
             onPressed: o.items.isEmpty
                 ? null
                 : () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => QuotePage(order: o))),
             icon: const Icon(Icons.request_quote_outlined),
           ),
-          IconButton(tooltip: 'Видалити', onPressed: _delete, icon: const Icon(Icons.delete_outline)),
+          IconButton(tooltip: tr('Видалити'), onPressed: _delete, icon: const Icon(Icons.delete_outline)),
         ],
       ),
       body: ListView(
@@ -511,12 +512,12 @@ class _OrderPageState extends State<OrderPage> {
             child: Column(children: [
               ListTile(
                 leading: Icon(o.clientId != null ? Icons.person : Icons.person_outline),
-                title: Text(o.client.isEmpty ? 'Вибрати клієнта' : o.client),
-                subtitle: o.clientId != null ? const Text('з бази клієнтів') : null,
+                title: Text(o.client.isEmpty ? tr('Вибрати клієнта') : o.client),
+                subtitle: o.clientId != null ? Text(tr('з бази клієнтів')) : null,
                 trailing: IconButton(
-                  tooltip: 'Ввести ім\'я вручну',
+                  tooltip: tr('Ввести ім\'я вручну'),
                   icon: const Icon(Icons.edit_outlined, size: 18),
-                  onPressed: () => _editField('Клієнт', o.client, (v) => o.client = v),
+                  onPressed: () => _editField(tr('Клієнт'), o.client, (v) => o.client = v),
                 ),
                 onTap: _chooseClient,
                 onLongPress: _linked == null
@@ -531,19 +532,19 @@ class _OrderPageState extends State<OrderPage> {
                 ),
               ListTile(
                 leading: const Icon(Icons.phone_outlined),
-                title: Text(o.contact.isEmpty ? 'Контакт (телефон, Telegram)' : o.contact),
+                title: Text(o.contact.isEmpty ? tr('Контакт (телефон, Telegram)') : o.contact),
                 trailing: const Icon(Icons.edit_outlined, size: 18),
-                onTap: () => _editField('Контакт', o.contact, (v) => o.contact = v),
+                onTap: () => _editField(tr('Контакт'), o.contact, (v) => o.contact = v),
               ),
               ListTile(
                 leading: Icon(Icons.event_outlined, color: o.overdue ? theme.colorScheme.error : null),
-                title: Text(o.dueAt == null ? 'Термін (нагадаю о 9:00)' : 'Термін: ${formatDate(o.dueAt!).split(' ').first}',
+                title: Text(o.dueAt == null ? tr('Термін (нагадаю о 9:00)') : trf('Термін: {0}', [formatDate(o.dueAt!).split(' ').first]),
                     style: o.overdue ? TextStyle(color: theme.colorScheme.error) : null),
-                subtitle: o.overdue ? const Text('прострочено') : null,
+                subtitle: o.overdue ? Text(tr('прострочено')) : null,
                 trailing: o.dueAt == null
                     ? const Icon(Icons.edit_calendar_outlined, size: 18)
                     : IconButton(
-                        tooltip: 'Прибрати термін',
+                        tooltip: tr('Прибрати термін'),
                         icon: const Icon(Icons.close, size: 18),
                         onPressed: () {
                           setState(() => o.dueAt = null);
@@ -554,9 +555,9 @@ class _OrderPageState extends State<OrderPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.notes_outlined),
-                title: Text(o.note.isEmpty ? 'Примітка (колір, термін…)' : o.note),
+                title: Text(o.note.isEmpty ? tr('Примітка (колір, термін…)') : o.note),
                 trailing: const Icon(Icons.edit_outlined, size: 18),
-                onTap: () => _editField('Примітка', o.note, (v) => o.note = v),
+                onTap: () => _editField(tr('Примітка'), o.note, (v) => o.note = v),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
@@ -580,7 +581,7 @@ class _OrderPageState extends State<OrderPage> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                   child: Text(
-                    'Списано з котушок: ${fmtGrams(o.deducted.values.fold(0.0, (a, b) => a + b))}',
+                    trf('Списано з котушок: {0}', [fmtGrams(o.deducted.values.fold(0.0, (a, b) => a + b))]),
                     style: theme.textTheme.bodySmall,
                   ),
                 ),
@@ -591,7 +592,7 @@ class _OrderPageState extends State<OrderPage> {
             Padding(
               padding: const EdgeInsets.all(24),
               child: Text(
-                'Порожньо. Відкрийте модель і натисніть «До замовлення» під результатом.',
+                tr('Порожньо. Відкрийте модель і натисніть «До замовлення» під результатом.'),
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
@@ -601,7 +602,7 @@ class _OrderPageState extends State<OrderPage> {
             child: TextButton.icon(
               onPressed: _addFromCatalog,
               icon: const Icon(Icons.storefront_outlined),
-              label: const Text('Додати з прайс-листа'),
+              label: Text(tr('Додати з прайс-листа')),
             ),
           ),
           for (final it in o.items)
@@ -629,10 +630,10 @@ class _OrderPageState extends State<OrderPage> {
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(it.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.titleSmall),
                         Text(
-                          '${it.material} · ${fmtGrams(it.gramsEach)} · ${formatDuration(it.hoursEach)} / шт',
+                          trf('{0} · {1} · {2} / шт', [it.material, fmtGrams(it.gramsEach), formatDuration(it.hoursEach)]),
                           style: theme.textTheme.bodySmall,
                         ),
-                        Text('${fmtMoney(it.priceEach)} / шт', style: theme.textTheme.bodySmall),
+                        Text(trf('{0} / шт', [fmtMoney(it.priceEach)]), style: theme.textTheme.bodySmall),
                       ]),
                     ),
                     IconButton(
@@ -663,31 +664,31 @@ class _OrderPageState extends State<OrderPage> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(children: [
-                row('Деталі (${t.pieces} шт)', fmtMoney(t.subtotal)),
-                if (t.discount > 0) row('Знижка від кількості', '−${fmtMoney(t.discount)}'),
+                row(trf('Деталі ({0} шт)', [t.pieces]), fmtMoney(t.subtotal)),
+                if (t.discount > 0) row(tr('Знижка від кількості'), '−${fmtMoney(t.discount)}'),
                 InkWell(
                   onTap: () => _editField(
-                    'Доплата за замовлення, $currency',
+                    trf('Доплата за замовлення, {0}', [currency]),
                     o.extraCost == o.extraCost.roundToDouble() ? o.extraCost.toStringAsFixed(0) : fmtNum(o.extraCost, 2),
                     (v) => o.extraCost = double.tryParse(v.replaceAll(',', '.')) ?? o.extraCost,
                     keyboard: const TextInputType.numberWithOptions(decimal: true),
                   ),
-                  child: row('Доплата ✎', fmtMoney(t.extra)),
+                  child: row(tr('Доплата ✎'), fmtMoney(t.extra)),
                 ),
-                if (t.minimumAdd > 0) row('До мінімальної ціни', fmtMoney(t.minimumAdd)),
-                if (t.rounding > 0.004) row('Округлення', fmtMoney(t.rounding)),
+                if (t.minimumAdd > 0) row(tr('До мінімальної ціни'), fmtMoney(t.minimumAdd)),
+                if (t.rounding > 0.004) row(tr('Округлення'), fmtMoney(t.rounding)),
                 const Divider(),
-                row('Разом', fmtMoney(t.total), strong: true),
+                row(tr('Разом'), fmtMoney(t.total), strong: true),
                 const SizedBox(height: 6),
-                row('Собівартість', fmtMoney(t.cost)),
-                row('Прибуток', fmtMoney(t.profit)),
-                row('Пластик', fmtGrams(t.grams)),
-                row('Час друку', formatDuration(t.hours)),
+                row(tr('Собівартість'), fmtMoney(t.cost)),
+                row(tr('Прибуток'), fmtMoney(t.profit)),
+                row(tr('Пластик'), fmtGrams(t.grams)),
+                row(tr('Час друку'), formatDuration(t.hours)),
               ]),
             ),
           ),
           const SizedBox(height: 12),
-          Text('Фото готового виробу', style: theme.textTheme.titleSmall),
+          Text(tr('Фото готового виробу'), style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           PhotoStrip(
             photos: o.photos,
@@ -716,7 +717,7 @@ class _OrderPageState extends State<OrderPage> {
                 ? null
                 : () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => QuotePage(order: o))),
             icon: const Icon(Icons.send_outlined),
-            label: const Text('Надіслати розрахунок клієнту'),
+            label: Text(tr('Надіслати розрахунок клієнту')),
           ),
         ],
       ),
@@ -735,7 +736,7 @@ OrderItem productToItem(Product p, {int qty = 1}) => OrderItem(
       costEach: p.cost,
       priceEach: p.price,
       thumbPath: p.picture,
-      source: 'прайс',
+      source: tr('прайс'),
     );
 
 /// Which spool each material is written off from.
@@ -772,7 +773,7 @@ class _DeductDialogState extends State<_DeductDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return AlertDialog(
-      title: const Text('Списати пластик?'),
+      title: Text(tr('Списати пластик?')),
       content: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           for (final m in _need.keys) ...[
@@ -781,7 +782,7 @@ class _DeductDialogState extends State<_DeductDialog> {
               isExpanded: true,
               value: _choice[m],
               items: [
-                const DropdownMenuItem<String?>(value: null, child: Text('Не списувати')),
+                DropdownMenuItem<String?>(value: null, child: Text(tr('Не списувати'))),
                 for (final s in widget.spools)
                   DropdownMenuItem<String?>(
                     value: s.id,
@@ -805,7 +806,7 @@ class _DeductDialogState extends State<_DeductDialog> {
         ]),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context, <String, double>{}), child: const Text('Пропустити')),
+        TextButton(onPressed: () => Navigator.pop(context, <String, double>{}), child: Text(tr('Пропустити'))),
         FilledButton(
           onPressed: () {
             final plan = <String, double>{};
@@ -815,7 +816,7 @@ class _DeductDialogState extends State<_DeductDialog> {
             });
             Navigator.pop(context, plan);
           },
-          child: const Text('Списати'),
+          child: Text(tr('Списати')),
         ),
       ],
     );

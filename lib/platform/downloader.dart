@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import '../mesh/loader.dart';
 import '../mesh/zip_reader.dart';
 import 'files.dart';
+import '../i18n/i18n.dart';
 
 class DownloadException implements Exception {
   final String message;
@@ -27,13 +28,12 @@ const _browserOnly = {
 /// Turns a model page link into a direct download link when the site allows it.
 Uri resolveModelUrl(String text) {
   final m = RegExp(r'https?://\S+').firstMatch(text.trim());
-  if (m == null) throw const DownloadException('Це не схоже на посилання');
+  if (m == null) throw DownloadException(tr('Це не схоже на посилання'));
   var url = Uri.parse(m.group(0)!);
   final host = url.host.toLowerCase().replaceFirst('www.', '');
   for (final e in _browserOnly.entries) {
     if (host == e.key || host.endsWith('.${e.key}')) {
-      throw DownloadException('${e.value} не дає завантажувати файли без входу в акаунт. '
-          'Завантажте модель у браузері й відкрийте файл через «Поділитися» → STL Вага.');
+      throw DownloadException(trf('{0} не дає завантажувати файли без входу в акаунт. Завантажте модель у браузері й відкрийте файл через «Поділитися» → STL Вага.', [e.value]));
     }
   }
   if (host == 'thingiverse.com') {
@@ -70,25 +70,23 @@ Future<PickedFile> download(Uri url, {int maxBytes = 200 << 20, void Function(do
     req.maxRedirects = 8;
     final res = await req.close().timeout(const Duration(seconds: 30));
     if (res.statusCode == 401 || res.statusCode == 403) {
-      throw const DownloadException('Сайт не дозволяє завантаження без входу. '
-          'Завантажте файл у браузері й поділіться ним із застосунком.');
+      throw DownloadException(tr('Сайт не дозволяє завантаження без входу. Завантажте файл у браузері й поділіться ним із застосунком.'));
     }
-    if (res.statusCode != 200) throw DownloadException('Сайт відповів помилкою ${res.statusCode}');
+    if (res.statusCode != 200) throw DownloadException(trf('Сайт відповів помилкою {0}', [res.statusCode]));
     final type = res.headers.contentType?.mimeType ?? '';
     final finalUrl = res.redirects.isEmpty ? url : res.redirects.last.location;
     var name = _nameFrom(res, finalUrl.hasScheme ? finalUrl : url);
     final total = res.contentLength;
-    if (total > maxBytes) throw const DownloadException('Файл завеликий');
+    if (total > maxBytes) throw DownloadException(tr('Файл завеликий'));
     final b = BytesBuilder(copy: false);
     await for (final chunk in res.timeout(const Duration(seconds: 60))) {
       b.add(chunk);
-      if (b.length > maxBytes) throw const DownloadException('Файл завеликий');
+      if (b.length > maxBytes) throw DownloadException(tr('Файл завеликий'));
       onProgress?.call(total > 0 ? b.length / total : null);
     }
     final bytes = b.takeBytes();
     if (type == 'text/html' && !isSupportedFile(name)) {
-      throw const DownloadException('За посиланням сторінка, а не файл моделі. '
-          'Потрібне пряме посилання на .stl / .3mf або сторінка Thingiverse.');
+      throw DownloadException(tr('За посиланням сторінка, а не файл моделі. Потрібне пряме посилання на .stl / .3mf або сторінка Thingiverse.'));
     }
     if (!isSupportedFile(name) && !name.toLowerCase().endsWith('.zip')) {
       // Guess from content.
@@ -102,11 +100,11 @@ Future<PickedFile> download(Uri url, {int maxBytes = 200 << 20, void Function(do
   } on DownloadException {
     rethrow;
   } on TimeoutException {
-    throw const DownloadException('Немає відповіді від сайту');
+    throw DownloadException(tr('Немає відповіді від сайту'));
   } on SocketException {
-    throw const DownloadException('Немає з\'єднання з інтернетом');
+    throw DownloadException(tr('Немає з\'єднання з інтернетом'));
   } on HandshakeException {
-    throw const DownloadException('Не вдалося встановити захищене з\'єднання');
+    throw DownloadException(tr('Не вдалося встановити захищене з\'єднання'));
   } finally {
     client.close(force: true);
   }

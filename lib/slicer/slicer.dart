@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import '../mesh/mesh.dart';
 import 'settings.dart';
+import '../i18n/i18n.dart';
 
 /// Geometry-only result of a slice. Weight/length depend on material and are
 /// derived with [grams] / [filamentMeters].
@@ -407,7 +408,7 @@ SliceResult sliceMesh(
   while (zAcc < zTop - 1e-6) {
     zAcc += h;
     nL++;
-    if (nL > 50000) throw StateError('Забагато шарів — перевірте масштаб моделі');
+    if (nL > 50000) throw StateError(tr('Забагато шарів — перевірте масштаб моделі'));
   }
   final heights = Float64List(nL);
   final mids = Float64List(nL);
@@ -467,7 +468,7 @@ SliceResult sliceMesh(
     layerStart[l + 1] += layerStart[l];
   }
   final totalRefs = layerStart[nL];
-  if (totalRefs > 60000000) throw StateError('Модель надто складна для телефона');
+  if (totalRefs > 60000000) throw StateError(tr('Модель надто складна для телефона'));
   final layerTris = Int32List(totalRefs);
   {
     final fill = Int32List.fromList(Int32List.sublistView(layerStart, 0, nL));

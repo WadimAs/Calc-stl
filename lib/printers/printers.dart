@@ -1,4 +1,5 @@
 import '../data/records.dart';
+import '../i18n/i18n.dart';
 
 enum PrinterKind { bambu, moonraker }
 
@@ -98,11 +99,11 @@ class FilamentSlot {
   });
 
   String get label {
-    if (key == 'ext') return 'Зовнішня котушка';
+    if (key == 'ext') return tr('Зовнішня котушка');
     final p = key.split('-');
     if (p.length != 2) return key;
     final a = (int.tryParse(p[0]) ?? 0) + 1, t = (int.tryParse(p[1]) ?? 0) + 1;
-    return 'AMS $a · слот $t';
+    return trf('AMS {0} · слот {1}', [a, t]);
   }
 
   double? get remainingGrams => remainPercent == null ? null : weightGrams * remainPercent! / 100;
@@ -156,14 +157,14 @@ void mergeBambuReport(Map<String, dynamic> state, Map<String, dynamic> print) {
 }
 
 String bambuStateLabel(String? s) => switch (s) {
-      'IDLE' => 'Вільний',
-      'PREPARE' => 'Підготовка',
-      'RUNNING' => 'Друкує',
-      'PAUSE' => 'Пауза',
-      'FINISH' => 'Готово',
-      'FAILED' => 'Помилка друку',
-      'SLICING' => 'Нарізає',
-      null => 'Невідомо',
+      'IDLE' => tr('Вільний'),
+      'PREPARE' => tr('Підготовка'),
+      'RUNNING' => tr('Друкує'),
+      'PAUSE' => tr('Пауза'),
+      'FINISH' => tr('Готово'),
+      'FAILED' => tr('Помилка друку'),
+      'SLICING' => tr('Нарізає'),
+      null => tr('Невідомо'),
       _ => s,
     };
 
@@ -231,18 +232,18 @@ PrinterStatus bambuStatus(Map<String, dynamic> st) {
     bed: _d(st['bed_temper']),
     bedTarget: _d(st['bed_target_temper']),
     slots: slots,
-    error: err != null && err != 0 ? 'Код помилки ${err.toRadixString(16).toUpperCase()}' : null,
+    error: err != null && err != 0 ? trf('Код помилки {0}', [err.toRadixString(16).toUpperCase()]) : null,
   );
 }
 
 String moonrakerStateLabel(String? s) => switch (s) {
-      'standby' => 'Вільний',
-      'printing' => 'Друкує',
-      'paused' => 'Пауза',
-      'complete' => 'Готово',
-      'cancelled' => 'Скасовано',
-      'error' => 'Помилка',
-      null => 'Невідомо',
+      'standby' => tr('Вільний'),
+      'printing' => tr('Друкує'),
+      'paused' => tr('Пауза'),
+      'complete' => tr('Готово'),
+      'cancelled' => tr('Скасовано'),
+      'error' => tr('Помилка'),
+      null => tr('Невідомо'),
       _ => s,
     };
 

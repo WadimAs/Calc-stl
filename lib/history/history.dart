@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import '../data/json_store.dart';
 import '../platform/files.dart';
+import '../i18n/i18n.dart';
 
 /// One saved calculation.
 class HistoryEntry {
@@ -148,7 +149,7 @@ class HistoryEntry {
     return HistoryEntry(
       id: id,
       date: DateTime.fromMillisecondsSinceEpoch(i('date', 0)),
-      name: raw['name'] is String ? raw['name'] as String : 'модель',
+      name: raw['name'] is String ? raw['name'] as String : tr('модель'),
       material: raw['material'] is String ? raw['material'] as String : '',
       density: d('density'),
       pricePerKg: d('pricePerKg'),
@@ -272,8 +273,7 @@ class HistoryStore {
   static String toCsv(List<HistoryEntry> list) {
     String q(String v) => '"${v.replaceAll('"', '""')}"';
     final b = StringBuffer();
-    b.writeln('Дата;Модель;Матеріал;Копій;Вага моделі, г;Підтримки, г;Разом, г;Філамент, м;Час, год;'
-        'Ціна за кг;Пластик, грн;Електроенергія, грн;Амортизація, грн;Собівартість, грн;Націнка %;Доплата;Ціна, грн;Примітка');
+    b.writeln(tr('Дата;Модель;Матеріал;Копій;Вага моделі, г;Підтримки, г;Разом, г;Філамент, м;Час, год;Ціна за кг;Пластик, грн;Електроенергія, грн;Амортизація, грн;Собівартість, грн;Націнка %;Доплата;Ціна, грн;Примітка'));
     for (final e in list) {
       String n(double v, [int f = 2]) => v.toStringAsFixed(f).replaceAll('.', ',');
       b.writeln([
@@ -309,6 +309,6 @@ String formatDate(DateTime d) {
 String formatDuration(double hours) {
   final totalMin = (hours * 60).round();
   final h = totalMin ~/ 60, m = totalMin % 60;
-  if (h == 0) return '$m хв';
-  return '$h год ${m.toString().padLeft(2, '0')} хв';
+  if (h == 0) return trf('{0} хв', [m]);
+  return trf('{0} год {1} хв', [h, m.toString().padLeft(2, '0')]);
 }

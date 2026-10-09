@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'mesh.dart';
 import 'zip_reader.dart';
+import '../i18n/i18n.dart';
 
 /// 3MF affine transform in the spec's row-vector form:
 /// x' = x*m00 + y*m10 + z*m20 + m30 (stored row-major as 12 values).
@@ -313,7 +314,7 @@ Mesh parse3mf(Uint8List bytes) {
   }
   root ??= byLower.containsKey('3d/3dmodel.model') ? '3d/3dmodel.model' : null;
   final String rootKey = root ?? byLower.keys.firstWhere((k) => k.endsWith('.model'), orElse: () => '');
-  if (rootKey.isEmpty) throw const FormatException('У 3MF не знайдено 3D-моделі');
+  if (rootKey.isEmpty) throw FormatException(tr('У 3MF не знайдено 3D-моделі'));
 
   final cache = <String, _ModelFile?>{};
   _ModelFile? load(String key) {
@@ -376,7 +377,7 @@ Mesh parse3mf(Uint8List bytes) {
     emit(fileKey, id, t, 0);
     final end = out.length ~/ 9;
     if (end > start) {
-      final name = settingsNames[id] ?? load(fileKey)?.objects[id]?.name ?? 'Об\'єкт ${objects.length + 1}';
+      final name = settingsNames[id] ?? load(fileKey)?.objects[id]?.name ?? trf('Об\'єкт {0}', [objects.length + 1]);
       objects.add(MeshObject(name, start, end, extruder: settingsExtruders[id] ?? 1));
     }
   }
@@ -393,6 +394,6 @@ Mesh parse3mf(Uint8List bytes) {
   }
 
   final tris = out.toList();
-  if (tris.isEmpty) throw const FormatException('3MF не містить трикутників');
+  if (tris.isEmpty) throw FormatException(tr('3MF не містить трикутників'));
   return Mesh(tris, objects.length > 1 ? objects : const []);
 }

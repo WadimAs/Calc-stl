@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'i18n/i18n.dart';
+import 'platform/files.dart';
 import 'ui/home_page.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    applyLang((await PlatformFiles.loadSettings()).language);
+  } catch (_) {
+    applyLang('auto');
+  }
   runApp(const StlWeightApp());
 }
 
@@ -13,18 +21,26 @@ class StlWeightApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const seed = Color(0xFFFF7A2F);
-    return MaterialApp(
-      title: 'STL Вага',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: seed),
-        useMaterial3: true,
+    return ValueListenableBuilder<String>(
+      valueListenable: langNotifier,
+      // A new key rebuilds every screen in the new language.
+      builder: (context, l, _) => MaterialApp(
+        key: ValueKey(l),
+        title: tr('STL Вага'),
+        debugShowCheckedModeBanner: false,
+        locale: Locale(l),
+        supportedLocales: const [Locale('uk'), Locale('en')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: seed),
+          useMaterial3: true,
+        ),
+        darkTheme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
+          useMaterial3: true,
+        ),
+        home: const HomePage(),
       ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
-        useMaterial3: true,
-      ),
-      home: const HomePage(),
     );
   }
 }

@@ -8,6 +8,7 @@ import '../platform/files.dart';
 import '../platform/updates.dart';
 import 'orders_page.dart';
 import 'widgets.dart';
+import '../i18n/i18n.dart';
 
 /// Orders that belong to [c] (linked by id, or older ones by the same name).
 List<Order> ordersOf(Client c, List<Order> all) => [
@@ -23,7 +24,7 @@ Future<void> openLink(BuildContext context, String? url) async {
     await Updates.open(url);
   } catch (_) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Немає застосунку, щоб це відкрити')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Немає застосунку, щоб це відкрити'))));
     }
   }
 }
@@ -41,7 +42,7 @@ class ContactButtons extends StatelessWidget {
       if (c.callUrl != null)
         ActionChip(
           avatar: const Icon(Icons.call_outlined, size: 18),
-          label: const Text('Подзвонити'),
+          label: Text(tr('Подзвонити')),
           onPressed: () => openLink(context, c.callUrl),
         ),
       if (c.telegramUrl != null)
@@ -101,13 +102,13 @@ class _ClientPickerState extends State<_ClientPicker> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: TextField(
-            decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Пошук клієнта'),
+            decoration: InputDecoration(prefixIcon: Icon(Icons.search), hintText: tr('Пошук клієнта')),
             onChanged: (v) => setState(() => _q = v.trim()),
           ),
         ),
         ListTile(
           leading: const Icon(Icons.person_add_alt_outlined),
-          title: const Text('Новий клієнт'),
+          title: Text(tr('Новий клієнт')),
           onTap: () async {
             final c = await editClient(context, Client(id: newId(), name: _q));
             if (c == null) return;
@@ -117,7 +118,7 @@ class _ClientPickerState extends State<_ClientPicker> {
         ),
         ListTile(
           leading: const Icon(Icons.person_off_outlined),
-          title: const Text('Без клієнта'),
+          title: Text(tr('Без клієнта')),
           onTap: () => Navigator.pop(context, const Client(id: '', name: '')),
         ),
         const Divider(height: 1),
@@ -126,7 +127,7 @@ class _ClientPickerState extends State<_ClientPicker> {
             for (final c in list)
               ListTile(
                 leading: CircleAvatar(child: Text(c.name.isEmpty ? '?' : c.name.characters.first.toUpperCase())),
-                title: Text(c.name.isEmpty ? 'Без імені' : c.name),
+                title: Text(c.name.isEmpty ? tr('Без імені') : c.name),
                 subtitle: c.phone.isEmpty && c.telegram.isEmpty
                     ? null
                     : Text([c.phone, c.telegram].where((x) => x.isNotEmpty).join(' · ')),
@@ -187,11 +188,11 @@ class _ClientsPageState extends State<ClientsPage> {
               if (q.isEmpty || c.name.toLowerCase().contains(q) || c.phone.contains(q)) c,
           ];
     return Scaffold(
-      appBar: AppBar(title: const Text('Клієнти')),
+      appBar: AppBar(title: Text(tr('Клієнти'))),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _add,
         icon: const Icon(Icons.person_add_alt),
-        label: const Text('Клієнт'),
+        label: Text(tr('Клієнт')),
       ),
       body: list == null
           ? const Center(child: CircularProgressIndicator())
@@ -202,7 +203,7 @@ class _ClientsPageState extends State<ClientsPage> {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: TextField(
-                      decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Пошук'),
+                      decoration: InputDecoration(prefixIcon: Icon(Icons.search), hintText: tr('Пошук')),
                       onChanged: (v) => setState(() => _q = v.trim()),
                     ),
                   ),
@@ -210,7 +211,7 @@ class _ClientsPageState extends State<ClientsPage> {
                   Padding(
                     padding: const EdgeInsets.all(32),
                     child: Text(
-                      'Збережіть клієнтів, щоб бачити історію їхніх замовлень і писати їм в один дотик.',
+                      tr('Збережіть клієнтів, щоб бачити історію їхніх замовлень і писати їм в один дотик.'),
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
@@ -224,10 +225,10 @@ class _ClientsPageState extends State<ClientsPage> {
                       child: ListTile(
                         leading:
                             CircleAvatar(child: Text(c.name.isEmpty ? '?' : c.name.characters.first.toUpperCase())),
-                        title: Text(c.name.isEmpty ? 'Без імені' : c.name),
+                        title: Text(c.name.isEmpty ? tr('Без імені') : c.name),
                         subtitle: Text(mine.isEmpty
-                            ? (c.phone.isEmpty ? 'замовлень ще немає' : c.phone)
-                            : '${mine.length} зам. · ${fmtMoney(sum)}'),
+                            ? (c.phone.isEmpty ? tr('замовлень ще немає') : c.phone)
+                            : trf('{0} зам. · {1}', [mine.length, fmtMoney(sum)])),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () async {
                           await Navigator.of(context)
@@ -289,11 +290,11 @@ class _ClientPageState extends State<ClientPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: const Text('Видалити клієнта?'),
-        content: const Text('Його замовлення залишаться.'),
+        title: Text(tr('Видалити клієнта?')),
+        content: Text(tr('Його замовлення залишаться.')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Скасувати')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Видалити')),
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('Скасувати'))),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('Видалити'))),
         ],
       ),
     );
@@ -325,16 +326,16 @@ class _ClientPageState extends State<ClientPage> {
     }
     return Scaffold(
       appBar: AppBar(
-        title: Text(c.name.isEmpty ? 'Клієнт' : c.name),
+        title: Text(c.name.isEmpty ? tr('Клієнт') : c.name),
         actions: [
-          IconButton(tooltip: 'Редагувати', onPressed: _edit, icon: const Icon(Icons.edit_outlined)),
-          IconButton(tooltip: 'Видалити', onPressed: _delete, icon: const Icon(Icons.delete_outline)),
+          IconButton(tooltip: tr('Редагувати'), onPressed: _edit, icon: const Icon(Icons.edit_outlined)),
+          IconButton(tooltip: tr('Видалити'), onPressed: _delete, icon: const Icon(Icons.delete_outline)),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _newOrder,
         icon: const Icon(Icons.add),
-        label: const Text('Замовлення'),
+        label: Text(tr('Замовлення')),
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
@@ -355,16 +356,16 @@ class _ClientPageState extends State<ClientPage> {
                   TextButton.icon(
                     onPressed: _edit,
                     icon: const Icon(Icons.add),
-                    label: const Text('Додати телефон або Telegram'),
+                    label: Text(tr('Додати телефон або Telegram')),
                   ),
               ]),
             ),
           ),
           if (orders != null && orders.isNotEmpty) ...[
             Row(children: [
-              Expanded(child: Stat('замовлень', '${orders.length}')),
-              Expanded(child: Stat('на суму', fmtMoney(total))),
-              Expanded(child: Stat('оплачено', fmtMoney(paid))),
+              Expanded(child: Stat(tr('замовлень'), '${orders.length}')),
+              Expanded(child: Stat(tr('на суму'), fmtMoney(total))),
+              Expanded(child: Stat(tr('оплачено'), fmtMoney(paid))),
             ]),
             const SizedBox(height: 8),
           ],
@@ -379,7 +380,7 @@ class _ClientPageState extends State<ClientPage> {
                   child: Row(children: [
                     StatusChip(o.status),
                     const SizedBox(width: 8),
-                    Expanded(child: Text('${o.totals.pieces} шт', maxLines: 1)),
+                    Expanded(child: Text(trf('{0} шт', [o.totals.pieces]), maxLines: 1)),
                   ]),
                 ),
                 trailing: Text(fmtMoney(o.totals.total), style: theme.textTheme.titleMedium),
@@ -423,19 +424,19 @@ class _ClientDialogState extends State<_ClientDialog> {
   Widget build(BuildContext context) {
     final old = widget.client;
     return AlertDialog(
-      title: Text(old == null || old.name.isEmpty ? 'Новий клієнт' : 'Клієнт'),
+      title: Text(old == null || old.name.isEmpty ? tr('Новий клієнт') : tr('Клієнт')),
       content: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(
             controller: _name,
             autofocus: true,
             textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(labelText: 'Ім\'я'),
+            decoration: InputDecoration(labelText: tr('Ім\'я')),
           ),
           TextField(
             controller: _phone,
             keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(labelText: 'Телефон', hintText: '+380…'),
+            decoration: InputDecoration(labelText: tr('Телефон'), hintText: '+380…'),
           ),
           TextField(
             controller: _tg,
@@ -444,12 +445,12 @@ class _ClientDialogState extends State<_ClientDialog> {
           TextField(
             controller: _note,
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(labelText: 'Примітка', hintText: 'Нова Пошта №…, побажання'),
+            decoration: InputDecoration(labelText: tr('Примітка'), hintText: tr('Нова Пошта №…, побажання')),
           ),
         ]),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Скасувати'))),
         FilledButton(
           onPressed: () {
             final c = Client(
@@ -461,7 +462,7 @@ class _ClientDialogState extends State<_ClientDialog> {
             );
             Navigator.pop(context, c);
           },
-          child: const Text('Зберегти'),
+          child: Text(tr('Зберегти')),
         ),
       ],
     );

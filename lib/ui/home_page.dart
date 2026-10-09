@@ -38,6 +38,7 @@ import 'settings_sheet.dart';
 import 'spools_page.dart';
 import 'stats_page.dart';
 import 'widgets.dart';
+import '../i18n/i18n.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -107,7 +108,7 @@ class _HomePageState extends State<HomePage> {
         MaterialPageRoute(fullscreenDialog: true, builder: (_) => const IntroPage()),
       );
       if (!mounted) return;
-      _updateSettings(_settings.copyWith(seenIntro: true, advancedUi: adv ?? _settings.advancedUi));
+      if (await _afterIntro(adv)) return; // app restarts in the chosen language
     }
     final f = await PlatformFiles.initialFile();
     if (f != null && mounted) {
@@ -125,25 +126,24 @@ class _HomePageState extends State<HomePage> {
     final url = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Відкрити за посиланням'),
+        title: Text(tr('Відкрити за посиланням')),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(
             controller: c,
             autofocus: true,
             keyboardType: TextInputType.url,
-            decoration: const InputDecoration(labelText: 'Посилання', hintText: 'https://…'),
+            decoration: InputDecoration(labelText: tr('Посилання'), hintText: 'https://…'),
             onSubmitted: (_) => Navigator.pop(ctx, c.text.trim()),
           ),
           const SizedBox(height: 8),
           Text(
-            'Пряме посилання на .stl / .3mf / .zip або сторінка Thingiverse. '
-            'З MakerWorld і Printables завантажте файл у браузері й поділіться ним із застосунком.',
+            tr('Пряме посилання на .stl / .3mf / .zip або сторінка Thingiverse. З MakerWorld і Printables завантажте файл у браузері й поділіться ним із застосунком.'),
             style: Theme.of(ctx).textTheme.bodySmall,
           ),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Скасувати')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Відкрити')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Скасувати'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: Text(tr('Відкрити'))),
         ],
       ),
     );
@@ -163,7 +163,7 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _loadError = 'Не вдалося завантажити:\n$e';
+        _loadError = trf('Не вдалося завантажити:\n{0}', [e]);
       });
     }
   }
@@ -172,7 +172,7 @@ class _HomePageState extends State<HomePage> {
   Future<PickedFile?> _chooseFromArchive(PickedFile f) async {
     final models = await Isolate.run(() => modelsInZip(f.bytes));
     if (!mounted) return null;
-    if (models.isEmpty) throw const FormatException('В архіві немає STL, 3MF чи G-code');
+    if (models.isEmpty) throw FormatException(tr('В архіві немає STL, 3MF чи G-code'));
     if (models.length == 1) return models.first;
     return showModalBottomSheet<PickedFile>(
       context: context,
@@ -182,13 +182,13 @@ class _HomePageState extends State<HomePage> {
         child: ListView(shrinkWrap: true, children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text('В архіві ${models.length} моделей', style: Theme.of(ctx).textTheme.titleMedium),
+            child: Text(trf('В архіві {0} моделей', [models.length]), style: Theme.of(ctx).textTheme.titleMedium),
           ),
           for (final m in models)
             ListTile(
               leading: const Icon(Icons.view_in_ar_outlined),
               title: Text(m.name),
-              subtitle: Text('${(m.bytes.length / 1024).toStringAsFixed(0)} КБ'),
+              subtitle: Text(trf('{0} КБ', [(m.bytes.length / 1024).toStringAsFixed(0)])),
               onTap: () => Navigator.pop(ctx, m),
             ),
         ]),
@@ -209,7 +209,7 @@ class _HomePageState extends State<HomePage> {
       final f = await PlatformFiles.pick();
       if (f != null) await _open(f);
     } catch (e) {
-      _snack('Не вдалося відкрити файл: $e');
+      _snack(trf('Не вдалося відкрити файл: {0}', [e]));
     }
   }
 
@@ -240,8 +240,8 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _loading = false;
         _loadError = isSupportedFile(f.name) || isArchive(f)
-            ? 'Не вдалося прочитати «${f.name}»:\n$e'
-            : 'Файл «${f.name}» не схожий на STL, 3MF чи G-code.';
+            ? trf('Не вдалося прочитати «{0}»:\n{1}', [f.name, e])
+            : trf('Файл «{0}» не схожий на STL, 3MF чи G-code.', [f.name]);
       });
     }
   }
@@ -290,7 +290,7 @@ class _HomePageState extends State<HomePage> {
       _setModel(next, fresh: false);
       _slice();
     } catch (e) {
-      _snack('Не вдалося: $e');
+      _snack(trf('Не вдалося: {0}', [e]));
     } finally {
       if (mounted) setState(() => _reorienting = false);
     }
@@ -312,7 +312,7 @@ class _HomePageState extends State<HomePage> {
     if (!mounted) return;
     setState(() => _reorienting = false);
     if (isIdentity(r)) {
-      _snack('Модель уже лежить найбільшою гранню вниз');
+      _snack(tr('Модель уже лежить найбільшою гранню вниз'));
       return;
     }
     _derive(rotation: mul3(r, m.rotation));
@@ -356,18 +356,16 @@ class _HomePageState extends State<HomePage> {
     final action = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Автоматична копія'),
+        title: Text(tr('Автоматична копія')),
         content: Text(uri == null
-            ? 'Виберіть файл на Google Диску (або в іншій папці) — застосунок сам оновлюватиме в ньому '
-                'копію всіх даних після кожної зміни. Якщо телефон загубиться, дані можна відновити з цього файлу.'
-            : 'Увімкнено.${last != null ? '\nОстання копія: ${formatDate(last)}' : ''}'
-                '${AutoBackup.lastFailed ? '\nОстання спроба не вдалася — можливо, немає доступу до файлу.' : ''}'),
+            ? tr('Виберіть файл на Google Диску (або в іншій папці) — застосунок сам оновлюватиме в ньому копію всіх даних після кожної зміни. Якщо телефон загубиться, дані можна відновити з цього файлу.')
+            : trf('Увімкнено.{0}{1}', [last != null ? trf('\nОстання копія: {0}', [formatDate(last)]) : '', AutoBackup.lastFailed ? tr('\nОстання спроба не вдалася — можливо, немає доступу до файлу.') : ''])),
         actions: [
-          if (uri != null) TextButton(onPressed: () => Navigator.pop(ctx, 'off'), child: const Text('Вимкнути')),
-          if (uri != null) TextButton(onPressed: () => Navigator.pop(ctx, 'now'), child: const Text('Зараз')),
+          if (uri != null) TextButton(onPressed: () => Navigator.pop(ctx, 'off'), child: Text(tr('Вимкнути'))),
+          if (uri != null) TextButton(onPressed: () => Navigator.pop(ctx, 'now'), child: Text(tr('Зараз'))),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, 'pick'),
-            child: Text(uri == null ? 'Вибрати файл' : 'Інший файл'),
+            child: Text(uri == null ? tr('Вибрати файл') : tr('Інший файл')),
           ),
         ],
       ),
@@ -375,13 +373,13 @@ class _HomePageState extends State<HomePage> {
     switch (action) {
       case 'pick':
         final ok = await AutoBackup.setup();
-        _snack(ok ? 'Автокопію увімкнено' : 'Не вдалося записати у вибраний файл');
+        _snack(ok ? tr('Автокопію увімкнено') : tr('Не вдалося записати у вибраний файл'));
       case 'now':
         final ok = await AutoBackup.runNow();
-        _snack(ok ? 'Копію оновлено' : 'Не вдалося записати копію');
+        _snack(ok ? tr('Копію оновлено') : tr('Не вдалося записати копію'));
       case 'off':
         await AutoBackup.disable();
-        _snack('Автокопію вимкнено');
+        _snack(tr('Автокопію вимкнено'));
     }
   }
 
@@ -393,9 +391,9 @@ class _HomePageState extends State<HomePage> {
       final d = DateTime.now();
       final name = 'stl-vaga-backup-${d.year}${d.month.toString().padLeft(2, '0')}${d.day.toString().padLeft(2, '0')}.json';
       final ok = await PlatformFiles.saveFile(name, 'application/json', bytes);
-      if (ok) _snack('Резервну копію збережено');
+      if (ok) _snack(tr('Резервну копію збережено'));
     } catch (e) {
-      _snack('Не вдалося зберегти: $e');
+      _snack(trf('Не вдалося зберегти: {0}', [e]));
     }
   }
 
@@ -406,11 +404,11 @@ class _HomePageState extends State<HomePage> {
       final ok = await showDialog<bool>(
         context: context,
         builder: (c) => AlertDialog(
-          title: const Text('Відновити з копії?'),
-          content: Text('Налаштування, історія, замовлення й котушки буде замінено вмістом «${f.name}».'),
+          title: Text(tr('Відновити з копії?')),
+          content: Text(trf('Налаштування, історія, замовлення й котушки буде замінено вмістом «{0}».', [f.name])),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Скасувати')),
-            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Відновити')),
+            TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('Скасувати'))),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('Відновити'))),
           ],
         ),
       );
@@ -418,9 +416,9 @@ class _HomePageState extends State<HomePage> {
       final s = await Backup.restore(f.bytes);
       if (!mounted) return;
       _updateSettings(s);
-      _snack('Дані відновлено');
+      _snack(tr('Дані відновлено'));
     } catch (e) {
-      _snack('Не вдалося відновити: $e');
+      _snack(trf('Не вдалося відновити: {0}', [e]));
     }
   }
 
@@ -456,16 +454,14 @@ class _HomePageState extends State<HomePage> {
       case 'intro':
         Navigator.of(context)
             .push<bool>(MaterialPageRoute(fullscreenDialog: true, builder: (_) => const IntroPage()))
-            .then((adv) {
-          if (adv != null && adv != _adv) _updateSettings(_settings.copyWith(advancedUi: adv));
-        });
+            .then(_afterIntro);
       case 'mode':
         _updateSettings(_settings.copyWith(advancedUi: !_adv));
         if (_adv) {
           _measure.tool = MeasureTool.none;
           setState(() => _layersView = false);
         }
-        _snack(_adv ? 'Розширений режим' : 'Простий режим');
+        _snack(_adv ? tr('Розширений режим') : tr('Простий режим'));
     }
   }
 
@@ -483,7 +479,7 @@ class _HomePageState extends State<HomePage> {
     return OrderItem(
       id: id ?? DateTime.now().microsecondsSinceEpoch.toString(),
       name: m.name,
-      material: mat.id == 'custom' ? 'Свій (${fmtNum(s.density, 2)} г/см³)' : mat.name,
+      material: mat.id == 'custom' ? trf('Свій ({0} г/см³)', [fmtNum(s.density, 2)]) : mat.name,
       materialId: s.materialId,
       qty: copies,
       gramsEach: fig.gramsTotal / copies,
@@ -506,14 +502,14 @@ class _HomePageState extends State<HomePage> {
         child: ListView(shrinkWrap: true, children: [
           ListTile(
             leading: const Icon(Icons.add_circle_outline),
-            title: const Text('Нове замовлення'),
+            title: Text(tr('Нове замовлення')),
             onTap: () => Navigator.pop(ctx, 'new'),
           ),
           for (final o in orders)
             ListTile(
               leading: const Icon(Icons.receipt_long_outlined),
               title: Text(o.title),
-              subtitle: Text('${o.items.length} поз. · ${fmtMoney(o.totals.total)}'),
+              subtitle: Text(trf('{0} поз. · {1}', [o.items.length, fmtMoney(o.totals.total)])),
               onTap: () => Navigator.pop(ctx, o),
             ),
         ]),
@@ -541,9 +537,9 @@ class _HomePageState extends State<HomePage> {
     await OrderStore.upsert(order);
     if (!mounted) return;
     showTimedSnack(context, SnackBar(
-      content: Text('Додано до «${order.title}»'),
+      content: Text(trf('Додано до «{0}»', [order.title])),
       action: SnackBarAction(
-        label: 'Відкрити',
+        label: tr('Відкрити'),
         onPressed: () => Navigator.of(context)
             .push(MaterialPageRoute<void>(builder: (_) => OrderPage(orderId: order.id))),
       ),
@@ -562,21 +558,21 @@ class _HomePageState extends State<HomePage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('У прайс-лист'),
+        title: Text(tr('У прайс-лист')),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: name, decoration: const InputDecoration(labelText: 'Назва виробу')),
+          TextField(controller: name, decoration: InputDecoration(labelText: tr('Назва виробу'))),
           TextField(
             controller: price,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: InputDecoration(
-              labelText: 'Ціна за штуку, $currency',
-              helperText: 'собівартість ${fmtMoney(base.costEach)}${copies > 1 ? ' (з $copies шт на столі)' : ''}',
+              labelText: trf('Ціна за штуку, {0}', [currency]),
+              helperText: trf('собівартість {0}{1}', [fmtMoney(base.costEach), copies > 1 ? trf(' (з {0} шт на столі)', [copies]) : '']),
             ),
           ),
         ]),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Скасувати')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Додати')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Скасувати'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Додати'))),
         ],
       ),
     );
@@ -597,8 +593,8 @@ class _HomePageState extends State<HomePage> {
     ));
     if (!mounted) return;
     showTimedSnack(context, SnackBar(
-      content: const Text('Додано до прайс-листа'),
-      action: SnackBarAction(label: 'Відкрити', onPressed: () => _push(const CatalogPage())),
+      content: Text(tr('Додано до прайс-листа')),
+      action: SnackBarAction(label: tr('Відкрити'), onPressed: () => _push(const CatalogPage())),
     ));
   }
 
@@ -610,12 +606,12 @@ class _HomePageState extends State<HomePage> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           ListTile(
             leading: const Icon(Icons.image_outlined),
-            title: const Text('Картинкою для клієнта'),
+            title: Text(tr('Картинкою для клієнта')),
             onTap: () => Navigator.pop(ctx, 'image'),
           ),
           ListTile(
             leading: const Icon(Icons.text_snippet_outlined),
-            title: const Text('Текстом'),
+            title: Text(tr('Текстом')),
             onTap: () => Navigator.pop(ctx, 'text'),
           ),
         ]),
@@ -634,7 +630,25 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// Applies the intro's choices; true when the app is rebuilt for a new language.
+  Future<bool> _afterIntro(bool? adv) async {
+    var s = _settings.copyWith(seenIntro: true, advancedUi: adv ?? _settings.advancedUi);
+    if (lang != langNotifier.value) {
+      s = s.copyWith(language: lang);
+      await PlatformFiles.saveSettings(s);
+      applyLang(s.language);
+      return true;
+    }
+    _updateSettings(s);
+    return false;
+  }
+
   void _updateSettings(SliceSettings s) {
+    if (s.language != _settings.language) {
+      // Save first: the whole app is rebuilt in the new language.
+      PlatformFiles.saveSettings(s).then((_) => applyLang(s.language));
+      return;
+    }
     final geometryChanged = s.geometryKey != _settings.geometryKey;
     setState(() => _settings = s);
     PlatformFiles.saveSettings(s);
@@ -660,8 +674,8 @@ class _HomePageState extends State<HomePage> {
       _applySettingsSilently(after);
       if (!mounted) return;
       showTimedSnack(context, SnackBar(
-        content: Text('Застосовано налаштування з файлу (${p.app})'),
-        action: SnackBarAction(label: 'Відмінити', onPressed: () => _updateSettings(before)),
+        content: Text(trf('Застосовано налаштування з файлу ({0})', [p.app])),
+        action: SnackBarAction(label: tr('Відмінити'), onPressed: () => _updateSettings(before)),
       ));
       return;
     }
@@ -703,8 +717,7 @@ class _HomePageState extends State<HomePage> {
       slicerSeconds: p.seconds > 0 ? p.seconds : null,
     );
     _applySettingsSilently(next);
-    _snack('Калібрування оновлено за ${p.app}: вага ×${fmtNum(next.weightFactor, 2)}, '
-        'час ×${fmtNum(next.timeFactor, 2)}');
+    _snack(trf('Калібрування оновлено за {0}: вага ×{1}, час ×{2}', [p.app, fmtNum(next.weightFactor, 2), fmtNum(next.timeFactor, 2)]));
   }
 
   Future<void> _slice() async {
@@ -912,7 +925,7 @@ class _HomePageState extends State<HomePage> {
     );
     setState(() => _manualHours = null);
     _updateSettings(next);
-    _snack('Калібрування збережено: вага ×${fmtNum(next.weightFactor, 2)}, час ×${fmtNum(next.timeFactor, 2)}');
+    _snack(trf('Калібрування збережено: вага ×{0}, час ×{1}', [fmtNum(next.weightFactor, 2), fmtNum(next.timeFactor, 2)]));
   }
 
   Future<void> _editTime() async {
@@ -941,7 +954,7 @@ class _HomePageState extends State<HomePage> {
       id: id ?? DateTime.now().microsecondsSinceEpoch.toString(),
       date: DateTime.now(),
       name: m.name,
-      material: mat.id == 'custom' ? 'Свій (${fmtNum(s.density, 2)} г/см³)' : mat.name,
+      material: mat.id == 'custom' ? trf('Свій ({0} г/см³)', [fmtNum(s.density, 2)]) : mat.name,
       density: s.density,
       pricePerKg: s.pricePerKg,
       layerHeight: s.layerHeight,
@@ -1003,11 +1016,11 @@ class _HomePageState extends State<HomePage> {
       await HistoryStore.add(e);
       if (!mounted) return;
       showTimedSnack(context, SnackBar(
-        content: const Text('Збережено в історію'),
-        action: SnackBarAction(label: 'Відкрити', onPressed: _openHistory),
+        content: Text(tr('Збережено в історію')),
+        action: SnackBarAction(label: tr('Відкрити'), onPressed: _openHistory),
       ));
     } catch (e) {
-      _snack('Не вдалося зберегти: $e');
+      _snack(trf('Не вдалося зберегти: {0}', [e]));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1024,47 +1037,47 @@ class _HomePageState extends State<HomePage> {
     final model = _model;
     return Scaffold(
       appBar: AppBar(
-        title: Text(model?.name ?? 'STL Вага', overflow: TextOverflow.ellipsis),
+        title: Text(model?.name ?? tr('STL Вага'), overflow: TextOverflow.ellipsis),
         actions: [
-          IconButton(tooltip: 'Відкрити файл', onPressed: _loading ? null : _pick, icon: const Icon(Icons.folder_open)),
-          IconButton(tooltip: 'Налаштування', onPressed: _openSettings, icon: const Icon(Icons.tune)),
+          IconButton(tooltip: tr('Відкрити файл'), onPressed: _loading ? null : _pick, icon: const Icon(Icons.folder_open)),
+          IconButton(tooltip: tr('Налаштування'), onPressed: _openSettings, icon: const Icon(Icons.tune)),
           PopupMenuButton<String>(
             onSelected: _onMenu,
             itemBuilder: (_) => [
-              const PopupMenuItem(value: 'url', child: ListTile(leading: Icon(Icons.link), title: Text('Відкрити за посиланням'))),
-              const PopupMenuItem(value: 'history', child: ListTile(leading: Icon(Icons.history), title: Text('Історія'))),
-              const PopupMenuItem(
-                  value: 'orders', child: ListTile(leading: Icon(Icons.receipt_long_outlined), title: Text('Замовлення'))),
-              const PopupMenuItem(
-                  value: 'clients', child: ListTile(leading: Icon(Icons.people_outline), title: Text('Клієнти'))),
+              PopupMenuItem(value: 'url', child: ListTile(leading: Icon(Icons.link), title: Text(tr('Відкрити за посиланням')))),
+              PopupMenuItem(value: 'history', child: ListTile(leading: Icon(Icons.history), title: Text(tr('Історія')))),
+              PopupMenuItem(
+                  value: 'orders', child: ListTile(leading: Icon(Icons.receipt_long_outlined), title: Text(tr('Замовлення')))),
+              PopupMenuItem(
+                  value: 'clients', child: ListTile(leading: Icon(Icons.people_outline), title: Text(tr('Клієнти')))),
               if (_adv) ...[
-                const PopupMenuItem(
-                    value: 'printers', child: ListTile(leading: Icon(Icons.print_outlined), title: Text('Принтери'))),
+                PopupMenuItem(
+                    value: 'printers', child: ListTile(leading: Icon(Icons.print_outlined), title: Text(tr('Принтери')))),
                 if (_gcodeFile != null)
-                  const PopupMenuItem(
+                  PopupMenuItem(
                       value: 'send',
-                      child: ListTile(leading: Icon(Icons.send_to_mobile_outlined), title: Text('Надіслати на принтер'))),
-                const PopupMenuItem(
-                    value: 'catalog', child: ListTile(leading: Icon(Icons.storefront_outlined), title: Text('Прайс-лист'))),
-                const PopupMenuItem(
+                      child: ListTile(leading: Icon(Icons.send_to_mobile_outlined), title: Text(tr('Надіслати на принтер')))),
+                PopupMenuItem(
+                    value: 'catalog', child: ListTile(leading: Icon(Icons.storefront_outlined), title: Text(tr('Прайс-лист')))),
+                PopupMenuItem(
                     value: 'expenses',
-                    child: ListTile(leading: Icon(Icons.account_balance_wallet_outlined), title: Text('Витрати'))),
-                const PopupMenuItem(
-                    value: 'spools', child: ListTile(leading: Icon(Icons.album_outlined), title: Text('Котушки'))),
-                const PopupMenuItem(
-                    value: 'stats', child: ListTile(leading: Icon(Icons.bar_chart), title: Text('Статистика'))),
-                const PopupMenuItem(
-                    value: 'export', child: ListTile(leading: Icon(Icons.backup_outlined), title: Text('Зберегти копію даних'))),
-                const PopupMenuItem(
-                    value: 'import', child: ListTile(leading: Icon(Icons.restore), title: Text('Відновити з копії'))),
+                    child: ListTile(leading: Icon(Icons.account_balance_wallet_outlined), title: Text(tr('Витрати')))),
+                PopupMenuItem(
+                    value: 'spools', child: ListTile(leading: Icon(Icons.album_outlined), title: Text(tr('Котушки')))),
+                PopupMenuItem(
+                    value: 'stats', child: ListTile(leading: Icon(Icons.bar_chart), title: Text(tr('Статистика')))),
+                PopupMenuItem(
+                    value: 'export', child: ListTile(leading: Icon(Icons.backup_outlined), title: Text(tr('Зберегти копію даних')))),
+                PopupMenuItem(
+                    value: 'import', child: ListTile(leading: Icon(Icons.restore), title: Text(tr('Відновити з копії')))),
               ],
-              const PopupMenuItem(
+              PopupMenuItem(
                   value: 'autobackup',
-                  child: ListTile(leading: Icon(Icons.cloud_sync_outlined), title: Text('Автокопія (Google Диск)'))),
-              const PopupMenuItem(
-                  value: 'intro', child: ListTile(leading: Icon(Icons.help_outline), title: Text('Як користуватися'))),
+                  child: ListTile(leading: Icon(Icons.cloud_sync_outlined), title: Text(tr('Автокопія (Google Диск)')))),
+              PopupMenuItem(
+                  value: 'intro', child: ListTile(leading: Icon(Icons.help_outline), title: Text(tr('Як користуватися')))),
               const PopupMenuDivider(),
-              CheckedPopupMenuItem(value: 'mode', checked: _adv, child: const Text('Розширений режим')),
+              CheckedPopupMenuItem(value: 'mode', checked: _adv, child: Text(tr('Розширений режим'))),
             ],
           ),
         ],
@@ -1086,12 +1099,12 @@ class _HomePageState extends State<HomePage> {
           Icon(Icons.system_update, color: theme.colorScheme.onTertiaryContainer),
           const SizedBox(width: 10),
           Expanded(
-            child: Text('Доступна нова версія (збірка ${u.build})',
+            child: Text(trf('Доступна нова версія (збірка {0})', [u.build]),
                 style: TextStyle(color: theme.colorScheme.onTertiaryContainer)),
           ),
           TextButton(
             onPressed: () => Updates.open(u.downloadUrl).catchError((Object _) {}),
-            child: const Text('Оновити'),
+            child: Text(tr('Оновити')),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
@@ -1106,11 +1119,11 @@ class _HomePageState extends State<HomePage> {
   Widget _body() {
     final model = _model;
     return _loading
-          ? const Center(
+          ? Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 CircularProgressIndicator(),
                 SizedBox(height: 16),
-                Text('Читаю модель…'),
+                Text(tr('Читаю модель…')),
               ]),
             )
           : model == null
@@ -1147,7 +1160,7 @@ class _HomePageState extends State<HomePage> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Нарізаний файл ${m.project?.app ?? ''}: 3D-моделі немає, вага й час — зі слайсера',
+          trf('Нарізаний файл {0}: 3D-моделі немає, вага й час — зі слайсера', [m.project?.app ?? '']),
           textAlign: TextAlign.center,
           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
         ),
@@ -1195,13 +1208,13 @@ class _HomePageState extends State<HomePage> {
               style: const ButtonStyle(visualDensity: VisualDensity.compact),
               showSelectedIcon: false,
               segments: const [
-                ButtonSegment(value: false, label: Text('Модель'), icon: Icon(Icons.view_in_ar_outlined)),
-                ButtonSegment(value: true, label: Text('Шари'), icon: Icon(Icons.layers_outlined)),
+                ButtonSegment(value: false, label: Text(tr('Модель')), icon: Icon(Icons.view_in_ar_outlined)),
+                ButtonSegment(value: true, label: Text(tr('Шари')), icon: Icon(Icons.layers_outlined)),
               ],
               selected: {layersMode},
               onSelectionChanged: (v) {
                 if (v.first && preview == null) {
-                  _snack('Шари з\'являться після нарізання');
+                  _snack(tr('Шари з\'являться після нарізання'));
                   return;
                 }
                 setState(() => _layersView = v.first);
@@ -1217,7 +1230,7 @@ class _HomePageState extends State<HomePage> {
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: chipDecoration,
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text('${mm(b.sizeX)} × ${mm(b.sizeY)} × ${mm(b.sizeZ)} мм', style: theme.textTheme.labelMedium),
+                  Text(trf('{0} × {1} × {2} мм', [mm(b.sizeX), mm(b.sizeY), mm(b.sizeZ)]), style: theme.textTheme.labelMedium),
                   const SizedBox(width: 4),
                   const Icon(Icons.edit_outlined, size: 14),
                 ]),
@@ -1234,12 +1247,12 @@ class _HomePageState extends State<HomePage> {
                     animation: _measure,
                     builder: (context, _) => _measure.active
                         ? IconButton.filled(
-                            tooltip: 'Закрити вимірювання',
+                            tooltip: tr('Закрити вимірювання'),
                             onPressed: () => _measure.tool = MeasureTool.none,
                             icon: const Icon(Icons.straighten),
                           )
                         : IconButton.filledTonal(
-                            tooltip: 'Вимірювання',
+                            tooltip: tr('Вимірювання'),
                             onPressed: () {
                               setState(() {
                                 _orientOpen = false;
@@ -1252,7 +1265,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 const SizedBox(height: 4),
                 (_orientOpen ? IconButton.filled : IconButton.filledTonal)(
-                  tooltip: 'Положення на столі',
+                  tooltip: tr('Положення на столі'),
                   onPressed: () {
                     _measure.tool = MeasureTool.none;
                     setState(() {
@@ -1366,7 +1379,7 @@ class _HomePageState extends State<HomePage> {
             SizedBox(
               width: 92,
               child: Text(
-                '${layer + 1}/${preview!.layers}\n${fmtNum(preview!.zTop[layer], 2)} мм',
+                trf('{0}/{1}\n{2} мм', [layer + 1, preview!.layers, fmtNum(preview!.zTop[layer], 2)]),
                 textAlign: TextAlign.right,
                 style: theme.textTheme.labelSmall,
               ),
@@ -1395,14 +1408,14 @@ class _HomePageState extends State<HomePage> {
     final (bx, by, bz) = _settings.bed;
     final x = m.bounds.sizeX * k, y = m.bounds.sizeY * k, z = m.bounds.sizeZ * k;
     final name = printerById(_settings.printerId).name;
-    if (x <= bx && y <= by && z <= bz) return (true, '✓ влазить на $name', false);
-    if (y <= bx && x <= by && z <= bz) return (false, 'Не влазить — торкніться, щоб повернути на 90°', true);
+    if (x <= bx && y <= by && z <= bz) return (true, trf('✓ влазить на {0}', [name]), false);
+    if (y <= bx && x <= by && z <= bz) return (false, tr('Не влазить — торкніться, щоб повернути на 90°'), true);
     final over = <String>[
       if (x > bx) 'X ${fmtNum(x, 0)}>${fmtNum(bx, 0)}',
       if (y > by) 'Y ${fmtNum(y, 0)}>${fmtNum(by, 0)}',
       if (z > bz) 'Z ${fmtNum(z, 0)}>${fmtNum(bz, 0)}',
     ];
-    return (false, '✗ не влазить на $name: ${over.join(', ')} мм', false);
+    return (false, trf('✗ не влазить на {0}: {1} мм', [name, over.join(', ')]), false);
   }
 
   Widget _orientPanel(LoadedModel m) {
@@ -1434,7 +1447,7 @@ class _HomePageState extends State<HomePage> {
           Row(children: [
             Expanded(
               child: Text(
-                _pickFace ? 'Торкніться грані, яка має лягти на стіл' : 'Положення на столі',
+                _pickFace ? tr('Торкніться грані, яка має лягти на стіл') : tr('Положення на столі'),
                 style: theme.textTheme.titleSmall,
               ),
             ),
@@ -1453,14 +1466,14 @@ class _HomePageState extends State<HomePage> {
             ),
           ]),
           Wrap(children: [
-            btn('Авто', Icons.auto_fix_high, busy ? null : _autoOrient),
-            btn('Гранню на стіл', Icons.touch_app_outlined, busy ? null : () => setState(() => _pickFace = !_pickFace),
+            btn(tr('Авто'), Icons.auto_fix_high, busy ? null : _autoOrient),
+            btn(tr('Гранню на стіл'), Icons.touch_app_outlined, busy ? null : () => setState(() => _pickFace = !_pickFace),
                 selected: _pickFace),
             btn('X 90°', Icons.rotate_right, busy ? null : () => _rotate(0)),
             btn('Y 90°', Icons.rotate_right, busy ? null : () => _rotate(1)),
             btn('Z 90°', Icons.rotate_right, busy ? null : () => _rotate(2)),
             if (!isIdentity(m.rotation))
-              btn('Як у файлі', Icons.restart_alt, busy ? null : () => _derive(rotation: identity3)),
+              btn(tr('Як у файлі'), Icons.restart_alt, busy ? null : () => _derive(rotation: identity3)),
           ]),
         ]),
       ),
@@ -1468,14 +1481,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   String _measureText(Measurement m, double k) {
-    String mm(double v) => '${fmtNum(v * k, 2)} мм';
+    String mm(double v) => trf('{0} мм', [fmtNum(v * k, 2)]);
     switch (m.tool) {
       case MeasureTool.distance:
         final d = m.delta;
         return '${mm(m.distance)}   ΔX ${fmtNum(d.x.abs() * k, 2)} · ΔY ${fmtNum(d.y.abs() * k, 2)} · ΔZ ${fmtNum(d.z.abs() * k, 2)}';
       case MeasureTool.circle:
         final c = m.circle;
-        if (c == null) return 'Точки на одній прямій — коло не визначене';
+        if (c == null) return tr('Точки на одній прямій — коло не визначене');
         return '⌀ ${mm(c.radius * 2)}   R ${mm(c.radius)}';
       case MeasureTool.angle:
         return '${fmtNum(m.angle, 1)}°';
@@ -1487,22 +1500,22 @@ class _HomePageState extends State<HomePage> {
 
   static String _holesWord(int n) {
     final m10 = n % 10, m100 = n % 100;
-    if (m10 == 1 && m100 != 11) return 'отвір';
-    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'отвори';
-    return 'отворів';
+    if (m10 == 1 && m100 != 11) return tr('отвір');
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return tr('отвори');
+    return tr('отворів');
   }
 
   String _holesText(double k) {
     final mc = _measure;
-    if (mc.holesBusy) return 'Шукаю отвори…';
+    if (mc.holesBusy) return tr('Шукаю отвори…');
     if (mc.holesError != null) return mc.holesError!;
     final list = mc.holes;
     if (list == null) return '';
-    if (list.isEmpty) return 'Круглих отворів уздовж осей X, Y, Z не знайдено';
+    if (list.isEmpty) return tr('Круглих отворів уздовж осей X, Y, Z не знайдено');
     final h = mc.selectedHole;
     if (h != null) {
-      final chamfer = h.chamferRadius > h.radius ? ' · фаска до ⌀${fmtNum(h.chamferRadius * 2 * k, 2)}' : '';
-      return 'Отвір ⌀${fmtNum(h.diameter * k, 2)} мм · глибина ≈${fmtNum(h.depth * k, 1)} мм · вісь ${h.axisName}$chamfer';
+      final chamfer = h.chamferRadius > h.radius ? trf(' · фаска до ⌀{0}', [fmtNum(h.chamferRadius * 2 * k, 2)]) : '';
+      return trf('Отвір ⌀{0} мм · глибина ≈{1} мм · вісь {2}{3}', [fmtNum(h.diameter * k, 2), fmtNum(h.depth * k, 1), h.axisName, chamfer]);
     }
     final groups = <String, int>{};
     for (final x in list) {
@@ -1512,8 +1525,8 @@ class _HomePageState extends State<HomePage> {
     final keys = groups.keys.toList()
       ..sort((a, b) => double.parse(a.replaceAll(',', '.')).compareTo(double.parse(b.replaceAll(',', '.'))));
     final parts = [for (final d in keys) groups[d]! > 1 ? '⌀$d ×${groups[d]}' : '⌀$d'];
-    final miss = mc.holeMiss ? 'Тут немає отвору. ' : '';
-    return '$miss${list.length} ${_holesWord(list.length)}: ${parts.join(' · ')} — торкніться отвору';
+    final miss = mc.holeMiss ? tr('Тут немає отвору. ') : '';
+    return trf('{0}{1} {2}: {3} — торкніться отвору', [miss, list.length, _holesWord(list.length), parts.join(' · ')]);
   }
 
   Widget _measurePanel(double k) {
@@ -1524,14 +1537,14 @@ class _HomePageState extends State<HomePage> {
     if (mc.tool == MeasureTool.holes) {
       text = _holesText(k);
     } else if (mc.pending.isNotEmpty) {
-      text = 'Точка ${mc.pending.length + 1} з $need — торкніться моделі';
+      text = trf('Точка {0} з {1} — торкніться моделі', [mc.pending.length + 1, need]);
     } else if (mc.done.isNotEmpty && mc.done.last.tool == mc.tool) {
       text = _measureText(mc.done.last, k);
     } else {
       text = switch (mc.tool) {
-        MeasureTool.circle => 'Торкніться 3 точок на краю отвору чи дуги',
-        MeasureTool.angle => 'Торкніться 3 точок: кінець, вершина кута, кінець',
-        _ => 'Торкніться двох точок на моделі',
+        MeasureTool.circle => tr('Торкніться 3 точок на краю отвору чи дуги'),
+        MeasureTool.angle => tr('Торкніться 3 точок: кінець, вершина кута, кінець'),
+        _ => tr('Торкніться двох точок на моделі'),
       };
     }
     return Material(
@@ -1582,7 +1595,7 @@ class _HomePageState extends State<HomePage> {
               if (mc.tool != MeasureTool.holes) ...[
               IconButton(
                 visualDensity: VisualDensity.compact,
-                tooltip: mc.snap ? 'Прилипання до вершин: увімк.' : 'Прилипання до вершин: вимк.',
+                tooltip: mc.snap ? tr('Прилипання до вершин: увімк.') : tr('Прилипання до вершин: вимк.'),
                 isSelected: mc.snap,
                 onPressed: () => mc.snap = !mc.snap,
                 icon: const Icon(Icons.filter_center_focus_outlined),
@@ -1590,13 +1603,13 @@ class _HomePageState extends State<HomePage> {
               ),
               IconButton(
                 visualDensity: VisualDensity.compact,
-                tooltip: 'Скасувати точку',
+                tooltip: tr('Скасувати точку'),
                 onPressed: mc.pending.isEmpty && mc.done.isEmpty ? null : mc.undo,
                 icon: const Icon(Icons.undo),
               ),
               IconButton(
                 visualDensity: VisualDensity.compact,
-                tooltip: 'Очистити всі виміри',
+                tooltip: tr('Очистити всі виміри'),
                 onPressed: mc.pending.isEmpty && mc.done.isEmpty ? null : mc.clear,
                 icon: const Icon(Icons.delete_sweep_outlined),
               ),
@@ -1665,12 +1678,11 @@ class _HomePageState extends State<HomePage> {
 
     String timeNote() {
       if (_manualHours != null) {
-        return 'введено вручну${s.copies > 1 ? ' (${formatDuration(_manualHours!)} × ${s.copies})' : ''}';
+        return trf('введено вручну{0}', [s.copies > 1 ? ' (${formatDuration(_manualHours!)} × ${s.copies})' : '']);
       }
-      if (fig?.source != null) return 'з файлу ${fig!.source}';
+      if (fig?.source != null) return trf('з файлу {0}', [fig!.source]);
       final calibrated = (s.timeSamples[s.printerId] ?? 0) > 0;
-      return 'оцінка для «${printerById(s.printerId).fullName}»${calibrated ? ', калібровано' : ''}; '
-          'торкніться, щоб ввести час';
+      return trf('оцінка для «{0}»{1}; торкніться, щоб ввести час', [printerById(s.printerId).fullName, calibrated ? tr(', калібровано') : '']);
     }
 
     return Card(
@@ -1681,11 +1693,11 @@ class _HomePageState extends State<HomePage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(children: [
-              Text('Вага пластику', style: theme.textTheme.titleSmall),
+              Text(tr('Вага пластику'), style: theme.textTheme.titleSmall),
               const Spacer(),
               Text(
                 materialById(s.materialId).id == 'custom'
-                    ? 'свій, ${fmtNum(s.density, 2)} г/см³'
+                    ? trf('свій, {0} г/см³', [fmtNum(s.density, 2)])
                     : materialById(s.materialId).name,
                 style: theme.textTheme.labelLarge,
               ),
@@ -1705,25 +1717,25 @@ class _HomePageState extends State<HomePage> {
             if (fig != null)
               Wrap(spacing: 6, runSpacing: 4, children: [
                 if (fig.source != null)
-                  badge('точно: ${fig.source}', Icons.verified_outlined)
+                  badge(trf('точно: {0}', [fig.source]), Icons.verified_outlined)
                 else if (s.weightSamples > 0)
-                  badge('калібровано ×${fmtNum(s.weightFactor, 2)}', Icons.tune)
+                  badge(trf('калібровано ×{0}', [fmtNum(s.weightFactor, 2)]), Icons.tune)
                 else
-                  badge('оцінка', Icons.calculate_outlined),
+                  badge(tr('оцінка'), Icons.calculate_outlined),
               ]),
             if (busy) ...[
               const SizedBox(height: 8),
               LinearProgressIndicator(value: _progress),
               const SizedBox(height: 4),
               Text(
-                '${s.supportsEnabled ? 'Нарізання і підтримки' : 'Нарізання'}… ${((_progress ?? 0) * 100).round()}%',
+                '${s.supportsEnabled ? tr('Нарізання і підтримки') : tr('Нарізання')}… ${((_progress ?? 0) * 100).round()}%',
                 style: small,
               ),
             ],
             if (_sliceError != null) ...[
               const SizedBox(height: 8),
               Text(_sliceError!, style: TextStyle(color: theme.colorScheme.error)),
-              TextButton(onPressed: _slice, child: const Text('Спробувати ще раз')),
+              TextButton(onPressed: _slice, child: Text(tr('Спробувати ще раз'))),
             ],
             if (_report != null && _report!.hasProblems)
               Padding(
@@ -1734,8 +1746,8 @@ class _HomePageState extends State<HomePage> {
                   Expanded(
                     child: Text(
                       _report!.isWatertight
-                          ? 'У моделі є перевернуті грані — вага може бути неточною'
-                          : 'Модель має дірки в сітці — вага може бути неточною',
+                          ? tr('У моделі є перевернуті грані — вага може бути неточною')
+                          : tr('Модель має дірки в сітці — вага може бути неточною'),
                       style: small?.copyWith(color: theme.colorScheme.error),
                     ),
                   ),
@@ -1744,27 +1756,26 @@ class _HomePageState extends State<HomePage> {
             if (fig != null && cost != null) ...[
               const SizedBox(height: 6),
               if (_adv && fig.source != null && fig.estimateGrams != null)
-                Text('наш розрахунок: ${fmtGrams(fig.estimateGrams!)}', style: small),
+                Text(trf('наш розрахунок: {0}', [fmtGrams(fig.estimateGrams!)]), style: small),
               if (fig.source == null && fig.brim1 > 0)
-                Text('у т.ч. кайма / спідниця: ${fmtGrams(fig.brim1 * s.copies)}', style: small),
+                Text(trf('у т.ч. кайма / спідниця: {0}', [fmtGrams(fig.brim1 * s.copies)]), style: small),
               if (_adv && fig.source == null && s.supportsEnabled)
                 Text(
-                  'модель ${fmtGrams(fig.model1 * s.copies)} · підтримки ${fmtGrams(fig.support1 * s.copies)}',
+                  trf('модель {0} · підтримки {1}', [fmtGrams(fig.model1 * s.copies), fmtGrams(fig.support1 * s.copies)]),
                   style: theme.textTheme.bodyMedium,
                 ),
               if (s.copies > 1)
-                Text('${s.copies} шт. · одна: ${fmtGrams(fig.grams1)}', style: theme.textTheme.bodyMedium),
+                Text(trf('{0} шт. · одна: {1}', [s.copies, fmtGrams(fig.grams1)]), style: theme.textTheme.bodyMedium),
               if (fig.source == null && (s.copies > 1 || fig.perPlate > 1))
                 Text(
                   fig.plates == 1
-                      ? 'на стіл влазить ${fig.perPlate} шт · одна пластина'
-                      : 'на стіл влазить ${fig.perPlate} шт · пластин: ${fig.plates}',
+                      ? trf('на стіл влазить {0} шт · одна пластина', [fig.perPlate])
+                      : trf('на стіл влазить {0} шт · пластин: {1}', [fig.perPlate, fig.plates]),
                   style: small,
                 ),
               if (fig.waste != null && fig.waste!.changes > 0)
                 Text(
-                  'відходи на зміну кольору: ${fmtGrams(fig.wasteGrams)} '
-                  '(${fig.waste!.changes} змін${s.primeTower ? ', з вежею' : ''})',
+                  trf('відходи на зміну кольору: {0} ({1} змін{2})', [fmtGrams(fig.wasteGrams), fig.waste!.changes, s.primeTower ? tr(', з вежею') : '']),
                   style: small,
                 ),
               if (fig.source != null && project != null && project.filaments.length > 1)
@@ -1793,13 +1804,13 @@ class _HomePageState extends State<HomePage> {
                   style: const ButtonStyle(visualDensity: VisualDensity.compact),
                   showSelectedIcon: false,
                   segments: [
-                    ButtonSegment(value: true, label: Text('Дані ${project!.app}')),
-                    const ButtonSegment(value: false, label: Text('Наш розрахунок')),
+                    ButtonSegment(value: true, label: Text(trf('Дані {0}', [project!.app]))),
+                    ButtonSegment(value: false, label: Text(tr('Наш розрахунок'))),
                   ],
                   selected: {fig.source != null},
                   onSelectionChanged: (v) {
                     if (v.first && s.scalePercent != 100) {
-                      _snack('Дані слайсера діють лише при масштабі 100%');
+                      _snack(tr('Дані слайсера діють лише при масштабі 100%'));
                     }
                     _updateSettings(s.copyWith(preferSlicerData: v.first));
                   },
@@ -1810,9 +1821,9 @@ class _HomePageState extends State<HomePage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  Stat('філамент', '${fmtNum(fig.meters, 2)} м'),
-                  Stat('об\'єм', '${fmtNum(fig.gramsTotal / s.density, 1)} см³'),
-                  if (r != null) Stat('шарів', '${r.layers}'),
+                  Stat(tr('філамент'), trf('{0} м', [fmtNum(fig.meters, 2)])),
+                  Stat(tr('об\'єм'), trf('{0} см³', [fmtNum(fig.gramsTotal / s.density, 1)])),
+                  if (r != null) Stat(tr('шарів'), '${r.layers}'),
                 ],
               ),
               Divider(height: 24, color: onCard.withValues(alpha: 0.2)),
@@ -1824,7 +1835,7 @@ class _HomePageState extends State<HomePage> {
                   child: Row(children: [
                     const Icon(Icons.schedule, size: 18),
                     const SizedBox(width: 6),
-                    Text('Час друку', style: theme.textTheme.bodyMedium),
+                    Text(tr('Час друку'), style: theme.textTheme.bodyMedium),
                     const Spacer(),
                     Text(
                       '${_manualHours == null && fig.source == null ? '≈ ' : ''}${formatDuration(cost.hours)}',
@@ -1838,26 +1849,26 @@ class _HomePageState extends State<HomePage> {
               Text(timeNote(), style: small),
               const SizedBox(height: 10),
               if (_adv) ...[
-                line('Пластик', fmtMoney(cost.material)),
-                line('Електроенергія', fmtMoney(cost.electricity)),
-                line('Амортизація', fmtMoney(cost.amortization)),
-                if (cost.failure > 0) line('Брак ${fmtNum(s.failurePercent, 0)}%', fmtMoney(cost.failure)),
+                line(tr('Пластик'), fmtMoney(cost.material)),
+                line(tr('Електроенергія'), fmtMoney(cost.electricity)),
+                line(tr('Амортизація'), fmtMoney(cost.amortization)),
+                if (cost.failure > 0) line(trf('Брак {0}%', [fmtNum(s.failurePercent, 0)]), fmtMoney(cost.failure)),
               ],
-              line('Собівартість', fmtMoney(cost.costPrice), strong: true),
+              line(tr('Собівартість'), fmtMoney(cost.costPrice), strong: true),
               if (_adv) ...[
                 const SizedBox(height: 4),
-                line('Заробіток ${fmtNum(s.markupPercent, 0)}%', fmtMoney(cost.profit)),
+                line(trf('Заробіток {0}%', [fmtNum(s.markupPercent, 0)]), fmtMoney(cost.profit)),
               ],
               if (cost.discount > 0)
-                line('Знижка ${fmtNum(discountFor(s.discounts, s.copies), 0)}% (від кількості)', '−${fmtMoney(cost.discount)}'),
-              if (_adv && cost.extra != 0) line('Доплата', fmtMoney(cost.extra)),
-              if (cost.minimumAdd > 0) line('До мінімальної ціни', fmtMoney(cost.minimumAdd)),
-              if (_adv && cost.rounding > 0.004) line('Округлення', fmtMoney(cost.rounding)),
+                line(trf('Знижка {0}% (від кількості)', [fmtNum(discountFor(s.discounts, s.copies), 0)]), '−${fmtMoney(cost.discount)}'),
+              if (_adv && cost.extra != 0) line(tr('Доплата'), fmtMoney(cost.extra)),
+              if (cost.minimumAdd > 0) line(tr('До мінімальної ціни'), fmtMoney(cost.minimumAdd)),
+              if (_adv && cost.rounding > 0.004) line(tr('Округлення'), fmtMoney(cost.rounding)),
               const SizedBox(height: 6),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('Ціна', style: theme.textTheme.titleSmall),
+                  Text(tr('Ціна'), style: theme.textTheme.titleSmall),
                   const Spacer(),
                   Text(
                     fmtMoney(cost.price),
@@ -1868,7 +1879,7 @@ class _HomePageState extends State<HomePage> {
               if (s.copies > 1)
                 Align(
                   alignment: Alignment.centerRight,
-                  child: Text('${fmtMoney(cost.price / s.copies)} за штуку', style: small),
+                  child: Text(trf('{0} за штуку', [fmtMoney(cost.price / s.copies)]), style: small),
                 ),
               const SizedBox(height: 12),
               Row(children: [
@@ -1876,7 +1887,7 @@ class _HomePageState extends State<HomePage> {
                   child: OutlinedButton.icon(
                     onPressed: busy && fig.source == null ? null : _shareChoice,
                     icon: const Icon(Icons.share_outlined),
-                    label: const Text('Поділитися'),
+                    label: Text(tr('Поділитися')),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1884,7 +1895,7 @@ class _HomePageState extends State<HomePage> {
                   child: FilledButton.icon(
                     onPressed: (busy && fig.source == null) || _saving ? null : _saveToHistory,
                     icon: const Icon(Icons.bookmark_add_outlined),
-                    label: const Text('Зберегти'),
+                    label: Text(tr('Зберегти')),
                   ),
                 ),
               ]),
@@ -1894,13 +1905,13 @@ class _HomePageState extends State<HomePage> {
                   child: OutlinedButton.icon(
                     onPressed: busy && fig.source == null ? null : _addToOrder,
                     icon: const Icon(Icons.add_shopping_cart),
-                    label: const Text('До замовлення'),
+                    label: Text(tr('До замовлення')),
                   ),
                 ),
                 if (_adv) ...[
                   const SizedBox(width: 8),
                   IconButton.outlined(
-                    tooltip: 'У прайс-лист',
+                    tooltip: tr('У прайс-лист'),
                     onPressed: busy && fig.source == null ? null : _addToCatalog,
                     icon: const Icon(Icons.storefront_outlined),
                   ),
@@ -1913,12 +1924,12 @@ class _HomePageState extends State<HomePage> {
                     style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4)),
                     onPressed: busy ? null : _calibrate,
                     icon: const Icon(Icons.tune, size: 18),
-                    label: const Text('Підігнати під слайсер'),
+                    label: Text(tr('Підігнати під слайсер')),
                   ),
                 ),
               if (_adv && r != null)
                 Text(
-                  'Суцільна модель (100%): ${fmtGrams(r.solidGrams(s.density))}',
+                  trf('Суцільна модель (100%): {0}', [fmtGrams(r.solidGrams(s.density))]),
                   style: small,
                 ),
             ],
@@ -1938,11 +1949,11 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Ціни', style: theme.textTheme.titleSmall),
+            Text(tr('Ціни'), style: theme.textTheme.titleSmall),
             const SizedBox(height: 10),
             NumberField(
               key: ValueKey('price-${s.materialId}'),
-              label: 'Котушка ${mat.id == 'custom' ? 'свого матеріалу' : mat.name}, за 1 кг',
+              label: trf('Котушка {0}, за 1 кг', [mat.id == 'custom' ? tr('свого матеріалу') : mat.name]),
               suffix: currency,
               value: s.pricePerKg,
               onChanged: (v) => _updateSettings(_settings.withPrice(v)),
@@ -1951,7 +1962,7 @@ class _HomePageState extends State<HomePage> {
             Row(children: [
               Expanded(
                 child: NumberField(
-                  label: 'Заробіток',
+                  label: tr('Заробіток'),
                   suffix: '%',
                   value: s.markupPercent,
                   onChanged: (v) => _updateSettings(_settings.copyWith(markupPercent: v)),
@@ -1961,7 +1972,7 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(width: 12),
               Expanded(
                 child: NumberField(
-                  label: 'Доплата',
+                  label: tr('Доплата'),
                   suffix: currency,
                   value: s.extraCost,
                   onChanged: (v) => _updateSettings(_settings.copyWith(extraCost: v)),
@@ -1976,8 +1987,7 @@ class _HomePageState extends State<HomePage> {
               onPressed: _openSettings,
               icon: const Icon(Icons.bolt_outlined, size: 18),
               label: Text(
-                '${fmtNum(s.powerW, 0)} Вт × ${fmtNum(s.tariff, 2)} $currency/кВт·год · '
-                'амортизація ${fmtNum(s.amortizationPerHour, 1)} $currency/год',
+                trf('{0} Вт × {1} {2}/кВт·год · амортизація {3} {4}/год', [fmtNum(s.powerW, 0), fmtNum(s.tariff, 2), currency, fmtNum(s.amortizationPerHour, 1), currency]),
                 style: theme.textTheme.bodySmall,
               ),
             ),
@@ -1991,8 +2001,8 @@ class _HomePageState extends State<HomePage> {
   Widget _simpleSettings() {
     final theme = Theme.of(context);
     final s = _settings;
-    const quality = [(0.28, 'Чорнова'), (0.2, 'Стандарт'), (0.12, 'Висока')];
-    const strength = [(10.0, 'Легка'), (15.0, 'Звичайна'), (30.0, 'Міцна'), (100.0, 'Суцільна')];
+    final quality = [(0.28, tr('Чорнова')), (0.2, tr('Стандарт')), (0.12, tr('Висока'))];
+    final strength = [(10.0, tr('Легка')), (15.0, tr('Звичайна')), (30.0, tr('Міцна')), (100.0, tr('Суцільна'))];
     Widget title(String t) => Padding(
           padding: const EdgeInsets.only(top: 12, bottom: 6),
           child: Text(t, style: theme.textTheme.titleSmall),
@@ -2001,7 +2011,7 @@ class _HomePageState extends State<HomePage> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          title('Пластик'),
+          title(tr('Пластик')),
           Wrap(spacing: 6, runSpacing: 6, children: [
             for (final m in materials.where((m) => m.id != 'custom').take(6))
               ChoiceChip(
@@ -2010,7 +2020,7 @@ class _HomePageState extends State<HomePage> {
                 onSelected: (_) => _updateSettings(s.copyWith(materialId: m.id, density: m.density)),
               ),
           ]),
-          title('Якість'),
+          title(tr('Якість')),
           SegmentedButton<double>(
             showSelectedIcon: false,
             segments: [for (final (h, l) in quality) ButtonSegment(value: h, label: Text(l))],
@@ -2023,7 +2033,7 @@ class _HomePageState extends State<HomePage> {
               if (v.isNotEmpty) _updateSettings(s.copyWith(layerHeight: v.first));
             },
           ),
-          title('Міцність (заповнення)'),
+          title(tr('Міцність (заповнення)')),
           SegmentedButton<double>(
             showSelectedIcon: false,
             style: const ButtonStyle(padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 4))),
@@ -2039,25 +2049,25 @@ class _HomePageState extends State<HomePage> {
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('Підтримки'),
-            subtitle: const Text('Для нависань і мостів'),
+            title: Text(tr('Підтримки')),
+            subtitle: Text(tr('Для нависань і мостів')),
             value: s.supportsEnabled,
             onChanged: (v) => _updateSettings(s.copyWith(supportsEnabled: v)),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('Режим вази'),
-            subtitle: const Text('Одна стінка, без кришки й заповнення'),
+            title: Text(tr('Режим вази')),
+            subtitle: Text(tr('Одна стінка, без кришки й заповнення')),
             value: s.vaseMode,
             onChanged: (v) => _updateSettings(s.copyWith(vaseMode: v)),
           ),
           StepperRow(
-            label: 'Кількість',
+            label: tr('Кількість'),
             value: s.copies.toDouble(),
             min: 1,
             max: 500,
             step: 1,
-            unit: ' шт',
+            unit: tr(' шт'),
             onChanged: (v) => _updateSettings(s.copyWith(copies: v.round())),
           ),
         ]),
@@ -2086,7 +2096,7 @@ class _HomePageState extends State<HomePage> {
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 4, 0, 4),
             child: Row(children: [
-              Expanded(child: Text('Об\'єкти (${objs.length})', style: theme.textTheme.titleSmall)),
+              Expanded(child: Text(trf('Об\'єкти ({0})', [objs.length]), style: theme.textTheme.titleSmall)),
               if (_reorienting || (vols == null && _result != null && enabledCount > 1))
                 const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
             ]),
@@ -2102,7 +2112,7 @@ class _HomePageState extends State<HomePage> {
                       final next = List<bool>.of(m.enabled);
                       next[i] = v ?? false;
                       if (!next.contains(true)) {
-                        _snack('Залиште хоча б один об\'єкт');
+                        _snack(tr('Залиште хоча б один об\'єкт'));
                         return;
                       }
                       _derive(enabled: next);
@@ -2111,7 +2121,7 @@ class _HomePageState extends State<HomePage> {
                 Expanded(child: Text(objs[i].name, maxLines: 1, overflow: TextOverflow.ellipsis)),
                 if (_adv)
                   PopupMenuButton<int>(
-                    tooltip: 'Колір (слот філаменту)',
+                    tooltip: tr('Колір (слот філаменту)'),
                     onSelected: (c) => setState(() => _objectColors[i] = c),
                     itemBuilder: (_) => [
                       for (int c = 1; c <= 4; c++)
@@ -2120,7 +2130,7 @@ class _HomePageState extends State<HomePage> {
                           child: Row(children: [
                             CircleAvatar(radius: 8, backgroundColor: _slotColors[c - 1]),
                             const SizedBox(width: 8),
-                            Text('Колір $c'),
+                            Text(trf('Колір {0}', [c])),
                           ]),
                         ),
                     ],
@@ -2164,7 +2174,7 @@ class _HomePageState extends State<HomePage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 0, 4),
               child: Text(
-                'Вага кожного — окремим нарізанням, без кайми',
+                tr('Вага кожного — окремим нарізанням, без кайми'),
                 style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
             ),
@@ -2182,7 +2192,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Матеріал', style: theme.textTheme.titleSmall),
+            Text(tr('Матеріал'), style: theme.textTheme.titleSmall),
             const SizedBox(height: 6),
             Wrap(
               spacing: 6,
@@ -2194,11 +2204,11 @@ class _HomePageState extends State<HomePage> {
                     selected: s.materialId == m.id,
                     onSelected: (_) => _updateSettings(s.copyWith(materialId: m.id, density: m.density)),
                   ),
-                ActionChip(label: const Text('Інші…'), onPressed: _openSettings),
+                ActionChip(label: Text(tr('Інші…')), onPressed: _openSettings),
               ],
             ),
             const SizedBox(height: 14),
-            Text('Висота шару, мм', style: theme.textTheme.titleSmall),
+            Text(tr('Висота шару, мм'), style: theme.textTheme.titleSmall),
             const SizedBox(height: 6),
             Wrap(
               spacing: 6,
@@ -2213,7 +2223,7 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
             const SizedBox(height: 14),
-            Text('Заповнення: ${fmtNum(s.infillPercent, 0)}%', style: theme.textTheme.titleSmall),
+            Text(trf('Заповнення: {0}%', [fmtNum(s.infillPercent, 0)]), style: theme.textTheme.titleSmall),
             Slider(
               value: s.infillPercent.clamp(0, 100).toDouble(),
               min: 0,
@@ -2223,7 +2233,7 @@ class _HomePageState extends State<HomePage> {
               onChanged: (v) => _updateSettings(s.copyWith(infillPercent: v)),
             ),
             StepperRow(
-              label: 'Стінки',
+              label: tr('Стінки'),
               value: s.walls.toDouble(),
               defaultValue: const SliceSettings().walls.toDouble(),
               min: 1,
@@ -2233,10 +2243,10 @@ class _HomePageState extends State<HomePage> {
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Підтримки'),
+              title: Text(tr('Підтримки')),
               subtitle: s.supportsEnabled
-                  ? Text('${s.isTreeSupport ? 'деревоподібні' : 'звичайні ${fmtNum(s.supportDensity, 0)}%'} · '
-                      '${s.supportPlateOnly ? 'від столу' : 'скрізь'} · ${fmtNum(s.supportAngle, 0)}°')
+                  ? Text('${s.isTreeSupport ? tr('деревоподібні') : trf('звичайні {0}%', [fmtNum(s.supportDensity, 0)])} · '
+                      '${s.supportPlateOnly ? tr('від столу') : tr('скрізь')} · ${fmtNum(s.supportAngle, 0)}°')
                   : null,
               value: s.supportsEnabled,
               onChanged: (v) => _updateSettings(s.copyWith(supportsEnabled: v)),
@@ -2244,15 +2254,15 @@ class _HomePageState extends State<HomePage> {
             if (s.supportsEnabled)
               SegmentedButton<String>(
                 segments: const [
-                  ButtonSegment(value: 'normal', label: Text('Звичайні'), icon: Icon(Icons.view_column_outlined)),
-                  ButtonSegment(value: 'tree', label: Text('Деревоподібні'), icon: Icon(Icons.park_outlined)),
+                  ButtonSegment(value: 'normal', label: Text(tr('Звичайні')), icon: Icon(Icons.view_column_outlined)),
+                  ButtonSegment(value: 'tree', label: Text(tr('Деревоподібні')), icon: Icon(Icons.park_outlined)),
                 ],
                 selected: {s.isTreeSupport ? 'tree' : 'normal'},
                 onSelectionChanged: (v) => _updateSettings(s.copyWith(supportType: v.first)),
               ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Режим вази (спіраль)'),
+              title: Text(tr('Режим вази (спіраль)')),
               value: s.vaseMode,
               onChanged: (v) => _updateSettings(s.copyWith(vaseMode: v)),
             ),
@@ -2261,7 +2271,7 @@ class _HomePageState extends State<HomePage> {
               child: TextButton.icon(
                 onPressed: _openSettings,
                 icon: const Icon(Icons.tune),
-                label: const Text('Усі налаштування'),
+                label: Text(tr('Усі налаштування')),
               ),
             ),
           ],
@@ -2289,30 +2299,30 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(m.hasMesh ? 'Модель' : 'Файл', style: theme.textTheme.titleSmall),
+            Text(m.hasMesh ? tr('Модель') : tr('Файл'), style: theme.textTheme.titleSmall),
             const SizedBox(height: 6),
-            if (p != null) row('Створено в', p.app),
-            if (p?.printProfile != null) row('Профіль', p!.printProfile!),
+            if (p != null) row(tr('Створено в'), p.app),
+            if (p?.printProfile != null) row(tr('Профіль'), p!.printProfile!),
             if (p != null && p.plates.length > 1)
               for (final pl in p.plates)
-                row('Пластина ${pl.index}', '${fmtGrams(pl.grams)} · ${formatDuration(pl.seconds / 3600)}'),
+                row(trf('Пластина {0}', [pl.index]), '${fmtGrams(pl.grams)} · ${formatDuration(pl.seconds / 3600)}'),
             if (m.hasMesh) ...[
-            row('Трикутників', '${m.mesh.triangleCount}'),
-            row('Розмір X × Y × Z',
-                '${fmtNum(b.sizeX * k, 1)} × ${fmtNum(b.sizeY * k, 1)} × ${fmtNum(b.sizeZ * k, 1)} мм'),
-            row('Об\'єм моделі', '${fmtNum(m.volume * k * k * k / 1000, 2)} см³'),
-            row('Площа поверхні', '${fmtNum(m.area * k * k / 100, 1)} см²'),
-            if (_settings.scalePercent != 100) row('Масштаб', '${fmtNum(_settings.scalePercent, 0)}%'),
-            if (_result != null) row('Час розрахунку', '${fmtNum(_result!.millis / 1000, 1)} с'),
+            row(tr('Трикутників'), '${m.mesh.triangleCount}'),
+            row(tr('Розмір X × Y × Z'),
+                trf('{0} × {1} × {2} мм', [fmtNum(b.sizeX * k, 1), fmtNum(b.sizeY * k, 1), fmtNum(b.sizeZ * k, 1)])),
+            row(tr('Об\'єм моделі'), trf('{0} см³', [fmtNum(m.volume * k * k * k / 1000, 2)])),
+            row(tr('Площа поверхні'), trf('{0} см²', [fmtNum(m.area * k * k / 100, 1)])),
+            if (_settings.scalePercent != 100) row(tr('Масштаб'), '${fmtNum(_settings.scalePercent, 0)}%'),
+            if (_result != null) row(tr('Час розрахунку'), trf('{0} с', [fmtNum(_result!.millis / 1000, 1)])),
             if (_report != null) ...[
-              row('Сітка', _report!.hasProblems ? '⚠ є помилки' : '✓ без помилок'),
-              if (_report!.openEdges > 0) row('Відкриті ребра (дірки)', '${_report!.openEdges}'),
-              if (_report!.nonManifoldEdges > 0) row('Неоднозначні ребра', '${_report!.nonManifoldEdges}'),
-              if (_report!.flippedEdges > 0) row('Перевернуті грані (ребер)', '${_report!.flippedEdges}'),
-              if (_report!.degenerate > 0) row('Вироджені трикутники', '${_report!.degenerate}'),
-              if (_report!.shells > 1) row('Окремих частин', '${_report!.shells}'),
+              row(tr('Сітка'), _report!.hasProblems ? tr('⚠ є помилки') : tr('✓ без помилок')),
+              if (_report!.openEdges > 0) row(tr('Відкриті ребра (дірки)'), '${_report!.openEdges}'),
+              if (_report!.nonManifoldEdges > 0) row(tr('Неоднозначні ребра'), '${_report!.nonManifoldEdges}'),
+              if (_report!.flippedEdges > 0) row(tr('Перевернуті грані (ребер)'), '${_report!.flippedEdges}'),
+              if (_report!.degenerate > 0) row(tr('Вироджені трикутники'), '${_report!.degenerate}'),
+              if (_report!.shells > 1) row(tr('Окремих частин'), '${_report!.shells}'),
             ],
-            if (!isIdentity(m.rotation)) row('Положення', 'змінене'),
+            if (!isIdentity(m.rotation)) row(tr('Положення'), tr('змінене')),
             ],
             if (p != null && p.hasSettings)
               Align(
@@ -2323,12 +2333,12 @@ class _HomePageState extends State<HomePage> {
                     final before = _settings;
                     _updateSettings(p.applyTo(before));
                     showTimedSnack(context, SnackBar(
-                      content: Text('Застосовано налаштування з файлу (${p.app})'),
-                      action: SnackBarAction(label: 'Відмінити', onPressed: () => _updateSettings(before)),
+                      content: Text(trf('Застосовано налаштування з файлу ({0})', [p.app])),
+                      action: SnackBarAction(label: tr('Відмінити'), onPressed: () => _updateSettings(before)),
                     ));
                   },
                   icon: const Icon(Icons.download_outlined, size: 18),
-                  label: const Text('Застосувати налаштування з файлу'),
+                  label: Text(tr('Застосувати налаштування з файлу')),
                 ),
               ),
           ],
@@ -2358,11 +2368,10 @@ class _EmptyState extends StatelessWidget {
               child: Image.asset('assets/logo.png', width: 112, height: 112),
             ),
             const SizedBox(height: 20),
-            Text('Відкрийте STL, 3MF або G-code', style: theme.textTheme.headlineSmall, textAlign: TextAlign.center),
+            Text(tr('Відкрийте STL, 3MF або G-code'), style: theme.textTheme.headlineSmall, textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(
-              'Додаток покаже модель і порахує, скільки пластику піде на друк.\n'
-              'Файл також можна відкрити з Telegram чи файлового менеджера через «Відкрити за допомогою».',
+              tr('Додаток покаже модель і порахує, скільки пластику піде на друк.\nФайл також можна відкрити з Telegram чи файлового менеджера через «Відкрити за допомогою».'),
               style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               textAlign: TextAlign.center,
             ),
@@ -2370,7 +2379,7 @@ class _EmptyState extends StatelessWidget {
             FilledButton.icon(
               onPressed: onOpen,
               icon: const Icon(Icons.folder_open),
-              label: const Text('Вибрати файл'),
+              label: Text(tr('Вибрати файл')),
             ),
             if (error != null) ...[
               const SizedBox(height: 24),
@@ -2402,20 +2411,20 @@ class _NoteDialogState extends State<_NoteDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Зберегти розрахунок'),
+      title: Text(tr('Зберегти розрахунок')),
       content: TextField(
         controller: _c,
         autofocus: true,
         textCapitalization: TextCapitalization.sentences,
-        decoration: const InputDecoration(
-          labelText: 'Примітка (необов\'язково)',
-          hintText: 'Клієнт, колір, термін…',
+        decoration: InputDecoration(
+          labelText: tr('Примітка (необов\'язково)'),
+          hintText: tr('Клієнт, колір, термін…'),
         ),
         onSubmitted: (_) => Navigator.pop(context, _c.text.trim()),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
-        FilledButton(onPressed: () => Navigator.pop(context, _c.text.trim()), child: const Text('Зберегти')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Скасувати'))),
+        FilledButton(onPressed: () => Navigator.pop(context, _c.text.trim()), child: Text(tr('Зберегти'))),
       ],
     );
   }
@@ -2462,16 +2471,16 @@ class _TimeDialogState extends State<_TimeDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Час друку однієї копії'),
+      title: Text(tr('Час друку однієї копії')),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('Введіть час, який показує ваш слайсер — розрахунок світла та амортизації стане точним.'),
+        Text(tr('Введіть час, який показує ваш слайсер — розрахунок світла та амортизації стане точним.')),
         const SizedBox(height: 16),
         Row(children: [
           Expanded(
             child: TextField(
               controller: _h,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Години', border: OutlineInputBorder()),
+              decoration: InputDecoration(labelText: tr('Години'), border: OutlineInputBorder()),
             ),
           ),
           const SizedBox(width: 12),
@@ -2479,7 +2488,7 @@ class _TimeDialogState extends State<_TimeDialog> {
             child: TextField(
               controller: _m,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Хвилини', border: OutlineInputBorder()),
+              decoration: InputDecoration(labelText: tr('Хвилини'), border: OutlineInputBorder()),
               onSubmitted: (_) => _save(),
             ),
           ),
@@ -2487,9 +2496,9 @@ class _TimeDialogState extends State<_TimeDialog> {
       ]),
       actions: [
         if (widget.isManual)
-          TextButton(onPressed: () => Navigator.pop(context, -1.0), child: const Text('Оцінка')),
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
-        FilledButton(onPressed: _save, child: const Text('Готово')),
+          TextButton(onPressed: () => Navigator.pop(context, -1.0), child: Text(tr('Оцінка'))),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Скасувати'))),
+        FilledButton(onPressed: _save, child: Text(tr('Готово'))),
       ],
     );
   }
@@ -2562,13 +2571,13 @@ class _FileSettingsDialogState extends State<_FileSettingsDialog> {
     final theme = Theme.of(context);
     final p = widget.project;
     return AlertDialog(
-      title: Text('Налаштування з ${p.app}'),
+      title: Text(trf('Налаштування з {0}', [p.app])),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Файл містить параметри друку. Застосувати їх для розрахунку?'),
+            Text(tr('Файл містить параметри друку. Застосувати їх для розрахунку?')),
             const SizedBox(height: 10),
             for (final line in p.describe())
               Padding(
@@ -2578,8 +2587,7 @@ class _FileSettingsDialogState extends State<_FileSettingsDialog> {
             if (p.isSliced) ...[
               const SizedBox(height: 10),
               Text(
-                'Файл нарізаний: вага й час слайсера (${fmtGrams(p.grams)}, ${formatDuration(p.seconds / 3600)}) '
-                'буде використано для ціни.',
+                trf('Файл нарізаний: вага й час слайсера ({0}, {1}) буде використано для ціни.', [fmtGrams(p.grams), formatDuration(p.seconds / 3600)]),
                 style: theme.textTheme.bodySmall,
               ),
             ],
@@ -2589,7 +2597,7 @@ class _FileSettingsDialogState extends State<_FileSettingsDialog> {
               controlAffinity: ListTileControlAffinity.leading,
               value: _always,
               onChanged: (v) => setState(() => _always = v ?? false),
-              title: const Text('Завжди застосовувати без питання'),
+              title: Text(tr('Завжди застосовувати без питання')),
             ),
           ],
         ),
@@ -2597,11 +2605,11 @@ class _FileSettingsDialogState extends State<_FileSettingsDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, const _FileSettingsChoice(false, false)),
-          child: const Text('Залишити мої'),
+          child: Text(tr('Залишити мої')),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, _FileSettingsChoice(true, _always)),
-          child: const Text('Застосувати'),
+          child: Text(tr('Застосувати')),
         ),
       ],
     );
@@ -2644,13 +2652,11 @@ class _CalibrateDialogState extends State<_CalibrateDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return AlertDialog(
-      title: const Text('Підігнати під слайсер'),
+      title: Text(tr('Підігнати під слайсер')),
       content: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(
-            'Наріжте цю модель у своєму слайсері з тими самими налаштуваннями й введіть його цифри '
-            'для однієї копії. Додаток запам\'ятає поправку й застосовуватиме до всіх моделей. '
-            'Що більше моделей підженете, то точніше.',
+            tr('Наріжте цю модель у своєму слайсері з тими самими налаштуваннями й введіть його цифри для однієї копії. Додаток запам\'ятає поправку й застосовуватиме до всіх моделей. Що більше моделей підженете, то точніше.'),
             style: theme.textTheme.bodySmall,
           ),
           const SizedBox(height: 14),
@@ -2659,20 +2665,20 @@ class _CalibrateDialogState extends State<_CalibrateDialog> {
             autofocus: true,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: InputDecoration(
-              labelText: 'Вага у слайсері, г',
-              helperText: 'зараз у нас: ${fmtGrams(widget.estimateGrams)}',
+              labelText: tr('Вага у слайсері, г'),
+              helperText: trf('зараз у нас: {0}', [fmtGrams(widget.estimateGrams)]),
               border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 14),
-          Text('Час у слайсері', style: theme.textTheme.bodyMedium),
+          Text(tr('Час у слайсері'), style: theme.textTheme.bodyMedium),
           const SizedBox(height: 6),
           Row(children: [
             Expanded(
               child: TextField(
                 controller: _h,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'год', border: OutlineInputBorder()),
+                decoration: InputDecoration(labelText: tr('год'), border: OutlineInputBorder()),
               ),
             ),
             const SizedBox(width: 10),
@@ -2680,18 +2686,18 @@ class _CalibrateDialogState extends State<_CalibrateDialog> {
               child: TextField(
                 controller: _m,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'хв', border: OutlineInputBorder()),
+                decoration: InputDecoration(labelText: tr('хв'), border: OutlineInputBorder()),
                 onSubmitted: (_) => _save(),
               ),
             ),
           ]),
           const SizedBox(height: 4),
-          Text('зараз у нас: ${formatDuration(widget.estimateHours)} (можна залишити порожнім)', style: theme.textTheme.bodySmall),
+          Text(trf('зараз у нас: {0} (можна залишити порожнім)', [formatDuration(widget.estimateHours)]), style: theme.textTheme.bodySmall),
         ]),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
-        FilledButton(onPressed: _save, child: const Text('Зберегти')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Скасувати'))),
+        FilledButton(onPressed: _save, child: Text(tr('Зберегти'))),
       ],
     );
   }
@@ -2774,21 +2780,21 @@ class _ScaleDialogState extends State<_ScaleDialog> {
           child: TextField(
             controller: _c[i],
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(labelText: '$axis, мм', border: const OutlineInputBorder(), isDense: true),
+            decoration: InputDecoration(labelText: trf('{0}, мм', [axis]), border: const OutlineInputBorder(), isDense: true),
             onChanged: (t) => _fromAxis(i, t),
           ),
         );
     return AlertDialog(
-      title: const Text('Розмір моделі'),
+      title: Text(tr('Розмір моделі')),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('Введіть потрібний розмір по будь-якій осі — інші зміняться пропорційно.'),
+        Text(tr('Введіть потрібний розмір по будь-якій осі — інші зміняться пропорційно.')),
         const SizedBox(height: 14),
         Row(children: [field(0, 'X'), const SizedBox(width: 8), field(1, 'Y'), const SizedBox(width: 8), field(2, 'Z')]),
         const SizedBox(height: 12),
         TextField(
           controller: _p,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Масштаб', suffixText: '%', border: OutlineInputBorder(), isDense: true),
+          decoration: InputDecoration(labelText: tr('Масштаб'), suffixText: '%', border: OutlineInputBorder(), isDense: true),
           onChanged: _fromPercent,
         ),
         const SizedBox(height: 8),
@@ -2797,14 +2803,14 @@ class _ScaleDialogState extends State<_ScaleDialog> {
             setState(() => _scale = 100);
             _fill(except: -1);
           }),
-          ActionChip(label: const Text('Вписати в стіл'), onPressed: _fitBed),
+          ActionChip(label: Text(tr('Вписати в стіл')), onPressed: _fitBed),
         ]),
       ]),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Скасувати'))),
         FilledButton(
           onPressed: () => Navigator.pop(context, (_scale * 100).roundToDouble() / 100),
-          child: const Text('Застосувати'),
+          child: Text(tr('Застосувати')),
         ),
       ],
     );

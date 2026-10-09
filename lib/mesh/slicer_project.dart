@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import '../slicer/settings.dart';
 import 'zip_reader.dart';
+import '../i18n/i18n.dart';
 
 /// Weight / time of one plate as computed by the slicer that made the file.
 /// One filament used on a sliced plate.
@@ -184,23 +185,22 @@ class SlicerProject {
   List<String> describe() {
     String n(double v, int d) => v.toStringAsFixed(d).replaceAll('.', ',');
     return [
-      if (printProfile != null) 'Профіль: $printProfile',
-      if (printerModel != null) 'Принтер: $printerModel',
+      if (printProfile != null) trf('Профіль: {0}', [printProfile]),
+      if (printerModel != null) trf('Принтер: {0}', [printerModel]),
       if (filamentType != null)
-        'Пластик: $filamentType${density != null ? ', ${n(density!, 2)} г/см³' : ''}',
+        trf('Пластик: {0}{1}', [filamentType, density != null ? trf(', {0} г/см³', [n(density!, 2)]) : '']),
       if (layerHeight != null)
-        'Шар ${n(layerHeight!, 2)} мм${firstLayerHeight != null ? ', перший ${n(firstLayerHeight!, 2)} мм' : ''}',
-      if (walls != null) 'Стінки: $walls',
-      if (topLayers != null || bottomLayers != null) 'Верх / низ: ${topLayers ?? '—'} / ${bottomLayers ?? '—'} шарів',
-      if (infillPercent != null) 'Заповнення: ${n(infillPercent!, 0)}%',
-      if (vase == true) 'Режим вази',
-      if (brimWidth != null && brimWidth! > 0) 'Кайма: ${n(brimWidth!, 0)} мм',
-      if (skirtLoops != null && skirtLoops! > 0) 'Спідниця: $skirtLoops',
+        trf('Шар {0} мм{1}', [n(layerHeight!, 2), firstLayerHeight != null ? trf(', перший {0} мм', [n(firstLayerHeight!, 2)]) : '']),
+      if (walls != null) trf('Стінки: {0}', [walls]),
+      if (topLayers != null || bottomLayers != null) trf('Верх / низ: {0} / {1} шарів', [topLayers ?? '—', bottomLayers ?? '—']),
+      if (infillPercent != null) trf('Заповнення: {0}%', [n(infillPercent!, 0)]),
+      if (vase == true) tr('Режим вази'),
+      if (brimWidth != null && brimWidth! > 0) trf('Кайма: {0} мм', [n(brimWidth!, 0)]),
+      if (skirtLoops != null && skirtLoops! > 0) trf('Спідниця: {0}', [skirtLoops]),
       if (supports != null)
         supports!
-            ? 'Підтримки: ${supportTree == true ? 'деревоподібні' : 'звичайні'}'
-                '${supportPlateOnly == true ? ', лише від столу' : ''}'
-            : 'Підтримки: вимкнено',
+            ? trf('Підтримки: {0}{1}', [supportTree == true ? tr('деревоподібні') : tr('звичайні'), supportPlateOnly == true ? tr(', лише від столу') : ''])
+            : tr('Підтримки: вимкнено'),
     ];
   }
 }
@@ -356,7 +356,7 @@ String _appName(String raw) {
   if (s.contains('elegoo')) return 'ElegooSlicer';
   if (s.contains('anycubic')) return 'AnycubicSlicer';
   if (s.contains('superslicer')) return 'SuperSlicer';
-  return raw.trim().isEmpty ? 'слайсер' : raw.trim();
+  return raw.trim().isEmpty ? tr('слайсер') : raw.trim();
 }
 
 /// Parses durations like "1d 2h 3m 4s", "58m 10s" or a plain number of seconds.

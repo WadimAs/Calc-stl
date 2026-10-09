@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import '../i18n/i18n.dart';
 
 /// One received PUBLISH.
 class MqttMessage {
@@ -79,7 +80,7 @@ class MqttParser {
           complete = true;
           break;
         }
-        if (mul > 128 * 128 * 128 * 128) throw const MqttException('Пошкоджений пакет');
+        if (mul > 128 * 128 * 128 * 128) throw MqttException(tr('Пошкоджений пакет'));
       }
       if (!complete || b.length - i < len) break;
       out.add((b[p], Uint8List.sublistView(b, i, i + len)));
@@ -117,9 +118,9 @@ class MqttClient {
           ? await SecureSocket.connect(host, port, timeout: timeout, onBadCertificate: (_) => true)
           : await Socket.connect(host, port, timeout: timeout);
     } on SocketException catch (e) {
-      throw MqttException('Немає з\'єднання з $host: ${e.osError?.message ?? e.message}');
+      throw MqttException(trf('Немає з\'єднання з {0}: {1}', [host, e.osError?.message ?? e.message]));
     } on HandshakeException {
-      throw const MqttException('Не вдалося встановити захищене з\'єднання');
+      throw MqttException(tr('Не вдалося встановити захищене з\'єднання'));
     }
     _connack = Completer<int>();
     _socket!.listen(_onData, onError: (Object e) => _fail(e), onDone: () => _fail('closed'), cancelOnError: true);
@@ -128,9 +129,9 @@ class MqttClient {
     if (rc != 0) {
       await close();
       throw MqttException(switch (rc) {
-        4 || 5 => 'Принтер не прийняв код доступу',
-        -1 => 'Принтер не відповідає',
-        _ => 'Принтер відхилив з\'єднання (код $rc)',
+        4 || 5 => tr('Принтер не прийняв код доступу'),
+        -1 => tr('Принтер не відповідає'),
+        _ => trf('Принтер відхилив з\'єднання (код {0})', [rc]),
       });
     }
     _ping = Timer.periodic(const Duration(seconds: 30), (_) => _send(Uint8List.fromList([0xC0, 0])));
@@ -138,7 +139,7 @@ class MqttClient {
 
   void _fail(Object e) {
     if (_connack != null && !_connack!.isCompleted) _connack!.complete(-1);
-    if (!_closed) _messages.addError(const MqttException('З\'єднання з принтером розірвано'));
+    if (!_closed) _messages.addError(MqttException(tr('З\'єднання з принтером розірвано')));
     close();
   }
 

@@ -6,6 +6,7 @@ import '../data/json_store.dart';
 import '../history/history.dart';
 import '../platform/files.dart';
 import '../slicer/settings.dart';
+import '../i18n/i18n.dart';
 
 /// Everything the user entered, as one JSON file.
 class Backup {
@@ -40,7 +41,7 @@ class Backup {
   static Future<SliceSettings> restore(Uint8List bytes) async {
     final raw = jsonDecode(utf8.decode(bytes, allowMalformed: true));
     if (raw is! Map || raw['app'] != 'stl_weight') {
-      throw const FormatException('Це не резервна копія STL Вага');
+      throw FormatException(tr('Це не резервна копія STL Вага'));
     }
     final settings = raw['settings'] is Map
         ? SliceSettings.fromJson(Map<String, dynamic>.from(raw['settings'] as Map))

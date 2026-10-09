@@ -5,6 +5,7 @@ import '../expenses/expenses.dart';
 import '../slicer/settings.dart';
 import '../spools/spools.dart';
 import 'widgets.dart';
+import '../i18n/i18n.dart';
 
 const spoolColors = <int>[
   0xFFFFFFFF, 0xFF202020, 0xFF9E9E9E, 0xFFE53935, 0xFFFF8A3D, 0xFFFDD835, //
@@ -41,7 +42,7 @@ class _SpoolsPageState extends State<SpoolsPage> {
       await expenseStore.upsert(Expense(
         id: newId(),
         date: DateTime.now(),
-        category: 'Пластик',
+        category: 'Пластик', // no-tr
         amount: result.price,
         note: '${materialById(result.materialId).name}${result.name.isEmpty ? '' : ' ${result.name}'}, '
             '${fmtGrams(result.totalGrams)}',
@@ -53,12 +54,11 @@ class _SpoolsPageState extends State<SpoolsPage> {
       final use = await showDialog<bool>(
         context: context,
         builder: (c) => AlertDialog(
-          title: const Text('Рахувати за цією ціною?'),
-          content: Text('${materialById(result.materialId).name}: ${fmtMoney(perKg)} за кг '
-              'буде використано в розрахунку собівартості.'),
+          title: Text(tr('Рахувати за цією ціною?')),
+          content: Text(trf('{0}: {1} за кг буде використано в розрахунку собівартості.', [materialById(result.materialId).name, fmtMoney(perKg)])),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Ні')),
-            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Так')),
+            TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('Ні'))),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('Так'))),
           ],
         ),
       );
@@ -71,7 +71,7 @@ class _SpoolsPageState extends State<SpoolsPage> {
     if (perKg == null || widget.onUsePrice == null) return;
     widget.onUsePrice!(s.materialId, perKg);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('${materialById(s.materialId).name}: тепер ${fmtMoney(perKg)} за кг'),
+      content: Text(trf('{0}: тепер {1} за кг', [materialById(s.materialId).name, fmtMoney(perKg)])),
     ));
   }
 
@@ -85,18 +85,18 @@ class _SpoolsPageState extends State<SpoolsPage> {
     final g = await showDialog<double>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Списати вручну'),
+        title: Text(tr('Списати вручну')),
         content: TextField(
           controller: c,
           autofocus: true,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(labelText: 'Скільки грамів', helperText: 'Напр. невдалий друк або продувка'),
+          decoration: InputDecoration(labelText: tr('Скільки грамів'), helperText: tr('Напр. невдалий друк або продувка')),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Скасувати')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Скасувати'))),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, double.tryParse(c.text.replaceAll(',', '.'))),
-            child: const Text('Списати'),
+            child: Text(tr('Списати')),
           ),
         ],
       ),
@@ -112,11 +112,11 @@ class _SpoolsPageState extends State<SpoolsPage> {
     final list = _spools;
     final total = list?.fold(0.0, (a, s) => a + s.remainingGrams) ?? 0;
     return Scaffold(
-      appBar: AppBar(title: const Text('Котушки')),
+      appBar: AppBar(title: Text(tr('Котушки'))),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _edit(),
         icon: const Icon(Icons.add),
-        label: const Text('Котушка'),
+        label: Text(tr('Котушка')),
       ),
       body: list == null
           ? const Center(child: CircularProgressIndicator())
@@ -125,8 +125,7 @@ class _SpoolsPageState extends State<SpoolsPage> {
                   child: Padding(
                     padding: const EdgeInsets.all(32),
                     child: Text(
-                      'Додайте свої котушки — коли замовлення стане «Готово», '
-                      'використаний пластик спишеться автоматично.',
+                      tr('Додайте свої котушки — коли замовлення стане «Готово», використаний пластик спишеться автоматично.'),
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
@@ -137,7 +136,7 @@ class _SpoolsPageState extends State<SpoolsPage> {
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-                      child: Text('Усього на котушках: ${fmtGrams(total)}', style: theme.textTheme.labelLarge),
+                      child: Text(trf('Усього на котушках: {0}', [fmtGrams(total)]), style: theme.textTheme.labelLarge),
                     ),
                     for (final s in list)
                       Card(
@@ -173,9 +172,7 @@ class _SpoolsPageState extends State<SpoolsPage> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '${fmtGrams(s.remainingGrams)} з ${fmtGrams(s.totalGrams)}'
-                                    '${s.isLow ? ' — закінчується' : ''}'
-                                    '${s.pricePerKg != null ? ' · ${fmtMoney(s.pricePerKg!)}/кг' : ''}',
+                                    trf('{0} з {1}{2}{3}', [fmtGrams(s.remainingGrams), fmtGrams(s.totalGrams), s.isLow ? tr(' — закінчується') : '', s.pricePerKg != null ? trf(' · {0}/кг', [fmtMoney(s.pricePerKg!)]) : '']),
                                     style: theme.textTheme.bodySmall
                                         ?.copyWith(color: s.isLow ? theme.colorScheme.error : null),
                                   ),
@@ -188,10 +185,10 @@ class _SpoolsPageState extends State<SpoolsPage> {
                                   if (v == 'del') _delete(s);
                                 },
                                 itemBuilder: (_) => [
-                                  const PopupMenuItem(value: 'off', child: Text('Списати вручну')),
+                                  PopupMenuItem(value: 'off', child: Text(tr('Списати вручну'))),
                                   if (s.pricePerKg != null && widget.onUsePrice != null)
-                                    const PopupMenuItem(value: 'price', child: Text('Рахувати за ціною котушки')),
-                                  const PopupMenuItem(value: 'del', child: Text('Видалити')),
+                                    PopupMenuItem(value: 'price', child: Text(tr('Рахувати за ціною котушки'))),
+                                  PopupMenuItem(value: 'del', child: Text(tr('Видалити'))),
                                 ],
                               ),
                             ]),
@@ -237,13 +234,13 @@ class _SpoolDialogState extends State<_SpoolDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(widget.spool == null ? 'Нова котушка' : 'Котушка'),
+      title: Text(widget.spool == null ? tr('Нова котушка') : tr('Котушка')),
       content: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           DropdownButtonFormField<String>(
             // ignore: deprecated_member_use
             value: _material,
-            decoration: const InputDecoration(labelText: 'Пластик'),
+            decoration: InputDecoration(labelText: tr('Пластик')),
             items: [
               for (final m in materials) DropdownMenuItem(value: m.id, child: Text(m.name)),
             ],
@@ -252,7 +249,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
           TextField(
             controller: _name,
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(labelText: 'Виробник, колір', hintText: 'Bambu, жовтий'),
+            decoration: InputDecoration(labelText: tr('Виробник, колір'), hintText: tr('Bambu, жовтий')),
           ),
           const SizedBox(height: 12),
           Wrap(spacing: 8, runSpacing: 8, children: [
@@ -279,7 +276,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
               child: TextField(
                 controller: _total,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Вага нової, г'),
+                decoration: InputDecoration(labelText: tr('Вага нової, г')),
               ),
             ),
             const SizedBox(width: 12),
@@ -287,7 +284,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
               child: TextField(
                 controller: _left,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Залишилось, г'),
+                decoration: InputDecoration(labelText: tr('Залишилось, г')),
               ),
             ),
           ]),
@@ -295,7 +292,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
             controller: _price,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             onChanged: (_) => setState(() {}),
-            decoration: const InputDecoration(labelText: 'Ціна котушки, $currency', hintText: 'необов\'язково'),
+            decoration: InputDecoration(labelText: trf('Ціна котушки, {0}', [currency]), hintText: tr('необов\'язково')),
           ),
           if (widget.spool == null && _price.text.trim().isNotEmpty)
             CheckboxListTile(
@@ -303,12 +300,12 @@ class _SpoolDialogState extends State<_SpoolDialog> {
               dense: true,
               value: _asExpense,
               onChanged: (v) => setState(() => _asExpense = v ?? true),
-              title: const Text('Записати покупку у витрати'),
+              title: Text(tr('Записати покупку у витрати')),
             ),
         ]),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Скасувати'))),
         FilledButton(
           onPressed: () {
             final total = double.tryParse(_total.text.replaceAll(',', '.')) ?? 1000;
@@ -338,7 +335,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
               old == null && _asExpense,
             ));
           },
-          child: const Text('Зберегти'),
+          child: Text(tr('Зберегти')),
         ),
       ],
     );

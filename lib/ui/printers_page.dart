@@ -12,6 +12,7 @@ import '../printers/printers.dart';
 import '../slicer/settings.dart';
 import '../spools/spools.dart';
 import 'widgets.dart';
+import '../i18n/i18n.dart';
 
 /// Copies AMS trays into the spool list (remaining grams from the AMS gauge).
 Future<int> syncAmsSpools(PrinterConn p, List<FilamentSlot> slots) async {
@@ -85,11 +86,11 @@ class _PrintersPageState extends State<PrintersPage> {
     final theme = Theme.of(context);
     final list = _list;
     return Scaffold(
-      appBar: AppBar(title: const Text('Принтери')),
+      appBar: AppBar(title: Text(tr('Принтери'))),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _add,
         icon: const Icon(Icons.add),
-        label: const Text('Принтер'),
+        label: Text(tr('Принтер')),
       ),
       body: list == null
           ? const Center(child: CircularProgressIndicator())
@@ -100,10 +101,7 @@ class _PrintersPageState extends State<PrintersPage> {
                   Padding(
                     padding: const EdgeInsets.all(32),
                     child: Text(
-                      'Підключіть принтер у тій самій Wi-Fi мережі, щоб бачити друк наживо, '
-                      'залишок пластику в AMS і списувати витрачене на котушки.\n\n'
-                      'Bambu Lab — за IP, серійним номером і кодом доступу LAN.\n'
-                      'Klipper (Creality K1, Elegoo, Voron…) — за IP через Moonraker.',
+                      tr('Підключіть принтер у тій самій Wi-Fi мережі, щоб бачити друк наживо, залишок пластику в AMS і списувати витрачене на котушки.\n\nBambu Lab — за IP, серійним номером і кодом доступу LAN.\nKlipper (Creality K1, Elegoo, Voron…) — за IP через Moonraker.'),
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
@@ -194,7 +192,7 @@ class _PrinterPageState extends State<PrinterPage> {
         );
         Timer(const Duration(seconds: 12), () {
           if (mounted && identical(_bambu, c) && _status == null && _error == null) {
-            setState(() => _error = 'Принтер підключився, але не надсилає дані. Перевірте серійний номер.');
+            setState(() => _error = tr('Принтер підключився, але не надсилає дані. Перевірте серійний номер.'));
           }
         });
       } else {
@@ -248,7 +246,7 @@ class _PrinterPageState extends State<PrinterPage> {
     final n = await syncAmsSpools(_p, s.slots);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(n == 0 ? 'AMS не повідомляє залишок (сторонній пластик без RFID)' : 'Оновлено котушок: $n'),
+      content: Text(n == 0 ? tr('AMS не повідомляє залишок (сторонній пластик без RFID)') : trf('Оновлено котушок: {0}', [n])),
     ));
   }
 
@@ -256,13 +254,13 @@ class _PrinterPageState extends State<PrinterPage> {
     final spools = await SpoolStore.load();
     if (!mounted) return;
     if (spools.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Спершу додайте котушки')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Спершу додайте котушки'))));
       return;
     }
     final spool = await showDialog<Spool>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: Text('Списати ${fmtGrams(j.gramsFor(1.24))}?'),
+        title: Text(trf('Списати {0}?', [fmtGrams(j.gramsFor(1.24))])),
         children: [
           for (final s in spools)
             SimpleDialogOption(
@@ -288,7 +286,7 @@ class _PrinterPageState extends State<PrinterPage> {
     await printerStore.upsert(p, atStart: false);
     if (!mounted) return;
     setState(() => _p = p);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Списано ${fmtGrams(g)}')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(trf('Списано {0}', [fmtGrams(g)]))));
   }
 
   String _temp(double? t, double? target) {
@@ -306,15 +304,15 @@ class _PrinterPageState extends State<PrinterPage> {
       appBar: AppBar(
         title: Text(p.name.isEmpty ? p.host : p.name),
         actions: [
-          IconButton(tooltip: 'Оновити', onPressed: _connecting ? null : _connect, icon: const Icon(Icons.refresh)),
+          IconButton(tooltip: tr('Оновити'), onPressed: _connecting ? null : _connect, icon: const Icon(Icons.refresh)),
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'edit') _edit();
               if (v == 'del') _delete();
             },
             itemBuilder: (_) => const [
-              PopupMenuItem(value: 'edit', child: Text('Змінити')),
-              PopupMenuItem(value: 'del', child: Text('Видалити')),
+              PopupMenuItem(value: 'edit', child: Text(tr('Змінити'))),
+              PopupMenuItem(value: 'del', child: Text(tr('Видалити'))),
             ],
           ),
         ],
@@ -341,17 +339,15 @@ class _PrinterPageState extends State<PrinterPage> {
                     const SizedBox(height: 8),
                     Text(
                       p.kind == PrinterKind.bambu
-                          ? 'Перевірте: телефон і принтер в одній мережі, правильні IP, серійний номер і код доступу '
-                              '(на принтері: Налаштування → WLAN). На новій прошивці може знадобитися '
-                              'увімкнути «LAN only» та «Developer mode».'
-                          : 'Перевірте IP і порт (зазвичай 7125, як у Mainsail / Fluidd).',
+                          ? tr('Перевірте: телефон і принтер в одній мережі, правильні IP, серійний номер і код доступу (на принтері: Налаштування → WLAN). На новій прошивці може знадобитися увімкнути «LAN only» та «Developer mode».')
+                          : tr('Перевірте IP і порт (зазвичай 7125, як у Mainsail / Fluidd).'),
                       style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onErrorContainer),
                     ),
                   ]),
                 ),
               ),
             if (s == null && !_connecting && _error == null)
-              const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('Чекаю дані від принтера…'))),
+              Padding(padding: EdgeInsets.all(24), child: Center(child: Text(tr('Чекаю дані від принтера…')))),
             if (s != null) ...[
               Card(
                 child: Padding(
@@ -376,14 +372,14 @@ class _PrinterPageState extends State<PrinterPage> {
                         Text('${(s.progress! * 100).toStringAsFixed(0)}%', style: theme.textTheme.titleMedium),
                         const Spacer(),
                         if (s.remaining != null)
-                          Text('залишилось ${formatDuration(s.remaining!.inSeconds / 3600)}',
+                          Text(trf('залишилось {0}', [formatDuration(s.remaining!.inSeconds / 3600)]),
                               style: theme.textTheme.bodyMedium),
                       ]),
                       if (s.layer != null && s.totalLayers != null && s.totalLayers! > 0)
-                        Text('шар ${s.layer} з ${s.totalLayers}', style: theme.textTheme.bodySmall),
+                        Text(trf('шар {0} з {1}', [s.layer, s.totalLayers]), style: theme.textTheme.bodySmall),
                       if (s.remaining != null)
                         Text(
-                          'завершення ≈ ${formatDate(DateTime.now().add(s.remaining!)).split(' ').last}',
+                          trf('завершення ≈ {0}', [formatDate(DateTime.now().add(s.remaining!)).split(' ').last]),
                           style: theme.textTheme.bodySmall,
                         ),
                     ],
@@ -393,8 +389,8 @@ class _PrinterPageState extends State<PrinterPage> {
                     ],
                     const SizedBox(height: 12),
                     Row(children: [
-                      Expanded(child: Stat('сопло', _temp(s.nozzle, s.nozzleTarget))),
-                      Expanded(child: Stat('стіл', _temp(s.bed, s.bedTarget))),
+                      Expanded(child: Stat(tr('сопло'), _temp(s.nozzle, s.nozzleTarget))),
+                      Expanded(child: Stat(tr('стіл'), _temp(s.bed, s.bedTarget))),
                     ]),
                   ]),
                 ),
@@ -402,11 +398,11 @@ class _PrinterPageState extends State<PrinterPage> {
               if (s.slots.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Row(children: [
-                  Expanded(child: Text('Пластик', style: theme.textTheme.titleMedium)),
+                  Expanded(child: Text(tr('Пластик'), style: theme.textTheme.titleMedium)),
                   TextButton.icon(
                     onPressed: _syncAms,
                     icon: const Icon(Icons.sync),
-                    label: const Text('У котушки'),
+                    label: Text(tr('У котушки')),
                   ),
                 ]),
                 for (final slot in s.slots)
@@ -431,8 +427,8 @@ class _PrinterPageState extends State<PrinterPage> {
             ],
             if (p.kind == PrinterKind.moonraker && _jobs != null) ...[
               const SizedBox(height: 12),
-              Text('Останні друки', style: theme.textTheme.titleMedium),
-              if (_jobs!.isEmpty) const Padding(padding: EdgeInsets.all(12), child: Text('Історія порожня')),
+              Text(tr('Останні друки'), style: theme.textTheme.titleMedium),
+              if (_jobs!.isEmpty) Padding(padding: EdgeInsets.all(12), child: Text(tr('Історія порожня'))),
               for (final j in _jobs!)
                 Card(
                   margin: const EdgeInsets.symmetric(vertical: 3),
@@ -444,9 +440,9 @@ class _PrinterPageState extends State<PrinterPage> {
                       ' · ${formatDuration(j.seconds / 3600)} · ${fmtGrams(j.gramsFor(1.24))}',
                     ),
                     trailing: p.writtenOff.contains(j.id)
-                        ? const Tooltip(message: 'Списано', child: Icon(Icons.check_circle_outline))
+                        ? Tooltip(message: tr('Списано'), child: Icon(Icons.check_circle_outline))
                         : j.filamentMm > 0
-                            ? TextButton(onPressed: () => _writeOff(j), child: const Text('Списати'))
+                            ? TextButton(onPressed: () => _writeOff(j), child: Text(tr('Списати')))
                             : null,
                   ),
                 ),
@@ -464,8 +460,8 @@ Future<void> sendGcodeToPrinter(BuildContext context, String name, Uint8List byt
   if (!context.mounted) return;
   final messenger = ScaffoldMessenger.of(context);
   if (printers.isEmpty) {
-    messenger.showSnackBar(const SnackBar(
-      content: Text('Додайте принтер Klipper у меню «Принтери». Bambu приймає завдання лише з Bambu Studio / Handy.'),
+    messenger.showSnackBar(SnackBar(
+      content: Text(tr('Додайте принтер Klipper у меню «Принтери». Bambu приймає завдання лише з Bambu Studio / Handy.')),
     ));
     return;
   }
@@ -474,7 +470,7 @@ Future<void> sendGcodeToPrinter(BuildContext context, String name, Uint8List byt
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, set) => SimpleDialog(
-        title: const Text('Надіслати на принтер'),
+        title: Text(tr('Надіслати на принтер')),
         children: [
           for (final p in printers)
             SimpleDialogOption(
@@ -484,19 +480,19 @@ Future<void> sendGcodeToPrinter(BuildContext context, String name, Uint8List byt
           CheckboxListTile(
             value: start,
             onChanged: (v) => set(() => start = v ?? false),
-            title: const Text('Одразу почати друк'),
+            title: Text(tr('Одразу почати друк')),
           ),
         ],
       ),
     ),
   );
   if (p == null) return;
-  messenger.showSnackBar(const SnackBar(content: Text('Надсилаю…')));
+  messenger.showSnackBar(SnackBar(content: Text(tr('Надсилаю…'))));
   try {
     await MoonrakerClient(p).upload(name, bytes, start: start);
-    messenger.showSnackBar(SnackBar(content: Text(start ? 'Друк запущено' : 'Файл на принтері')));
+    messenger.showSnackBar(SnackBar(content: Text(start ? tr('Друк запущено') : tr('Файл на принтері'))));
   } catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text('Не вдалося: $e')));
+    messenger.showSnackBar(SnackBar(content: Text(trf('Не вдалося: {0}', [e]))));
   }
 }
 
@@ -530,7 +526,7 @@ class _PrinterDialogState extends State<_PrinterDialog> {
   Widget build(BuildContext context) {
     final bambu = _kind == PrinterKind.bambu;
     return AlertDialog(
-      title: Text(widget.printer == null ? 'Новий принтер' : 'Принтер'),
+      title: Text(widget.printer == null ? tr('Новий принтер') : tr('Принтер')),
       content: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           SegmentedButton<PrinterKind>(
@@ -544,44 +540,43 @@ class _PrinterDialogState extends State<_PrinterDialog> {
           ),
           TextField(
             controller: _name,
-            decoration: InputDecoration(labelText: 'Назва', hintText: bambu ? 'A1 mini' : 'K1 Max'),
+            decoration: InputDecoration(labelText: tr('Назва'), hintText: bambu ? 'A1 mini' : 'K1 Max'),
           ),
           TextField(
             controller: _host,
             keyboardType: TextInputType.url,
-            decoration: const InputDecoration(labelText: 'IP-адреса', hintText: '192.168.1.50'),
+            decoration: InputDecoration(labelText: tr('IP-адреса'), hintText: '192.168.1.50'),
           ),
           if (bambu) ...[
             TextField(
               controller: _serial,
               textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(labelText: 'Серійний номер', hintText: '0309DA…'),
+              decoration: InputDecoration(labelText: tr('Серійний номер'), hintText: '0309DA…'),
             ),
             TextField(
               controller: _code,
-              decoration: const InputDecoration(labelText: 'Код доступу (LAN)', hintText: '8 символів'),
+              decoration: InputDecoration(labelText: tr('Код доступу (LAN)'), hintText: tr('8 символів')),
             ),
             const SizedBox(height: 8),
             Text(
-              'IP і код доступу — на екрані принтера: Налаштування → WLAN (A1: значок шестерні → LAN). '
-              'Серійний номер — у Bambu Handy або Налаштування → Пристрій.',
+              tr('IP і код доступу — на екрані принтера: Налаштування → WLAN (A1: значок шестерні → LAN). Серійний номер — у Bambu Handy або Налаштування → Пристрій.'),
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ] else ...[
             TextField(
               controller: _port,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Порт Moonraker'),
+              decoration: InputDecoration(labelText: tr('Порт Moonraker')),
             ),
             TextField(
               controller: _key,
-              decoration: const InputDecoration(labelText: 'API-ключ', hintText: 'якщо ввімкнено авторизацію'),
+              decoration: InputDecoration(labelText: tr('API-ключ'), hintText: tr('якщо ввімкнено авторизацію')),
             ),
           ],
         ]),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Скасувати'))),
         FilledButton(
           onPressed: () {
             if (_host.text.trim().isEmpty) return;
@@ -601,7 +596,7 @@ class _PrinterDialogState extends State<_PrinterDialog> {
               ),
             );
           },
-          child: const Text('Зберегти'),
+          child: Text(tr('Зберегти')),
         ),
       ],
     );

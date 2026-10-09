@@ -1,6 +1,7 @@
 import 'dart:io' show ZLibDecoder;
 import 'dart:typed_data';
 import 'dart:convert';
+import '../i18n/i18n.dart';
 
 class _Entry {
   final String name;
@@ -30,7 +31,7 @@ class ZipReader {
   int _u64(int o) => _u32(o) + _u32(o + 4) * 0x100000000;
 
   void _readCentralDirectory() {
-    if (bytes.length < 22) throw const FormatException('Файл не є ZIP/3MF архівом');
+    if (bytes.length < 22) throw FormatException(tr('Файл не є ZIP/3MF архівом'));
     int eocd = -1;
     final stop = bytes.length - 22 - 65535 < 0 ? 0 : bytes.length - 22 - 65535;
     for (int i = bytes.length - 22; i >= stop; i--) {
@@ -39,7 +40,7 @@ class ZipReader {
         break;
       }
     }
-    if (eocd < 0) throw const FormatException('Пошкоджений 3MF: немає каталогу ZIP');
+    if (eocd < 0) throw FormatException(tr('Пошкоджений 3MF: немає каталогу ZIP'));
 
     int count = _u16(eocd + 10);
     int cdOffset = _u32(eocd + 16);
@@ -94,9 +95,9 @@ class ZipReader {
 
   Uint8List read(String name) {
     final e = _entries[name];
-    if (e == null) throw FormatException('У 3MF немає файлу $name');
+    if (e == null) throw FormatException(trf('У 3MF немає файлу {0}', [name]));
     final lo = e.localOffset;
-    if (_u32(lo) != 0x04034b50) throw FormatException('Пошкоджений запис ZIP: $name');
+    if (_u32(lo) != 0x04034b50) throw FormatException(trf('Пошкоджений запис ZIP: {0}', [name]));
     final start = lo + 30 + _u16(lo + 26) + _u16(lo + 28);
     final data = Uint8List.sublistView(bytes, start, start + e.compSize);
     switch (e.method) {
@@ -106,7 +107,7 @@ class ZipReader {
         final out = ZLibDecoder(raw: true).convert(data);
         return out is Uint8List ? out : Uint8List.fromList(out);
       default:
-        throw FormatException('Непідтримуване стиснення ZIP (${e.method})');
+        throw FormatException(trf('Непідтримуване стиснення ZIP ({0})', [e.method]));
     }
   }
 }

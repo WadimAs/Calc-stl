@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:stl_weight/i18n/i18n.dart';
 import 'package:stl_weight/main.dart' as app;
 import 'package:stl_weight/platform/files.dart';
 import 'package:stl_weight/ui/home_page.dart';
@@ -171,6 +172,7 @@ void main() {
       await tap(find.text(item));
     }
 
+    debugForceLang = 'uk'; // the emulator is English; the walk-through starts in Ukrainian
     app.main();
     await settle(3000);
 
@@ -250,7 +252,7 @@ void main() {
       await tap(find.textContaining('Термін'));
       await waitFor(find.byType(DatePickerDialog));
       await shot('14_date_picker');
-      await tap(find.text('OK'));
+      await tap(find.descendant(of: find.byType(DatePickerDialog), matching: find.byType(TextButton)).last);
       await shot('15_order_due');
       await scrollTo(find.text('Надіслати розрахунок клієнту'));
       await shot('15b_order_bottom');
@@ -349,6 +351,76 @@ void main() {
       await tester.drag(mainScroll(), const Offset(0, -700));
       await settle();
       await shot('39_simple_mode_more');
+    });
+
+    // ---- The same app in English ----
+    await step('en_switch', () async {
+      debugForceLang = 'en';
+      applyLang('en');
+      await settle(3000);
+      await waitFor(find.byTooltip('Open file'));
+      await shot('40_en_home_simple');
+      await tap(find.byIcon(Icons.more_vert));
+      await shot('41_en_menu');
+      await tap(find.text('Advanced mode'));
+      await settle(1500);
+    });
+
+    await step('en_model', () async {
+      HomePage.debugOpen!(PickedFile('bracket.stl', bracketStl()));
+      await waitFor(find.text('To order'), seconds: 60);
+      await settle(12000);
+      await shot('42_en_model');
+      await scrollTo(find.text('To order'));
+      await shot('43_en_result');
+      await tester.drag(mainScroll(), const Offset(0, -900));
+      await settle();
+      await shot('44_en_result_more');
+      await home();
+    });
+
+    await step('en_settings', () async {
+      await tap(find.byTooltip('Settings'));
+      await settle(1500);
+      await shot('45_en_settings');
+      await tester.drag(mainScroll(), const Offset(0, -1200));
+      await settle();
+      await shot('46_en_settings_more');
+      await home();
+    });
+
+    await step('en_order', () async {
+      await menu('Orders');
+      await shot('47_en_orders');
+      await tap(find.text('Оля Тестова'));
+      await settle(1500);
+      await shot('48_en_order');
+      await scrollTo(find.text('Send the quote to the client'));
+      await shot('49_en_order_bottom');
+      await tap(find.text('Send the quote to the client'));
+      await tap(find.text('Invoice'));
+      await shot('50_en_invoice');
+      await home();
+    });
+
+    for (final (item, name) in [
+      ('Statistics', '51_en_stats'),
+      ('Expenses', '52_en_expenses'),
+      ('Printers', '53_en_printers'),
+      ('Price list', '54_en_catalog'),
+    ]) {
+      await step(name, () async {
+        await menu(item);
+        await settle(1500);
+        await shot(name);
+        await home();
+      });
+    }
+
+    await step('en_intro', () async {
+      await menu('How to use');
+      await shot('55_en_intro');
+      await home();
     });
 
     note('UI_ERRORS ${errors.length}: ${errors.join(' | ')}');
