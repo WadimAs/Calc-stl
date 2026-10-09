@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:stl_weight/main.dart' as app;
@@ -53,7 +56,7 @@ Uint8List bracketStl() {
 }
 
 void main() {
-  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final errors = <String>[];
 
   testWidgets('walk through the app', (tester) async {
@@ -71,14 +74,40 @@ void main() {
       throw StateError('Не з\'явилось: $f');
     }
 
-    bool converted = false;
-    Future<void> shot(String name) async {
-      if (!converted) {
-        await binding.convertFlutterSurfaceToImage();
-        converted = true;
+    String? screensDir;
+    final log = StringBuffer();
+
+    void note(String line) {
+      log.writeln(line);
+      // ignore: avoid_print
+      print('UI_LOG $line');
+      final d = screensDir;
+      if (d != null) {
+        try {
+          File('$d/report.txt').writeAsStringSync(log.toString());
+        } catch (_) {}
       }
+    }
+
+    // Renders the whole Flutter scene (dialogs included) into a PNG file in
+    // the app's private storage; the CI script pulls it with adb.
+    Future<void> shot(String name) async {
       await settle(500);
-      await binding.takeScreenshot(name);
+      try {
+        screensDir ??= '${await PlatformFiles.filesDir()}/screens';
+        await Directory(screensDir!).create(recursive: true);
+        final view = tester.binding.renderViews.first;
+        final layer = view.debugLayer! as OffsetLayer;
+        final img = await layer.toImage(view.paintBounds, pixelRatio: 0.5);
+        final data = await img.toByteData(format: ui.ImageByteFormat.png);
+        img.dispose();
+        if (data != null) {
+          await File('$screensDir/$name.png').writeAsBytes(data.buffer.asUint8List());
+        }
+        note('shot $name');
+      } catch (e) {
+        note('shot $name FAILED: $e');
+      }
     }
 
     Future<void> tap(Finder f) async {
@@ -118,15 +147,15 @@ void main() {
     }
 
     Future<void> step(String name, Future<void> Function() body) async {
+      note('step $name');
       try {
         await body();
       } catch (e, st) {
         errors.add('$name: $e');
+        note('UI_STEP_FAILED $name: $e');
         // ignore: avoid_print
-        print('UI_STEP_FAILED $name: $e\n$st');
-        try {
-          await binding.takeScreenshot('ERR_$name');
-        } catch (_) {}
+        print(st);
+        await shot('ERR_$name');
         try {
           await home();
         } catch (_) {}
@@ -310,8 +339,7 @@ void main() {
       await shot('39_simple_mode_more');
     });
 
-    binding.reportData = {'errors': errors};
-    // ignore: avoid_print
-    print('UI_ERRORS ${errors.length}: ${errors.join(' | ')}');
+    note('UI_ERRORS ${errors.length}: ${errors.join(' | ')}');
+    note('DONE');
   });
 }

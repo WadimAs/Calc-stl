@@ -15,7 +15,7 @@ permissions:
 jobs:
   ui:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v5
 
@@ -55,17 +55,14 @@ jobs:
           ram-size: 3072M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: |
-            adb logcat -c || true
-            flutter drive --driver=test_driver/integration_test.dart --target=integration_test/app_test.dart -d emulator-5554 > drive.txt 2>&1 || echo "flutter drive exit $?" >> drive.txt
-            adb logcat -d > logcat.txt || true
+          script: bash .github/scripts/ui_run.sh
 
       - name: Pack results
         if: always()
         run: |
           mkdir -p screenshots
           cp drive.txt logcat.txt screenshots/ 2>/dev/null || true
-          grep -E "UI_STEP_FAILED|UI_ERRORS|EXCEPTION CAUGHT|Error:|flutter drive exit|All tests passed|Some tests failed" drive.txt | head -60 | while read -r l; do echo "::warning::$l"; done || true
+          grep -E "UI_STEP_FAILED|UI_ERRORS|EXCEPTION CAUGHT|flutter test exit|All tests passed|Some tests failed" drive.txt | head -60 | while read -r l; do echo "::warning::$l"; done || true
           cd screenshots && zip -q -r ../ui-results.zip . && cd ..
           ls -la screenshots | head -80
 
