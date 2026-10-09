@@ -540,7 +540,7 @@ class _HomePageState extends State<HomePage> {
     order.items.add(item);
     await OrderStore.upsert(order);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    showTimedSnack(context, SnackBar(
       content: Text('Додано до «${order.title}»'),
       action: SnackBarAction(
         label: 'Відкрити',
@@ -596,7 +596,7 @@ class _HomePageState extends State<HomePage> {
       thumbPath: thumb,
     ));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    showTimedSnack(context, SnackBar(
       content: const Text('Додано до прайс-листа'),
       action: SnackBarAction(label: 'Відкрити', onPressed: () => _push(const CatalogPage())),
     ));
@@ -659,7 +659,7 @@ class _HomePageState extends State<HomePage> {
     if (before.autoApplyFileSettings) {
       _applySettingsSilently(after);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      showTimedSnack(context, SnackBar(
         content: Text('Застосовано налаштування з файлу (${p.app})'),
         action: SnackBarAction(label: 'Відмінити', onPressed: () => _updateSettings(before)),
       ));
@@ -1002,7 +1002,7 @@ class _HomePageState extends State<HomePage> {
       if (e == null) return;
       await HistoryStore.add(e);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      showTimedSnack(context, SnackBar(
         content: const Text('Збережено в історію'),
         action: SnackBarAction(label: 'Відкрити', onPressed: _openHistory),
       ));
@@ -1891,7 +1891,7 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 8),
               Row(children: [
                 Expanded(
-                  child: FilledButton.tonalIcon(
+                  child: OutlinedButton.icon(
                     onPressed: busy && fig.source == null ? null : _addToOrder,
                     icon: const Icon(Icons.add_shopping_cart),
                     label: const Text('До замовлення'),
@@ -1899,7 +1899,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 if (_adv) ...[
                   const SizedBox(width: 8),
-                  IconButton.filledTonal(
+                  IconButton.outlined(
                     tooltip: 'У прайс-лист',
                     onPressed: busy && fig.source == null ? null : _addToCatalog,
                     icon: const Icon(Icons.storefront_outlined),
@@ -2322,7 +2322,7 @@ class _HomePageState extends State<HomePage> {
                   onPressed: () {
                     final before = _settings;
                     _updateSettings(p.applyTo(before));
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    showTimedSnack(context, SnackBar(
                       content: Text('Застосовано налаштування з файлу (${p.app})'),
                       action: SnackBarAction(label: 'Відмінити', onPressed: () => _updateSettings(before)),
                     ));

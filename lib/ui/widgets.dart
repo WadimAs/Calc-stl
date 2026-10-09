@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 String fmtNum(double v, int decimals) => v.toStringAsFixed(decimals).replaceAll('.', ',');
@@ -219,4 +221,22 @@ class _NumberFieldState extends State<NumberField> {
       },
     );
   }
+}
+
+
+/// Shows a snack bar that also closes by itself when it has an action
+/// (newer Flutter keeps such snack bars until tapped).
+void showTimedSnack(BuildContext context, SnackBar bar, {Duration after = const Duration(seconds: 5)}) {
+  final m = ScaffoldMessenger.of(context);
+  m.hideCurrentSnackBar();
+  final c = m.showSnackBar(bar);
+  var done = false;
+  c.closed.then((_) => done = true);
+  Timer(after, () {
+    if (!done) {
+      try {
+        c.close();
+      } catch (_) {}
+    }
+  });
 }

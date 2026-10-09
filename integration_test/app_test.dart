@@ -243,24 +243,17 @@ void main() {
       await tap(inDialog(find.text('Зберегти')));
       await settle(1500);
       await shot('12b_after_save');
-      try {
-        await waitFor(find.text('Відкрити'), seconds: 8);
-        await settle(800);
-        await tap(find.text('Відкрити'));
-        await waitFor(find.text('Надіслати розрахунок клієнту'), seconds: 8);
-      } catch (e) {
-        note('snackbar route failed ($e), opening via the orders list');
-        await home();
-        await menu('Замовлення');
-        await tap(find.text('Оля Тестова'));
-        await waitFor(find.text('Надіслати розрахунок клієнту'));
-      }
+      await waitFor(find.textContaining('Додано до «Оля'), seconds: 8);
+      await tap(find.text('Відкрити'));
+      await waitFor(find.text('Термін (нагадаю о 9:00)'), seconds: 8);
       await shot('13_order');
       await tap(find.textContaining('Термін'));
       await waitFor(find.byType(DatePickerDialog));
       await shot('14_date_picker');
       await tap(find.text('OK'));
       await shot('15_order_due');
+      await scrollTo(find.text('Надіслати розрахунок клієнту'));
+      await shot('15b_order_bottom');
       await tap(find.text('Надіслати розрахунок клієнту'));
       await shot('16_quote');
       await tap(find.text('Рахунок'));
@@ -285,6 +278,11 @@ void main() {
         await home();
       });
     }
+
+    await step('snack_hidden', () async {
+      await settle(6000);
+      if (find.byType(SnackBar).evaluate().isNotEmpty) throw StateError('SnackBar не зникає');
+    });
 
     await step('menu', () async {
       await tap(find.byIcon(Icons.more_vert));
@@ -355,5 +353,6 @@ void main() {
 
     note('UI_ERRORS ${errors.length}: ${errors.join(' | ')}');
     note('DONE');
+    await settle(25000); // let the CI script copy the last screenshots
   });
 }
