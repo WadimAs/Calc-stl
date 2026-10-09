@@ -76,7 +76,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
         content: const Text('Усі параметри повернуться до значень за замовчуванням (як «0.20mm Standard» у Bambu Studio).'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c), child: const Text('Скасувати')),
-          TextButton(onPressed: () => Navigator.pop(c, 2), child: const Text('Разом із цінами')),
+          TextButton(onPressed: () => Navigator.pop(c, 2), child: const Text('Разом із цінами й калібруванням')),
           FilledButton(onPressed: () => Navigator.pop(c, 1), child: const Text('Скинути')),
         ],
       ),
@@ -314,6 +314,37 @@ class _SettingsBodyState extends State<_SettingsBody> {
           ),
           s.printerId != d.printerId,
           () => _set(_s.copyWith(printerId: d.printerId, powerW: printerById(d.printerId).powerW)),
+        ),
+        _section('Калібрування під слайсер'),
+        _withReset(
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text(
+              s.weightSamples == 0 && (s.timeSamples[s.printerId] ?? 0) == 0
+                  ? 'Ще не калібровано. Відкрийте нарізаний файл (.gcode.3mf / .gcode) або натисніть '
+                      '«Підігнати під слайсер» під результатом.'
+                  : 'Вага ×${fmtNum(s.weightFactor, 3)} (${s.weightSamples} ${s.weightSamples == 1 ? 'модель' : 'моделі'})\n'
+                      'Час ×${fmtNum(s.timeFactor, 3)} для ${currentPrinter.fullName} '
+                      '(${s.timeSamples[s.printerId] ?? 0})',
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+          s.isCalibrated || s.weightSamples > 0,
+          () => _set(_s.withoutCalibration()),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Точні дані з нарізаних файлів'),
+          subtitle: const Text('Вага й час із .gcode.3mf / .gcode замість розрахунку'),
+          value: s.preferSlicerData,
+          onChanged: (v) => _set(_s.copyWith(preferSlicerData: v)),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Застосовувати налаштування з файлів'),
+          subtitle: const Text('Профіль друку з 3MF Bambu / Orca / Prusa без питання'),
+          value: s.autoApplyFileSettings,
+          onChanged: (v) => _set(_s.copyWith(autoApplyFileSettings: v)),
         ),
         _section('Собівартість'),
         NumberField(

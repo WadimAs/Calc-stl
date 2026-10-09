@@ -34,6 +34,9 @@ class HistoryEntry {
   final String note;
   final String? thumbPath;
 
+  /// Slicer whose exact numbers were used ('' = our estimate).
+  final String source;
+
   HistoryEntry({
     required this.id,
     required this.date,
@@ -64,6 +67,7 @@ class HistoryEntry {
     required this.sizeZ,
     this.note = '',
     this.thumbPath,
+    this.source = '',
   }) : costPrice = costPrice ?? materialCost + electricityCost + amortizationCost;
 
   double get totalGrams => (modelGrams + supportGrams) * copies;
@@ -98,6 +102,7 @@ class HistoryEntry {
         sizeZ: sizeZ,
         note: n,
         thumbPath: thumbPath,
+        source: source,
       );
 
   Map<String, dynamic> toJson() => {
@@ -130,6 +135,7 @@ class HistoryEntry {
         'sizeZ': sizeZ,
         'note': note,
         'thumbPath': thumbPath,
+        'source': source,
       };
 
   static HistoryEntry? fromJson(Object? raw) {
@@ -168,6 +174,7 @@ class HistoryEntry {
       sizeZ: d('sizeZ'),
       note: raw['note'] is String ? raw['note'] as String : '',
       thumbPath: raw['thumbPath'] is String ? raw['thumbPath'] as String : null,
+      source: raw['source'] is String ? raw['source'] as String : '',
     );
   }
 }

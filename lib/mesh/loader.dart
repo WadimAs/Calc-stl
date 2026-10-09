@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'mesh.dart';
+import 'slicer_project.dart';
 import 'stl_parser.dart';
 import 'threemf_parser.dart';
 
@@ -21,6 +22,9 @@ class LoadedModel {
   final Float32List viewNormals;
   final bool outwardNormals;
 
+  /// Settings / exact results from the slicer that produced the file.
+  final SlicerProject? project;
+
   const LoadedModel({
     required this.name,
     required this.mesh,
@@ -30,12 +34,16 @@ class LoadedModel {
     required this.viewTris,
     required this.viewNormals,
     required this.outwardNormals,
+    this.project,
   });
+
+  /// False for G-code and sliced files that carry no 3D geometry.
+  bool get hasMesh => mesh.triangleCount > 0;
 }
 
 bool isSupportedFile(String name) {
   final n = name.toLowerCase();
-  return n.endsWith('.stl') || n.endsWith('.3mf');
+  return n.endsWith('.stl') || n.endsWith('.3mf') || n.endsWith('.gcode') || n.endsWith('.gco') || n.endsWith('.g');
 }
 
 /// Parses the file in a background isolate.
@@ -46,12 +54,28 @@ Future<LoadedModel> loadModel(String name, Uint8List bytes) {
 LoadedModel _load(String name, Uint8List bytes) {
   final lower = name.toLowerCase();
   Mesh mesh;
-  if (lower.endsWith('.3mf') || _isZip(bytes)) {
-    mesh = parse3mf(bytes);
+  SlicerProject? project;
+  if (lower.endsWith('.gcode') || lower.endsWith('.gco') || lower.endsWith('.g') || _looksLikeGcode(bytes)) {
+    project = readGcode(bytes);
+    if (project == null) {
+      throw const FormatException('У G-code немає даних про вагу чи час друку');
+    }
+    mesh = Mesh(Float32List(0));
+  } else if (lower.endsWith('.3mf') || _isZip(bytes)) {
+    project = readProjectFrom3mf(bytes);
+    try {
+      mesh = parse3mf(bytes);
+    } on FormatException {
+      // Sliced files (.gcode.3mf) may hold only the G-code.
+      if (project == null || !project.isSliced) rethrow;
+      mesh = Mesh(Float32List(0));
+    }
   } else {
     mesh = parseStl(bytes);
   }
-  if (mesh.triangleCount == 0) throw const FormatException('Модель порожня');
+  if (mesh.triangleCount == 0 && !(project?.isSliced ?? false)) {
+    throw const FormatException('Модель порожня');
+  }
   final b = Bounds.of(mesh.tris);
   final signed = mesh.signedVolume();
   final view = _simplify(mesh.tris, b, 120000);
@@ -85,7 +109,15 @@ LoadedModel _load(String name, Uint8List bytes) {
     viewTris: centred,
     viewNormals: normals,
     outwardNormals: signed >= 0,
+    project: project,
   );
+}
+
+bool _looksLikeGcode(Uint8List b) {
+  if (b.isEmpty || b[0] != 0x3B) return false; // ';'
+  final n = b.length < 4096 ? b.length : 4096;
+  final head = String.fromCharCodes(Uint8List.sublistView(b, 0, n)).toLowerCase();
+  return head.contains('gcode') || head.contains('flavor') || head.contains('generated');
 }
 
 bool _isZip(Uint8List b) => b.length > 4 && b[0] == 0x50 && b[1] == 0x4B && b[2] == 0x03 && b[3] == 0x04;

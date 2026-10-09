@@ -39,6 +39,9 @@
                 <data android:mimeType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml" />
                 <data android:mimeType="application/octet-stream" />
                 <data android:mimeType="application/zip" />
+                <data android:mimeType="text/x.gcode" />
+                <data android:mimeType="text/x-gcode" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
 
             <!-- "Поділитися" з Telegram, Viber, файлових менеджерів тощо -->
@@ -52,6 +55,7 @@
                 <data android:mimeType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml" />
                 <data android:mimeType="application/octet-stream" />
                 <data android:mimeType="application/zip" />
+                <data android:mimeType="text/x.gcode" />
             </intent-filter>
         </activity>
         <meta-data

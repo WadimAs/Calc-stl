@@ -8,6 +8,7 @@ import 'package:flutter/rendering.dart';
 
 import '../history/history.dart';
 import '../mesh/loader.dart';
+import '../mesh/slicer_project.dart';
 import '../platform/files.dart';
 import '../platform/updates.dart';
 import '../slicer/settings.dart';
@@ -46,6 +47,7 @@ class _HomePageState extends State<HomePage> {
   int _layer = 0;
   double? _manualHours; // print time of one copy entered by the user
   UpdateInfo? _update;
+  bool _autoCalibrated = false;
   final MeasureController _measure = MeasureController();
 
   @override
@@ -101,8 +103,11 @@ class _HomePageState extends State<HomePage> {
         _sliceError = null;
         _manualHours = null;
         _layersView = false;
+        _autoCalibrated = false;
         _measure.attachModel(m.mesh.tris, inverted: !m.outwardNormals);
       });
+      await _offerFileSettings(m);
+      if (!mounted || !identical(_model, m)) return;
       _slice();
     } catch (e) {
       if (!mounted) return;
@@ -110,7 +115,7 @@ class _HomePageState extends State<HomePage> {
         _loading = false;
         _loadError = isSupportedFile(f.name)
             ? 'Не вдалося прочитати «${f.name}»:\n$e'
-            : 'Файл «${f.name}» не схожий на STL або 3MF.';
+            : 'Файл «${f.name}» не схожий на STL, 3MF чи G-code.';
       });
     }
   }
@@ -125,9 +130,79 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// Offers (or auto-applies) the print settings stored in a 3MF / G-code.
+  Future<void> _offerFileSettings(LoadedModel m) async {
+    final p = m.project;
+    if (p == null || !p.hasSettings) return;
+    final before = _settings;
+    final after = p.applyTo(before);
+    if (after.geometryKey == before.geometryKey &&
+        after.materialId == before.materialId &&
+        after.density == before.density &&
+        after.printerId == before.printerId) {
+      return; // already the same
+    }
+    if (before.autoApplyFileSettings) {
+      _applySettingsSilently(after);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Застосовано налаштування з файлу (${p.app})'),
+        action: SnackBarAction(label: 'Відмінити', onPressed: () => _updateSettings(before)),
+      ));
+      return;
+    }
+    final choice = await showDialog<_FileSettingsChoice>(
+      context: context,
+      builder: (_) => _FileSettingsDialog(project: p),
+    );
+    if (choice == null || !choice.apply || !mounted) return;
+    _applySettingsSilently(choice.always ? after.copyWith(autoApplyFileSettings: true) : after);
+  }
+
+  /// Settings change without the debounced re-slice (the caller slices).
+  void _applySettingsSilently(SliceSettings s) {
+    setState(() => _settings = s);
+    PlatformFiles.saveSettings(s);
+  }
+
+  /// Whether the current settings reproduce the file's own slicing setup.
+  bool _settingsMatchFile(SlicerProject p) {
+    final s = _settings;
+    final f = p.applyTo(s);
+    return f.geometryKey == s.geometryKey &&
+        s.scalePercent == 100 &&
+        (p.density == null || (p.density! - s.density).abs() < 0.005);
+  }
+
+  /// Learns the calibration from a sliced file once its settings are in use.
+  void _maybeAutoCalibrate(SliceResult r) {
+    final m = _model;
+    final p = m?.project;
+    if (_autoCalibrated || p == null || !p.isSliced || !m!.hasMesh || !_settingsMatchFile(p)) return;
+    _autoCalibrated = true;
+    final s = _settings;
+    final rawSeconds = r.printSeconds(s) + printerById(s.printerId).startMinutes * 60;
+    final next = s.calibrated(
+      rawGrams: r.grams(s.density),
+      slicerGrams: p.grams,
+      rawSeconds: rawSeconds,
+      slicerSeconds: p.seconds > 0 ? p.seconds : null,
+    );
+    _applySettingsSilently(next);
+    _snack('Калібрування оновлено за ${p.app}: вага ×${fmtNum(next.weightFactor, 2)}, '
+        'час ×${fmtNum(next.timeFactor, 2)}');
+  }
+
   Future<void> _slice() async {
     final model = _model;
     if (model == null) return;
+    if (!model.hasMesh) {
+      setState(() {
+        _result = null;
+        _progress = null;
+      });
+      return;
+    }
     _job?.cancel();
     final job = SliceJob();
     _job = job;
@@ -145,6 +220,7 @@ class _HomePageState extends State<HomePage> {
         _progress = null;
         _layer = r.layers - 1;
       });
+      _maybeAutoCalibrate(r);
     } on SliceCancelled {
       // A newer job replaced this one.
     } catch (e) {
@@ -167,21 +243,92 @@ class _HomePageState extends State<HomePage> {
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const HistoryPage()));
   }
 
-  /// Print time of all copies, hours.
-  double _totalHours(SliceResult r) {
-    final manual = _manualHours;
-    if (manual != null) return manual * _settings.copies;
-    final perCopy = r.printSeconds(_settings) / 3600;
-    return perCopy * _settings.copies + printerById(_settings.printerId).startMinutes / 60;
+  /// Slicer data of the open file, when it is the source of the numbers.
+  SlicerProject? get _slicerSource {
+    final m = _model;
+    final p = m?.project;
+    if (m == null || p == null || !p.isSliced) return null;
+    if (!m.hasMesh) return p;
+    return _settings.preferSlicerData && _settings.scalePercent == 100 ? p : null;
   }
 
-  CostBreakdown _cost(SliceResult r) =>
-      CostBreakdown.of(r.grams(_settings.density, copies: _settings.copies), _totalHours(r), _settings);
+  /// Our estimate of one copy's print time incl. start-up, hours (calibrated).
+  double _estimateHours(SliceResult r) =>
+      (r.printSeconds(_settings) * _settings.timeFactor + printerById(_settings.printerId).startMinutes * 60) / 3600;
+
+  /// Weight, time and price of the order, from the slicer or our estimate.
+  _Figures? _figures() {
+    final s = _settings;
+    final r = _result;
+    final p = _slicerSource;
+    final copies = s.copies;
+    if (p != null) {
+      final grams1 = p.grams;
+      double meters1 = p.meters;
+      if (meters1 <= 0 && grams1 > 0) {
+        final rad = s.filamentDiameter / 2;
+        meters1 = grams1 / s.density * 1000 / (math.pi * rad * rad) / 1000;
+      }
+      final hours1 = _manualHours ?? p.seconds / 3600;
+      final grams = grams1 * copies;
+      final hours = hours1 * copies;
+      return _Figures(
+        source: p.app,
+        grams1: grams1,
+        model1: grams1,
+        support1: 0,
+        meters: meters1 * copies,
+        hours: hours,
+        cost: CostBreakdown.of(grams, hours, s),
+        estimateGrams: r == null ? null : r.grams(s.density, copies: copies) * s.weightFactor,
+      );
+    }
+    if (r == null) return null;
+    final f = s.weightFactor;
+    final grams1 = r.grams(s.density) * f;
+    final hours = (_manualHours ?? _estimateHours(r)) * copies;
+    return _Figures(
+      source: null,
+      grams1: grams1,
+      model1: r.modelGrams(s.density) * f,
+      support1: r.supportGrams(s.density) * f,
+      meters: r.filamentMeters(s.filamentDiameter, copies: copies) * f,
+      hours: hours,
+      cost: CostBreakdown.of(grams1 * copies, hours, s),
+    );
+  }
+
+  Future<void> _calibrate() async {
+    final r = _result;
+    if (r == null) return;
+    final s = _settings;
+    final input = await showDialog<(double?, double?)>(
+      context: context,
+      builder: (_) => _CalibrateDialog(
+        estimateGrams: r.grams(s.density) * s.weightFactor,
+        estimateHours: _estimateHours(r),
+      ),
+    );
+    if (input == null || !mounted) return;
+    final (grams, hours) = input;
+    if (grams == null && hours == null) return;
+    final rawSeconds = r.printSeconds(s) + printerById(s.printerId).startMinutes * 60;
+    final next = s.calibrated(
+      rawGrams: r.grams(s.density),
+      slicerGrams: grams,
+      rawSeconds: rawSeconds,
+      slicerSeconds: hours == null ? null : hours * 3600,
+    );
+    setState(() => _manualHours = null);
+    _updateSettings(next);
+    _snack('Калібрування збережено: вага ×${fmtNum(next.weightFactor, 2)}, час ×${fmtNum(next.timeFactor, 2)}');
+  }
 
   Future<void> _editTime() async {
     final r = _result;
-    if (r == null) return;
-    final current = _manualHours ?? (r.printSeconds(_settings) / 3600 + printerById(_settings.printerId).startMinutes / 60);
+    final p = _slicerSource;
+    if (r == null && p == null) return;
+    final current = _manualHours ?? (p != null ? p.seconds / 3600 : _estimateHours(r!));
     final v = await showDialog<double>(
       context: context,
       builder: (_) => _TimeDialog(initialHours: current, isManual: _manualHours != null),
@@ -194,9 +341,10 @@ class _HomePageState extends State<HomePage> {
   HistoryEntry? _buildEntry({String note = '', String? thumbPath, String? id}) {
     final m = _model;
     final r = _result;
-    if (m == null || r == null) return null;
+    final fig = _figures();
+    if (m == null || fig == null) return null;
     final s = _settings;
-    final cost = _cost(r);
+    final cost = fig.cost;
     final mat = materialById(s.materialId);
     return HistoryEntry(
       id: id ?? DateTime.now().microsecondsSinceEpoch.toString(),
@@ -212,9 +360,9 @@ class _HomePageState extends State<HomePage> {
       supportPlateOnly: s.supportPlateOnly,
       scalePercent: s.scalePercent,
       copies: s.copies,
-      modelGrams: r.modelGrams(s.density),
-      supportGrams: r.supportGrams(s.density),
-      filamentMeters: r.filamentMeters(s.filamentDiameter, copies: s.copies),
+      modelGrams: fig.model1,
+      supportGrams: fig.support1,
+      filamentMeters: fig.meters,
       materialCost: cost.material,
       printHours: cost.hours,
       electricityCost: cost.electricity,
@@ -223,15 +371,18 @@ class _HomePageState extends State<HomePage> {
       markupPercent: s.markupPercent,
       extraCost: s.extraCost,
       totalCost: cost.price,
-      sizeX: r.sizeX,
-      sizeY: r.sizeY,
-      sizeZ: r.sizeZ,
+      sizeX: r?.sizeX ?? 0,
+      sizeY: r?.sizeY ?? 0,
+      sizeZ: r?.sizeZ ?? 0,
       note: note,
       thumbPath: thumbPath,
+      source: fig.source ?? '',
     );
   }
 
   Future<Uint8List?> _captureThumb() async {
+    final m = _model;
+    if (m != null && !m.hasMesh) return m.project?.thumbnail;
     try {
       final obj = _viewerKey.currentContext?.findRenderObject();
       if (obj is! RenderRepaintBoundary) return null;
@@ -336,7 +487,7 @@ class _HomePageState extends State<HomePage> {
           : model == null
               ? _EmptyState(onOpen: _pick, error: _loadError)
               : LayoutBuilder(builder: (context, c) {
-                  final viewer = _viewer(model);
+                  final viewer = model.hasMesh ? _viewer(model) : _fileOnlyView(model);
                   final panel = _panel(model);
                   if (c.maxWidth > c.maxHeight * 1.15) {
                     return Row(children: [
@@ -349,6 +500,30 @@ class _HomePageState extends State<HomePage> {
                     Expanded(child: panel),
                   ]);
                 });
+  }
+
+  /// G-code or sliced file without geometry: show its picture.
+  Widget _fileOnlyView(LoadedModel m) {
+    final theme = Theme.of(context);
+    final thumb = m.project?.thumbnail;
+    return Container(
+      color: theme.colorScheme.surfaceContainerLow,
+      padding: const EdgeInsets.all(16),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Expanded(
+          child: thumb != null
+              ? Image.memory(thumb, fit: BoxFit.contain, gaplessPlayback: true,
+                  errorBuilder: (_, __, ___) => Icon(Icons.description_outlined, size: 72, color: theme.colorScheme.primary))
+              : Icon(Icons.description_outlined, size: 72, color: theme.colorScheme.primary),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Нарізаний файл ${m.project?.app ?? ''}: 3D-моделі немає, вага й час — зі слайсера',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+      ]),
+    );
   }
 
   Widget _viewer(LoadedModel m) {
@@ -665,8 +840,10 @@ class _HomePageState extends State<HomePage> {
         const SizedBox(height: 8),
         _costCard(),
         const SizedBox(height: 8),
-        _quickSettings(),
-        const SizedBox(height: 8),
+        if (m.hasMesh) ...[
+          _quickSettings(),
+          const SizedBox(height: 8),
+        ],
         _modelInfo(m),
       ],
     );
@@ -676,11 +853,14 @@ class _HomePageState extends State<HomePage> {
     final theme = Theme.of(context);
     final r = _result;
     final s = _settings;
+    final m = _model;
     final busy = _progress != null;
     final onCard = theme.colorScheme.onPrimaryContainer;
-    final grams = r?.grams(s.density, copies: s.copies) ?? 0;
-    final cost = r == null ? null : _cost(r);
+    final fig = _figures();
+    final cost = fig?.cost;
     final small = theme.textTheme.bodySmall;
+    final project = m?.project;
+    final canChooseSource = project != null && project.isSliced && (m?.hasMesh ?? false);
 
     Widget line(String label, String value, {bool strong = false}) => Padding(
           padding: const EdgeInsets.symmetric(vertical: 1.5),
@@ -689,6 +869,29 @@ class _HomePageState extends State<HomePage> {
             Text(value, style: strong ? theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600) : small),
           ]),
         );
+
+    Widget badge(String text, IconData icon) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: onCard.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 14, color: onCard),
+            const SizedBox(width: 4),
+            Text(text, style: theme.textTheme.labelSmall?.copyWith(color: onCard)),
+          ]),
+        );
+
+    String timeNote() {
+      if (_manualHours != null) {
+        return 'введено вручну${s.copies > 1 ? ' (${formatDuration(_manualHours!)} × ${s.copies})' : ''}';
+      }
+      if (fig?.source != null) return 'з файлу ${fig!.source}';
+      final calibrated = (s.timeSamples[s.printerId] ?? 0) > 0;
+      return 'оцінка для «${printerById(s.printerId).fullName}»${calibrated ? ', калібровано' : ''}; '
+          'торкніться, щоб ввести час';
+    }
 
     return Card(
       color: theme.colorScheme.primaryContainer,
@@ -708,17 +911,26 @@ class _HomePageState extends State<HomePage> {
               ),
             ]),
             const SizedBox(height: 4),
-            if (r != null)
+            if (fig != null)
               AnimatedOpacity(
-                opacity: busy ? 0.4 : 1,
+                opacity: busy && fig.source == null ? 0.4 : 1,
                 duration: const Duration(milliseconds: 200),
                 child: Text(
-                  fmtGrams(grams),
+                  fmtGrams(fig.grams1 * s.copies),
                   style: theme.textTheme.displayMedium?.copyWith(fontWeight: FontWeight.w700, color: onCard),
                 ),
               )
             else if (!busy && _sliceError == null)
               const Text('—'),
+            if (fig != null)
+              Wrap(spacing: 6, runSpacing: 4, children: [
+                if (fig.source != null)
+                  badge('точно: ${fig.source}', Icons.verified_outlined)
+                else if (s.weightSamples > 0)
+                  badge('калібровано ×${fmtNum(s.weightFactor, 2)}', Icons.tune)
+                else
+                  badge('оцінка', Icons.calculate_outlined),
+              ]),
             if (busy) ...[
               const SizedBox(height: 8),
               LinearProgressIndicator(value: _progress),
@@ -733,22 +945,42 @@ class _HomePageState extends State<HomePage> {
               Text(_sliceError!, style: TextStyle(color: theme.colorScheme.error)),
               TextButton(onPressed: _slice, child: const Text('Спробувати ще раз')),
             ],
-            if (r != null && cost != null) ...[
-              if (s.supportsEnabled)
+            if (fig != null && cost != null) ...[
+              const SizedBox(height: 6),
+              if (fig.source != null && fig.estimateGrams != null)
+                Text('наш розрахунок: ${fmtGrams(fig.estimateGrams!)}', style: small),
+              if (fig.source == null && s.supportsEnabled)
                 Text(
-                  'модель ${fmtGrams(r.modelGrams(s.density) * s.copies)} · '
-                  'підтримки ${fmtGrams(r.supportGrams(s.density) * s.copies)}',
+                  'модель ${fmtGrams(fig.model1 * s.copies)} · підтримки ${fmtGrams(fig.support1 * s.copies)}',
                   style: theme.textTheme.bodyMedium,
                 ),
               if (s.copies > 1)
-                Text('${s.copies} шт. · одна: ${fmtGrams(r.grams(s.density))}', style: theme.textTheme.bodyMedium),
+                Text('${s.copies} шт. · одна: ${fmtGrams(fig.grams1)}', style: theme.textTheme.bodyMedium),
+              if (canChooseSource) ...[
+                const SizedBox(height: 8),
+                SegmentedButton<bool>(
+                  style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                  showSelectedIcon: false,
+                  segments: [
+                    ButtonSegment(value: true, label: Text('Дані ${project!.app}')),
+                    const ButtonSegment(value: false, label: Text('Наш розрахунок')),
+                  ],
+                  selected: {fig.source != null},
+                  onSelectionChanged: (v) {
+                    if (v.first && s.scalePercent != 100) {
+                      _snack('Дані слайсера діють лише при масштабі 100%');
+                    }
+                    _updateSettings(s.copyWith(preferSlicerData: v.first));
+                  },
+                ),
+              ],
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  Stat('філамент', '${fmtNum(r.filamentMeters(s.filamentDiameter, copies: s.copies), 2)} м'),
-                  Stat('об\'єм', '${fmtNum(r.totalVolumeMm3 * s.copies / 1000, 1)} см³'),
-                  Stat('шарів', '${r.layers}'),
+                  Stat('філамент', '${fmtNum(fig.meters, 2)} м'),
+                  Stat('об\'єм', '${fmtNum(fig.grams1 * s.copies / s.density, 1)} см³'),
+                  if (r != null) Stat('шарів', '${r.layers}'),
                 ],
               ),
               Divider(height: 24, color: onCard.withValues(alpha: 0.2)),
@@ -763,7 +995,7 @@ class _HomePageState extends State<HomePage> {
                     Text('Час друку', style: theme.textTheme.bodyMedium),
                     const Spacer(),
                     Text(
-                      '${_manualHours == null ? '≈ ' : ''}${formatDuration(cost.hours)}',
+                      '${_manualHours == null && fig.source == null ? '≈ ' : ''}${formatDuration(cost.hours)}',
                       style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(width: 4),
@@ -771,12 +1003,7 @@ class _HomePageState extends State<HomePage> {
                   ]),
                 ),
               ),
-              Text(
-                _manualHours == null
-                    ? 'оцінка для «${printerById(s.printerId).name}»; торкніться, щоб ввести час зі слайсера'
-                    : 'введено вручну${s.copies > 1 ? ' (${formatDuration(_manualHours!)} × ${s.copies})' : ''}',
-                style: small,
-              ),
+              Text(timeNote(), style: small),
               const SizedBox(height: 10),
               line('Пластик', fmtMoney(cost.material)),
               line('Електроенергія', fmtMoney(cost.electricity)),
@@ -806,7 +1033,7 @@ class _HomePageState extends State<HomePage> {
               Row(children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: busy ? null : _share,
+                    onPressed: busy && fig.source == null ? null : _share,
                     icon: const Icon(Icons.share_outlined),
                     label: const Text('Поділитися'),
                   ),
@@ -814,17 +1041,27 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: busy || _saving ? null : _saveToHistory,
+                    onPressed: (busy && fig.source == null) || _saving ? null : _saveToHistory,
                     icon: const Icon(Icons.bookmark_add_outlined),
                     label: const Text('Зберегти'),
                   ),
                 ),
               ]),
-              const SizedBox(height: 8),
-              Text(
-                'Суцільна модель (100%): ${fmtGrams(r.solidGrams(s.density))}',
-                style: small,
-              ),
+              if (r != null && fig.source == null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4)),
+                    onPressed: busy ? null : _calibrate,
+                    icon: const Icon(Icons.tune, size: 18),
+                    label: const Text('Підігнати під слайсер'),
+                  ),
+                ),
+              if (r != null)
+                Text(
+                  'Суцільна модель (100%): ${fmtGrams(r.solidGrams(s.density))}',
+                  style: small,
+                ),
             ],
           ],
         ),
@@ -991,14 +1228,21 @@ class _HomePageState extends State<HomePage> {
           ]),
         );
     final b = m.bounds;
+    final p = m.project;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Модель', style: theme.textTheme.titleSmall),
+            Text(m.hasMesh ? 'Модель' : 'Файл', style: theme.textTheme.titleSmall),
             const SizedBox(height: 6),
+            if (p != null) row('Створено в', p.app),
+            if (p?.printProfile != null) row('Профіль', p!.printProfile!),
+            if (p != null && p.plates.length > 1)
+              for (final pl in p.plates)
+                row('Пластина ${pl.index}', '${fmtGrams(pl.grams)} · ${formatDuration(pl.seconds / 3600)}'),
+            if (m.hasMesh) ...[
             row('Трикутників', '${m.mesh.triangleCount}'),
             row('Розмір X × Y × Z',
                 '${fmtNum(b.sizeX * k, 1)} × ${fmtNum(b.sizeY * k, 1)} × ${fmtNum(b.sizeZ * k, 1)} мм'),
@@ -1006,6 +1250,24 @@ class _HomePageState extends State<HomePage> {
             row('Площа поверхні', '${fmtNum(m.area * k * k / 100, 1)} см²'),
             if (_settings.scalePercent != 100) row('Масштаб', '${fmtNum(_settings.scalePercent, 0)}%'),
             if (_result != null) row('Час розрахунку', '${fmtNum(_result!.millis / 1000, 1)} с'),
+            ],
+            if (p != null && p.hasSettings)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4)),
+                  onPressed: () {
+                    final before = _settings;
+                    _updateSettings(p.applyTo(before));
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('Застосовано налаштування з файлу (${p.app})'),
+                      action: SnackBarAction(label: 'Відмінити', onPressed: () => _updateSettings(before)),
+                    ));
+                  },
+                  icon: const Icon(Icons.download_outlined, size: 18),
+                  label: const Text('Застосувати налаштування з файлу'),
+                ),
+              ),
           ],
         ),
       ),
@@ -1033,7 +1295,7 @@ class _EmptyState extends StatelessWidget {
               child: Image.asset('assets/logo.png', width: 112, height: 112),
             ),
             const SizedBox(height: 20),
-            Text('Відкрийте STL або 3MF', style: theme.textTheme.headlineSmall, textAlign: TextAlign.center),
+            Text('Відкрийте STL, 3MF або G-code', style: theme.textTheme.headlineSmall, textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(
               'Додаток покаже модель і порахує, скільки пластику піде на друк.\n'
@@ -1165,6 +1427,187 @@ class _TimeDialogState extends State<_TimeDialog> {
           TextButton(onPressed: () => Navigator.pop(context, -1.0), child: const Text('Оцінка')),
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
         FilledButton(onPressed: _save, child: const Text('Готово')),
+      ],
+    );
+  }
+}
+
+/// Numbers shown on the result card.
+class _Figures {
+  final String? source; // slicer name when the numbers are exact
+  final double grams1; // one copy, model + supports
+  final double model1, support1;
+  final double meters; // all copies
+  final double hours; // all copies
+  final CostBreakdown cost;
+  final double? estimateGrams; // our estimate (all copies) for comparison
+
+  const _Figures({
+    required this.source,
+    required this.grams1,
+    required this.model1,
+    required this.support1,
+    required this.meters,
+    required this.hours,
+    required this.cost,
+    this.estimateGrams,
+  });
+}
+
+class _FileSettingsChoice {
+  final bool apply;
+  final bool always;
+
+  const _FileSettingsChoice(this.apply, this.always);
+}
+
+class _FileSettingsDialog extends StatefulWidget {
+  final SlicerProject project;
+
+  const _FileSettingsDialog({required this.project});
+
+  @override
+  State<_FileSettingsDialog> createState() => _FileSettingsDialogState();
+}
+
+class _FileSettingsDialogState extends State<_FileSettingsDialog> {
+  bool _always = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final p = widget.project;
+    return AlertDialog(
+      title: Text('Налаштування з ${p.app}'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Файл містить параметри друку. Застосувати їх для розрахунку?'),
+            const SizedBox(height: 10),
+            for (final line in p.describe())
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Text('• $line', style: theme.textTheme.bodyMedium),
+              ),
+            if (p.isSliced) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Файл нарізаний: вага й час слайсера (${fmtGrams(p.grams)}, ${formatDuration(p.seconds / 3600)}) '
+                'буде використано для ціни.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+            const SizedBox(height: 6),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _always,
+              onChanged: (v) => setState(() => _always = v ?? false),
+              title: const Text('Завжди застосовувати без питання'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, const _FileSettingsChoice(false, false)),
+          child: const Text('Залишити мої'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _FileSettingsChoice(true, _always)),
+          child: const Text('Застосувати'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Weight (g) and time (h) of one copy as shown by the user's slicer.
+class _CalibrateDialog extends StatefulWidget {
+  final double estimateGrams;
+  final double estimateHours;
+
+  const _CalibrateDialog({required this.estimateGrams, required this.estimateHours});
+
+  @override
+  State<_CalibrateDialog> createState() => _CalibrateDialogState();
+}
+
+class _CalibrateDialogState extends State<_CalibrateDialog> {
+  final _g = TextEditingController();
+  final _h = TextEditingController();
+  final _m = TextEditingController();
+
+  @override
+  void dispose() {
+    _g.dispose();
+    _h.dispose();
+    _m.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final g = double.tryParse(_g.text.replaceAll(',', '.').trim());
+    final h = int.tryParse(_h.text.trim()) ?? 0;
+    final m = int.tryParse(_m.text.trim()) ?? 0;
+    final hours = h + m / 60.0;
+    Navigator.pop<(double?, double?)>(context, (g != null && g > 0 ? g : null, hours > 0 ? hours : null));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Підігнати під слайсер'),
+      content: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(
+            'Наріжте цю модель у своєму слайсері з тими самими налаштуваннями й введіть його цифри '
+            'для однієї копії. Додаток запам\'ятає поправку й застосовуватиме до всіх моделей. '
+            'Що більше моделей підженете, то точніше.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _g,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              labelText: 'Вага у слайсері, г',
+              helperText: 'зараз у нас: ${fmtGrams(widget.estimateGrams)}',
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text('Час у слайсері', style: theme.textTheme.bodyMedium),
+          const SizedBox(height: 6),
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _h,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'год', border: OutlineInputBorder()),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: _m,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'хв', border: OutlineInputBorder()),
+                onSubmitted: (_) => _save(),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          Text('зараз у нас: ${formatDuration(widget.estimateHours)} (можна залишити порожнім)', style: theme.textTheme.bodySmall),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
+        FilledButton(onPressed: _save, child: const Text('Зберегти')),
       ],
     );
   }

@@ -168,6 +168,18 @@ class SliceSettings {
   final double tariff; // грн per kWh
   final double amortizationPerHour; // грн per printing hour
 
+  // Calibration against the user's slicer: estimate × factor.
+  final double weightFactor;
+  final int weightSamples;
+  final Map<String, double> timeFactors; // per printer profile
+  final Map<String, int> timeSamples;
+
+  /// Apply print settings found in 3MF/G-code files without asking.
+  final bool autoApplyFileSettings;
+
+  /// Price from the slicer's exact numbers when a sliced file has them.
+  final bool preferSlicerData;
+
   const SliceSettings({
     this.layerHeight = 0.2,
     this.firstLayerHeight = 0.2,
@@ -194,7 +206,43 @@ class SliceSettings {
     this.powerW = 140,
     this.tariff = 4.32,
     this.amortizationPerHour = 8,
+    this.weightFactor = 1,
+    this.weightSamples = 0,
+    this.timeFactors = const {},
+    this.timeSamples = const {},
+    this.autoApplyFileSettings = false,
+    this.preferSlicerData = true,
   });
+
+  double get timeFactor => timeFactors[printerId] ?? 1;
+
+  bool get isCalibrated => weightSamples > 0 || (timeSamples[printerId] ?? 0) > 0;
+
+  /// Adds one comparison with the slicer (raw = our uncalibrated estimate).
+  /// Factors are the average of up to the last 10 samples.
+  SliceSettings calibrated({double? rawGrams, double? slicerGrams, double? rawSeconds, double? slicerSeconds}) {
+    var s = this;
+    double avg(double old, int n, double sample) {
+      final m = n.clamp(0, 9);
+      return (old * m + sample) / (m + 1);
+    }
+
+    if (rawGrams != null && slicerGrams != null && rawGrams > 0 && slicerGrams > 0) {
+      final sample = (slicerGrams / rawGrams).clamp(0.5, 2.0).toDouble();
+      s = s.copyWith(weightFactor: avg(weightFactor, weightSamples, sample), weightSamples: weightSamples + 1);
+    }
+    if (rawSeconds != null && slicerSeconds != null && rawSeconds > 0 && slicerSeconds > 0) {
+      final sample = (slicerSeconds / rawSeconds).clamp(0.3, 3.0).toDouble();
+      final n = timeSamples[printerId] ?? 0;
+      s = s.copyWith(
+        timeFactors: {...timeFactors, printerId: avg(timeFactor, n, sample)},
+        timeSamples: {...timeSamples, printerId: n + 1},
+      );
+    }
+    return s;
+  }
+
+  SliceSettings withoutCalibration() => copyWith(weightFactor: 1, weightSamples: 0, timeFactors: {}, timeSamples: {});
 
   double get pricePerKg => pricesPerKg[materialId] ?? materialById(materialId).defaultPricePerKg;
 
@@ -230,6 +278,12 @@ class SliceSettings {
     double? powerW,
     double? tariff,
     double? amortizationPerHour,
+    double? weightFactor,
+    int? weightSamples,
+    Map<String, double>? timeFactors,
+    Map<String, int>? timeSamples,
+    bool? autoApplyFileSettings,
+    bool? preferSlicerData,
   }) {
     return SliceSettings(
       layerHeight: layerHeight ?? this.layerHeight,
@@ -257,6 +311,12 @@ class SliceSettings {
       powerW: powerW ?? this.powerW,
       tariff: tariff ?? this.tariff,
       amortizationPerHour: amortizationPerHour ?? this.amortizationPerHour,
+      weightFactor: weightFactor ?? this.weightFactor,
+      weightSamples: weightSamples ?? this.weightSamples,
+      timeFactors: timeFactors ?? this.timeFactors,
+      timeSamples: timeSamples ?? this.timeSamples,
+      autoApplyFileSettings: autoApplyFileSettings ?? this.autoApplyFileSettings,
+      preferSlicerData: preferSlicerData ?? this.preferSlicerData,
     );
   }
 
@@ -291,6 +351,12 @@ class SliceSettings {
         'powerW': powerW,
         'tariff': tariff,
         'amortizationPerHour': amortizationPerHour,
+        'weightFactor': weightFactor,
+        'weightSamples': weightSamples,
+        'timeFactors': timeFactors,
+        'timeSamples': timeSamples,
+        'autoApplyFileSettings': autoApplyFileSettings,
+        'preferSlicerData': preferSlicerData,
         'v': 2,
       };
 
@@ -336,8 +402,34 @@ class SliceSettings {
       powerW: dbl('powerW', d.powerW),
       tariff: dbl('tariff', d.tariff),
       amortizationPerHour: dbl('amortizationPerHour', d.amortizationPerHour),
+      weightFactor: dbl('weightFactor', d.weightFactor),
+      weightSamples: integer('weightSamples', d.weightSamples),
+      timeFactors: _doubleMap(j['timeFactors']),
+      timeSamples: _intMap(j['timeSamples']),
+      autoApplyFileSettings: flag('autoApplyFileSettings', d.autoApplyFileSettings),
+      preferSlicerData: flag('preferSlicerData', d.preferSlicerData),
     );
   }
+}
+
+Map<String, double> _doubleMap(Object? raw) {
+  final out = <String, double>{};
+  if (raw is Map) {
+    raw.forEach((k, v) {
+      if (k is String && v is num) out[k] = v.toDouble();
+    });
+  }
+  return out;
+}
+
+Map<String, int> _intMap(Object? raw) {
+  final out = <String, int>{};
+  if (raw is Map) {
+    raw.forEach((k, v) {
+      if (k is String && v is num) out[k] = v.toInt();
+    });
+  }
+  return out;
 }
 
 /// Estimated print time of one copy, seconds.
@@ -420,9 +512,17 @@ extension SliceSettingsDefaults on SliceSettings {
     return copyWith(pricesPerKg: m);
   }
 
-  /// Everything back to defaults; prices per material kept unless [prices].
+  /// Everything back to defaults; prices and calibration kept unless [prices].
   SliceSettings resetAll({bool prices = false}) {
     const d = SliceSettings();
-    return prices ? d : d.copyWith(pricesPerKg: pricesPerKg);
+    return prices
+        ? d
+        : d.copyWith(
+            pricesPerKg: pricesPerKg,
+            weightFactor: weightFactor,
+            weightSamples: weightSamples,
+            timeFactors: timeFactors,
+            timeSamples: timeSamples,
+          );
   }
 }

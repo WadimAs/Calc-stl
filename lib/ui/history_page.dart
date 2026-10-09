@@ -14,8 +14,9 @@ String historySummary(HistoryEntry e) {
     ..writeln(e.name)
     ..writeln('Матеріал: ${e.material}, ${fmtNum(e.layerHeight, 2)} мм, заповнення ${fmtNum(e.infillPercent, 0)}%')
     ..writeln('Вага: ${fmtGrams(e.totalGrams)}${e.copies > 1 ? ' (${e.copies} шт.)' : ''}');
-  if (e.supports) b.writeln('  у т.ч. підтримки: ${fmtGrams(e.supportGrams * e.copies)}');
+  if (e.supports && e.supportGrams > 0) b.writeln('  у т.ч. підтримки: ${fmtGrams(e.supportGrams * e.copies)}');
   if (e.printHours > 0) b.writeln('Час друку: ${formatDuration(e.printHours)}');
+  if (e.source.isNotEmpty) b.writeln('Дані: ${e.source}');
   b.writeln('Ціна: ${fmtMoney(e.totalCost)}');
   if (e.note.isNotEmpty) b.writeln(e.note);
   return b.toString().trim();
@@ -316,8 +317,9 @@ class _EntryDetailsState extends State<_EntryDetails> {
           row('Кількість', '${e.copies} шт.'),
           const Divider(height: 20),
           row('Модель (1 шт.)', fmtGrams(e.modelGrams)),
-          row('Підтримки (1 шт.)', e.supports ? fmtGrams(e.supportGrams) : 'вимкнено'),
+          row('Підтримки (1 шт.)', e.source.isNotEmpty ? 'у вазі слайсера' : (e.supports ? fmtGrams(e.supportGrams) : 'вимкнено')),
           row('Разом', '${fmtGrams(e.totalGrams)} · ${fmtNum(e.filamentMeters, 2)} м'),
+          row('Джерело цифр', e.source.isEmpty ? 'розрахунок додатка' : 'точно, ${e.source}'),
           const Divider(height: 20),
           if (e.printHours > 0) row('Час друку', formatDuration(e.printHours)),
           row('Пластик', fmtMoney(e.materialCost)),
