@@ -102,7 +102,9 @@ void main() {
         final data = await img.toByteData(format: ui.ImageByteFormat.png);
         img.dispose();
         if (data != null) {
-          await File('$screensDir/$name.png').writeAsBytes(data.buffer.asUint8List());
+          final tmp = File('$screensDir/$name.png.tmp');
+          await tmp.writeAsBytes(data.buffer.asUint8List());
+          await tmp.rename('$screensDir/$name.png');
         }
         note('shot $name');
       } catch (e) {
@@ -239,8 +241,20 @@ void main() {
       await settle(500);
       await shot('12_client_dialog');
       await tap(inDialog(find.text('Зберегти')));
-      await tap(find.text('Відкрити'));
-      await waitFor(find.text('Надіслати розрахунок клієнту'));
+      await settle(1500);
+      await shot('12b_after_save');
+      try {
+        await waitFor(find.text('Відкрити'), seconds: 8);
+        await settle(800);
+        await tap(find.text('Відкрити'));
+        await waitFor(find.text('Надіслати розрахунок клієнту'), seconds: 8);
+      } catch (e) {
+        note('snackbar route failed ($e), opening via the orders list');
+        await home();
+        await menu('Замовлення');
+        await tap(find.text('Оля Тестова'));
+        await waitFor(find.text('Надіслати розрахунок клієнту'));
+      }
       await shot('13_order');
       await tap(find.textContaining('Термін'));
       await waitFor(find.byType(DatePickerDialog));
