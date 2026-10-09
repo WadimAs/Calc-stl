@@ -42,6 +42,9 @@ import 'widgets.dart';
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
+  /// Opens a file as if it was shared to the app (used by UI tests).
+  static Future<void> Function(PickedFile file)? debugOpen;
+
   @override
   State<HomePage> createState() => _HomePageState();
 }
@@ -83,6 +86,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     PlatformFiles.listen(_open, onLink: _openUrl);
+    HomePage.debugOpen = _open;
     AutoBackup.settingsSource = () => _settings;
     onJsonWrite = (name) {
       if (name != 'autobackup.json') AutoBackup.schedule();
