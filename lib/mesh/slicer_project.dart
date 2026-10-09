@@ -110,25 +110,7 @@ class SlicerProject {
   }
 
   /// Our material id for the file's filament type.
-  String? get materialId {
-    final t = filamentType?.toUpperCase().trim();
-    if (t == null || t.isEmpty) return null;
-    for (final m in materials) {
-      if (m.id == t) return m.id;
-    }
-    if (t.startsWith('PLA-CF') || t == 'PLA CF') return 'PLA-CF';
-    if (t.startsWith('PETG-CF') || t.startsWith('PET-CF')) return 'PETG-CF';
-    if (t.startsWith('PLA')) return 'PLA';
-    if (t.startsWith('PETG') || t == 'PET' || t == 'PCTG') return 'PETG';
-    if (t.startsWith('ABS')) return 'ABS';
-    if (t.startsWith('ASA')) return 'ASA';
-    if (t.startsWith('TPU') || t.startsWith('TPE') || t == 'FLEX') return 'TPU';
-    if (t.startsWith('PA') || t.startsWith('NYLON')) return 'PA';
-    if (t.startsWith('PC')) return 'PC';
-    if (t.startsWith('HIPS')) return 'HIPS';
-    if (t.startsWith('PVA')) return 'PVA';
-    return 'custom';
-  }
+  String? get materialId => materialIdForType(filamentType);
 
   /// Our printer profile for the file's printer, if recognised.
   String? get printerId {
@@ -596,4 +578,25 @@ SlicerProject? readProjectFrom3mf(Uint8List bytes) {
       file('auxiliaries/.thumbnails/thumbnail_middle.png') ??
       file('auxiliaries/.thumbnails/thumbnail_3mf.png');
   return _fromConfig(_appName(app), config, plates: plates, thumbnail: thumb);
+}
+
+/// Our material id for a slicer / AMS filament type ("PLA Basic", "PETG-HF"…).
+String? materialIdForType(String? type) {
+  final t = type?.toUpperCase().trim();
+  if (t == null || t.isEmpty) return null;
+  for (final m in materials) {
+    if (m.id == t) return m.id;
+  }
+  if (t.startsWith('PLA-CF') || t == 'PLA CF') return 'PLA-CF';
+  if (t.startsWith('PETG-CF') || t.startsWith('PET-CF')) return 'PETG-CF';
+  if (t.startsWith('PLA')) return 'PLA';
+  if (t.startsWith('PETG') || t == 'PET' || t == 'PCTG') return 'PETG';
+  if (t.startsWith('ABS')) return 'ABS';
+  if (t.startsWith('ASA')) return 'ASA';
+  if (t.startsWith('TPU') || t.startsWith('TPE') || t == 'FLEX') return 'TPU';
+  if (t.startsWith('PA') || t.startsWith('NYLON')) return 'PA';
+  if (t.startsWith('PC')) return 'PC';
+  if (t.startsWith('HIPS')) return 'HIPS';
+  if (t.startsWith('PVA')) return 'PVA';
+  return 'custom';
 }

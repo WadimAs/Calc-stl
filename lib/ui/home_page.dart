@@ -32,6 +32,7 @@ import 'expenses_page.dart';
 import 'history_page.dart';
 import 'intro_page.dart';
 import 'orders_page.dart';
+import 'printers_page.dart';
 import 'quote_page.dart';
 import 'settings_sheet.dart';
 import 'spools_page.dart';
@@ -74,6 +75,7 @@ class _HomePageState extends State<HomePage> {
   bool _pickFace = false;
   bool _reorienting = false;
   final Map<int, int> _objectColors = {}; // source object index -> filament slot
+  PickedFile? _gcodeFile; // opened G-code, can be sent to a Klipper printer
 
   bool get _adv => _settings.advancedUi;
 
@@ -221,6 +223,8 @@ class _HomePageState extends State<HomePage> {
         }
         f = inner;
       }
+      final lower = f.name.toLowerCase();
+      _gcodeFile = lower.endsWith('.gcode') || lower.endsWith('.gco') || lower.endsWith('.g') ? f : null;
       final m = await loadModel(f.name, f.bytes);
       if (!mounted) return;
       _setModel(m, fresh: true);
@@ -438,6 +442,11 @@ class _HomePageState extends State<HomePage> {
         _push(const CatalogPage());
       case 'expenses':
         _push(const ExpensesPage());
+      case 'printers':
+        _push(const PrintersPage());
+      case 'send':
+        final g = _gcodeFile;
+        if (g != null) sendGcodeToPrinter(context, g.name, g.bytes);
       case 'autobackup':
         _autoBackupMenu();
       case 'intro':
@@ -1025,6 +1034,12 @@ class _HomePageState extends State<HomePage> {
               const PopupMenuItem(
                   value: 'clients', child: ListTile(leading: Icon(Icons.people_outline), title: Text('Клієнти'))),
               if (_adv) ...[
+                const PopupMenuItem(
+                    value: 'printers', child: ListTile(leading: Icon(Icons.print_outlined), title: Text('Принтери'))),
+                if (_gcodeFile != null)
+                  const PopupMenuItem(
+                      value: 'send',
+                      child: ListTile(leading: Icon(Icons.send_to_mobile_outlined), title: Text('Надіслати на принтер'))),
                 const PopupMenuItem(
                     value: 'catalog', child: ListTile(leading: Icon(Icons.storefront_outlined), title: Text('Прайс-лист'))),
                 const PopupMenuItem(

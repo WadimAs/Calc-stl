@@ -9,6 +9,8 @@ import 'package:stl_weight/history/history.dart';
 import 'package:stl_weight/orders/reminders.dart';
 import 'package:stl_weight/platform/downloader.dart';
 import 'package:stl_weight/platform/pdf.dart';
+import 'package:stl_weight/printers/mqtt.dart';
+import 'package:stl_weight/printers/printers.dart';
 import 'package:stl_weight/mesh/holes.dart';
 import 'package:stl_weight/mesh/loader.dart';
 import 'package:stl_weight/mesh/mesh_check.dart';
@@ -911,6 +913,111 @@ void main() {
       });
       final models = modelsInZip(z);
       expect(models.map((m) => m.name).toList(), ['big.stl', 'small.3mf']);
+    });
+  });
+
+  group('printers', () {
+    test('mqtt packets', () {
+      expect(mqttLength(0), [0]);
+      expect(mqttLength(127), [127]);
+      expect(mqttLength(128), [0x80, 1]);
+      expect(mqttLength(16383), [0xff, 0x7f]);
+      final c = mqttConnect('id', user: 'bblp', password: '12345678');
+      expect(c[0], 0x10);
+      expect(c[1], c.length - 2);
+      expect(String.fromCharCodes(c.sublist(4, 8)), 'MQTT');
+      expect(c[9], 0xC2);
+
+      // A big publish split across chunks + a ping response.
+      final payload = List<int>.filled(300, 0x41);
+      final pub = mqttPublish('device/X/report', payload);
+      final all = [...pub, 0xD0, 0];
+      final parser = MqttParser();
+      final got = <(int, Uint8List)>[];
+      for (int i = 0; i < all.length; i += 7) {
+        got.addAll(parser.add(all.sublist(i, math.min(all.length, i + 7))));
+      }
+      expect(got.length, 2);
+      expect(got[0].$1, 0x30);
+      expect(got[0].$2.length, 2 + 'device/X/report'.length + 300);
+      expect(got[1].$1, 0xD0);
+    });
+
+    test('bambu report', () {
+      final st = <String, dynamic>{};
+      mergeBambuReport(st, {
+        'gcode_state': 'RUNNING',
+        'mc_percent': 42,
+        'mc_remaining_time': 75,
+        'layer_num': 10,
+        'total_layer_num': 120,
+        'subtask_name': 'cube',
+        'nozzle_temper': 219.5,
+        'nozzle_target_temper': 220,
+        'ams': {
+          'tray_now': '1',
+          'ams': [
+            {
+              'id': '0',
+              'tray': [
+                {'id': '0', 'tray_type': 'PLA', 'tray_color': 'FF0000FF', 'remain': 50, 'tray_weight': '1000'},
+                {'id': '1', 'tray_type': 'PETG', 'tray_color': '00FF00FF', 'remain': -1, 'tray_sub_brands': 'PETG HF'},
+                {'id': '2'},
+              ],
+            },
+          ],
+        },
+      });
+      mergeBambuReport(st, {'mc_percent': 43});
+      final s = bambuStatus(st);
+      expect(s.printing, isTrue);
+      expect(s.state, 'Друкує');
+      expect(s.progress, closeTo(0.43, 1e-9));
+      expect(s.remaining, const Duration(minutes: 75));
+      expect(s.slots.length, 2);
+      expect(s.slots[0].remainingGrams, 500);
+      expect(s.slots[0].colorArgb, 0xFFFF0000);
+      expect(s.slots[1].remainPercent, isNull);
+      expect(s.slots[1].active, isTrue);
+      expect(s.slots[1].label, 'AMS 1 · слот 2');
+      expect(materialIdForType(s.slots[1].brand), 'PETG');
+    });
+
+    test('moonraker status and history', () {
+      final s = moonrakerStatus({
+        'print_stats': {'state': 'printing', 'filename': 'a.gcode', 'print_duration': 600.0},
+        'virtual_sdcard': {'progress': 0.25},
+        'extruder': {'temperature': 240.0, 'target': 240.0},
+      });
+      expect(s.printing, isTrue);
+      expect(s.remaining, const Duration(seconds: 1800));
+      expect(s.nozzle, 240);
+      final j = PrintJob.fromJson({
+        'job_id': '00001A',
+        'filename': 'a.gcode',
+        'status': 'completed',
+        'end_time': 1700000000.5,
+        'filament_used': 1000.0,
+        'print_duration': 3600.0,
+        'metadata': <String, dynamic>{},
+      })!;
+      // 1 m of 1.75 mm PLA ≈ 2.98 g
+      expect(j.gramsFor(1.24), closeTo(2.98, 0.01));
+      final withMeta = PrintJob.fromJson({
+        'job_id': '2',
+        'filament_used': 1000.0,
+        'metadata': {'filament_weight_total': 3.5},
+      })!;
+      expect(withMeta.gramsFor(1.24), 3.5);
+      final p = PrinterConn.fromJson(jsonDecode(jsonEncode(const PrinterConn(
+        id: 'p',
+        name: 'K1',
+        kind: PrinterKind.moonraker,
+        host: '192.168.1.5',
+        writtenOff: ['1'],
+      ).toJson())))!;
+      expect(p.kind, PrinterKind.moonraker);
+      expect(p.writtenOff, ['1']);
     });
   });
 }
