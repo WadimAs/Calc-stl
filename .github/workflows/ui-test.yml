@@ -8,6 +8,7 @@ on:
       - 'integration_test/**'
       - 'test_driver/**'
       - '.github/workflows/ui-test.yml'
+      - '.github/scripts/ui_run.sh'
 
 permissions:
   contents: write
