@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:convert';
 import 'dart:io' show ZLibEncoder;
 import 'dart:typed_data';
@@ -9,6 +10,7 @@ import 'package:stl_weight/mesh/stl_parser.dart';
 import 'package:stl_weight/mesh/threemf_parser.dart';
 import 'package:stl_weight/slicer/settings.dart';
 import 'package:stl_weight/slicer/slicer.dart';
+import 'package:stl_weight/viewer/measure.dart';
 
 /// Axis-aligned box with outward-facing triangles.
 Float32List box(double sx, double sy, double sz, [double ox = 0, double oy = 0, double oz = 0]) {
@@ -362,5 +364,38 @@ void main() {
     expect(formatDate(e2.date), '08.10.2026 21:05');
     final csv = HistoryStore.toCsv([e2]);
     expect(csv.split('\n')[1], contains('"Іван; синій"'));
+  });
+
+  test('measuring: distance, circle through 3 points, angle, controller flow', () {
+    const a = P3(0, 0, 0), b = P3(3, 4, 12);
+    expect(const Measurement(MeasureTool.distance, [a, b]).distance, closeTo(13, 1e-9));
+
+    // Points on a circle of radius 5 around (10, -2, 3) in a tilted plane.
+    const c = P3(10, -2, 3);
+    final u = const P3(1, 1, 0).normalized, w = const P3(-1, 1, 1).normalized;
+    final ww = w - u * w.dot(u);
+    final wn = ww.normalized;
+    P3 on(double t) => c + u * (5 * math.cos(t)) + wn * (5 * math.sin(t));
+    final fit = circleThrough(on(0.2), on(2.0), on(4.1))!;
+    expect(fit.radius, closeTo(5, 1e-9));
+    expect((fit.center - c).length, closeTo(0, 1e-9));
+    expect(circleThrough(a, const P3(1, 1, 1), const P3(2, 2, 2)), isNull);
+
+    expect(angleAt(const P3(1, 0, 0), a, const P3(0, 5, 0)), closeTo(90, 1e-9));
+    expect(angleAt(const P3(1, 0, 0), a, const P3(1, 1, 0)), closeTo(45, 1e-9));
+
+    final mc = MeasureController();
+    mc.add(a); // ignored while no tool is active
+    expect(mc.pending, isEmpty);
+    mc.tool = MeasureTool.distance;
+    mc.add(a);
+    mc.add(b);
+    expect(mc.done.single.distance, closeTo(13, 1e-9));
+    mc.tool = MeasureTool.angle;
+    mc.add(a);
+    mc.undo();
+    expect(mc.pending, isEmpty);
+    mc.undo();
+    expect(mc.done, isEmpty);
   });
 }

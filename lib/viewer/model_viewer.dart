@@ -5,7 +5,37 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../mesh/loader.dart';
+import '../mesh/mesh.dart';
 import '../slicer/slicer.dart';
+import 'measure.dart';
+
+/// Orthographic camera shared by drawing and picking.
+class _View {
+  final double scale, cx, cy, cyw, syw, cp, sp;
+
+  const _View(this.scale, this.cx, this.cy, this.cyw, this.syw, this.cp, this.sp);
+
+  factory _View.of(Bounds b, Size size, double yaw, double pitch, double zoom, Offset pan) {
+    final radius = math.max(1e-3, math.sqrt(b.sizeX * b.sizeX + b.sizeY * b.sizeY + b.sizeZ * b.sizeZ) / 2);
+    return _View(
+      math.min(size.width, size.height) * 0.46 / radius * zoom,
+      size.width / 2 + pan.dx,
+      size.height / 2 + pan.dy,
+      math.cos(yaw),
+      math.sin(yaw),
+      math.cos(pitch),
+      math.sin(pitch),
+    );
+  }
+
+  Offset project(double x, double y, double z) {
+    final x1 = x * cyw - y * syw;
+    final y1 = x * syw + y * cyw;
+    return Offset(cx + x1 * scale, cy - (z * cp + y1 * sp) * scale);
+  }
+
+  Offset p(P3 q) => project(q.x, q.y, q.z);
+}
 
 /// Colours of the sliced view, by [SliceClass] (index 0 unused).
 const sliceColors = <Color>[
@@ -39,6 +69,7 @@ class ModelViewer extends StatefulWidget {
   final double previewScale; // slicer scale (settings.scalePercent / 100)
   final bool showLayers;
   final int maxLayer;
+  final MeasureController? measure;
 
   const ModelViewer({
     super.key,
@@ -48,6 +79,7 @@ class ModelViewer extends StatefulWidget {
     this.previewScale = 1,
     this.showLayers = false,
     this.maxLayer = 1 << 30,
+    this.measure,
   });
 
   @override
@@ -65,12 +97,94 @@ class _ModelViewerState extends State<ModelViewer> {
   double _zoomAtStart = 1.0;
   late _ViewCache _cache;
   _LayerMeshes? _layers;
+  Size _size = Size.zero;
+
+  bool get _measuring => widget.measure?.active == true && !widget.showLayers;
+
+  /// Point of the model surface under [pos], snapped to a vertex if close.
+  P3? _pick(Offset pos) {
+    final m = widget.model;
+    final b = m.bounds;
+    final v = _View.of(b, _size, _yaw, _pitch, _zoom, _pan);
+    final t = m.mesh.tris;
+    final n = t.length ~/ 9;
+    final bx = b.centerX, by = b.centerY, bz = b.centerZ;
+    final px = pos.dx, py = pos.dy;
+    final sx = Float64List(3), sy = Float64List(3), sd = Float64List(3);
+    double best = double.infinity;
+    int bestT = -1;
+    double b0 = 0, b1 = 0, b2 = 0;
+    for (int k = 0; k < n; k++) {
+      final o = k * 9;
+      for (int j = 0; j < 3; j++) {
+        final x = t[o + j * 3] - bx, y = t[o + j * 3 + 1] - by, z = t[o + j * 3 + 2] - bz;
+        final x1 = x * v.cyw - y * v.syw;
+        final y1 = x * v.syw + y * v.cyw;
+        sx[j] = v.cx + x1 * v.scale;
+        sy[j] = v.cy - (z * v.cp + y1 * v.sp) * v.scale;
+        sd[j] = y1 * v.cp - z * v.sp;
+      }
+      if ((sx[0] < px && sx[1] < px && sx[2] < px) ||
+          (sx[0] > px && sx[1] > px && sx[2] > px) ||
+          (sy[0] < py && sy[1] < py && sy[2] < py) ||
+          (sy[0] > py && sy[1] > py && sy[2] > py)) {
+        continue;
+      }
+      final den = (sy[1] - sy[2]) * (sx[0] - sx[2]) + (sx[2] - sx[1]) * (sy[0] - sy[2]);
+      if (den.abs() < 1e-12) continue;
+      final l0 = ((sy[1] - sy[2]) * (px - sx[2]) + (sx[2] - sx[1]) * (py - sy[2])) / den;
+      final l1 = ((sy[2] - sy[0]) * (px - sx[2]) + (sx[0] - sx[2]) * (py - sy[2])) / den;
+      final l2 = 1 - l0 - l1;
+      if (l0 < 0 || l1 < 0 || l2 < 0) continue;
+      final d = l0 * sd[0] + l1 * sd[1] + l2 * sd[2];
+      if (d < best) {
+        best = d;
+        bestT = k;
+        b0 = l0;
+        b1 = l1;
+        b2 = l2;
+      }
+    }
+    if (bestT < 0) return null;
+    final o = bestT * 9;
+    P3 vert(int j) => P3(t[o + j * 3] - bx, t[o + j * 3 + 1] - by, t[o + j * 3 + 2] - bz);
+    final v0 = vert(0), v1 = vert(1), v2 = vert(2);
+    if (widget.measure?.snap ?? false) {
+      P3? snapped;
+      double bestPx = 18;
+      for (final q in [v0, v1, v2]) {
+        final d = (v.p(q) - pos).distance;
+        if (d < bestPx) {
+          bestPx = d;
+          snapped = q;
+        }
+      }
+      if (snapped != null) return snapped;
+    }
+    return v0 * b0 + v1 * b1 + v2 * b2;
+  }
+
+  void _onTap(TapUpDetails d) {
+    if (!_measuring) return;
+    final p = _pick(d.localPosition);
+    if (p != null) widget.measure!.add(p);
+  }
+
+  bool _wasMeasuring = false;
+
+  // Rebuild only when measuring starts/stops (double tap is switched off then).
+  void _onMeasure() {
+    final now = widget.measure?.active ?? false;
+    if (now != _wasMeasuring && mounted) setState(() => _wasMeasuring = now);
+  }
 
   @override
   void initState() {
     super.initState();
     _cache = _ViewCache(widget.model.viewTris.length ~/ 9);
     _layers = _buildLayers(widget.preview);
+    widget.measure?.addListener(_onMeasure);
+    _wasMeasuring = widget.measure?.active ?? false;
   }
 
   @override
@@ -84,10 +198,15 @@ class _ModelViewerState extends State<ModelViewer> {
       _layers?.dispose();
       _layers = _buildLayers(widget.preview);
     }
+    if (!identical(oldWidget.measure, widget.measure)) {
+      oldWidget.measure?.removeListener(_onMeasure);
+      widget.measure?.addListener(_onMeasure);
+    }
   }
 
   @override
   void dispose() {
+    widget.measure?.removeListener(_onMeasure);
     _layers?.dispose();
     super.dispose();
   }
@@ -104,9 +223,18 @@ class _ModelViewerState extends State<ModelViewer> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    return LayoutBuilder(builder: (context, c) {
+      _size = Size(c.maxWidth, c.maxHeight);
+      return _gestures(context, scheme);
+    });
+  }
+
+  Widget _gestures(BuildContext context, ColorScheme scheme) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onDoubleTap: () => setState(_reset),
+      onTapUp: _onTap,
+      // Double tap delays single taps, so it is off while measuring.
+      onDoubleTap: _measuring ? null : () => setState(_reset),
       onScaleStart: (d) => _zoomAtStart = _zoom,
       onScaleUpdate: (d) {
         setState(() {
@@ -134,6 +262,7 @@ class _ModelViewerState extends State<ModelViewer> {
             layers: widget.showLayers ? _layers : null,
             previewScale: widget.previewScale,
             maxLayer: widget.maxLayer,
+            measure: widget.showLayers ? null : widget.measure,
           ),
         ),
       ),
@@ -240,6 +369,7 @@ class _ModelPainter extends CustomPainter {
   final _LayerMeshes? layers;
   final double previewScale;
   final int maxLayer;
+  final MeasureController? measure;
 
   _ModelPainter({
     required this.model,
@@ -253,7 +383,93 @@ class _ModelPainter extends CustomPainter {
     required this.layers,
     required this.previewScale,
     required this.maxLayer,
-  });
+    required this.measure,
+  }) : super(repaint: measure);
+
+  static const _measureColor = Color(0xFF00B8D9);
+
+  void _label(Canvas canvas, Offset at, String text) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final r = Rect.fromCenter(center: at, width: tp.width + 12, height: tp.height + 6);
+    canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(6)), Paint()..color = const Color(0xE6202833));
+    tp.paint(canvas, Offset(r.left + 6, r.top + 3));
+  }
+
+  void _paintMeasure(Canvas canvas, Size size) {
+    final mc = measure;
+    if (mc == null || (mc.done.isEmpty && mc.pending.isEmpty)) return;
+    final v = _View.of(model.bounds, size, yaw, pitch, zoom, pan);
+    final k = previewScale;
+    final line = Paint()
+      ..color = _measureColor
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    final dot = Paint()..color = Colors.white;
+    final ring = Paint()
+      ..color = _measureColor
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke;
+
+    void marker(P3 q) {
+      final o = v.p(q);
+      canvas.drawCircle(o, 5, dot);
+      canvas.drawCircle(o, 5, ring);
+    }
+
+    String mm(double x) => '${(x * k).toStringAsFixed(2).replaceAll('.', ',')} мм';
+
+    for (final m in mc.done) {
+      final pts = m.points;
+      switch (m.tool) {
+        case MeasureTool.distance:
+          canvas.drawLine(v.p(pts[0]), v.p(pts[1]), line);
+          _label(canvas, (v.p(pts[0]) + v.p(pts[1])) / 2, mm(m.distance));
+        case MeasureTool.circle:
+          final c = m.circle;
+          if (c != null) {
+            final u = (pts[0] - c.center).normalized;
+            final w = c.normal.cross(u);
+            final path = Path();
+            for (int i = 0; i <= 72; i++) {
+              final a = i / 72 * 2 * math.pi;
+              final q = c.center + u * (c.radius * math.cos(a)) + w * (c.radius * math.sin(a));
+              final o = v.p(q);
+              if (i == 0) {
+                path.moveTo(o.dx, o.dy);
+              } else {
+                path.lineTo(o.dx, o.dy);
+              }
+            }
+            canvas.drawPath(path, line);
+            canvas.drawCircle(v.p(c.center), 3, Paint()..color = _measureColor);
+            _label(canvas, v.p(c.center) + const Offset(0, -16), '⌀ ${mm(c.radius * 2)}');
+          }
+        case MeasureTool.angle:
+          canvas.drawLine(v.p(pts[1]), v.p(pts[0]), line);
+          canvas.drawLine(v.p(pts[1]), v.p(pts[2]), line);
+          _label(canvas, v.p(pts[1]) + const Offset(0, -18), '${m.angle.toStringAsFixed(1).replaceAll('.', ',')}°');
+        case MeasureTool.none:
+          break;
+      }
+      for (final q in pts) {
+        marker(q);
+      }
+    }
+    final pend = mc.pending;
+    for (int i = 0; i + 1 < pend.length; i++) {
+      canvas.drawLine(v.p(pend[i]), v.p(pend[i + 1]), line..color = _measureColor.withValues(alpha: 0.6));
+    }
+    line.color = _measureColor;
+    for (final q in pend) {
+      marker(q);
+    }
+  }
 
   /// Draws the sliced layers. Every layer is a flat slab: its darker copy at
   /// the bottom plane shows as the slab's edge, the normal copy at the top.
@@ -336,7 +552,11 @@ class _ModelPainter extends CustomPainter {
       _paintLayers(canvas, lm, scale, cx, cy, cyw, syw, cp, sp);
       return;
     }
+    _paintMesh(canvas, scale, cx, cy, cyw, syw, cp, sp);
+    _paintMeasure(canvas, size);
+  }
 
+  void _paintMesh(Canvas canvas, double scale, double cx, double cy, double cyw, double syw, double cp, double sp) {
     final tris = model.viewTris;
     final normals = model.viewNormals;
     final n = tris.length ~/ 9;
@@ -443,5 +663,6 @@ class _ModelPainter extends CustomPainter {
       old.gridColor != gridColor ||
       !identical(old.layers, layers) ||
       old.maxLayer != maxLayer ||
-      old.previewScale != previewScale;
+      old.previewScale != previewScale ||
+      !identical(old.measure, measure);
 }

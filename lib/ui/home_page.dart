@@ -13,6 +13,7 @@ import '../platform/updates.dart';
 import '../slicer/settings.dart';
 import '../slicer/slice_runner.dart';
 import '../slicer/slicer.dart';
+import '../viewer/measure.dart';
 import '../viewer/model_viewer.dart';
 import 'history_page.dart';
 import 'settings_sheet.dart';
@@ -45,6 +46,7 @@ class _HomePageState extends State<HomePage> {
   int _layer = 0;
   double? _manualHours; // print time of one copy entered by the user
   UpdateInfo? _update;
+  final MeasureController _measure = MeasureController();
 
   @override
   void initState() {
@@ -68,6 +70,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _debounce?.cancel();
     _job?.cancel();
+    _measure.dispose();
     super.dispose();
   }
 
@@ -98,6 +101,7 @@ class _HomePageState extends State<HomePage> {
         _sliceError = null;
         _manualHours = null;
         _layersView = false;
+        _measure.reset();
       });
       _slice();
     } catch (e) {
@@ -373,6 +377,7 @@ class _HomePageState extends State<HomePage> {
                 previewScale: k,
                 showLayers: layersMode,
                 maxLayer: layer,
+                measure: _measure,
               ),
             ),
           ),
@@ -405,6 +410,35 @@ class _HomePageState extends State<HomePage> {
               child: Text('${mm(b.sizeX)} × ${mm(b.sizeY)} × ${mm(b.sizeZ)} мм', style: theme.textTheme.labelMedium),
             ),
           ),
+          if (!layersMode)
+            Positioned(
+              right: 10,
+              top: 50,
+              child: AnimatedBuilder(
+                animation: _measure,
+                builder: (context, _) => _measure.active
+                    ? IconButton.filled(
+                        tooltip: 'Закрити вимірювання',
+                        onPressed: () => _measure.tool = MeasureTool.none,
+                        icon: const Icon(Icons.straighten),
+                      )
+                    : IconButton.filledTonal(
+                        tooltip: 'Вимірювання',
+                        onPressed: () => _measure.tool = MeasureTool.distance,
+                        icon: const Icon(Icons.straighten),
+                      ),
+              ),
+            ),
+          if (!layersMode)
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 8,
+              child: AnimatedBuilder(
+                animation: _measure,
+                builder: (context, _) => _measure.active ? _measurePanel(k) : const SizedBox.shrink(),
+              ),
+            ),
           if (layersMode)
             Positioned(
               left: 10,
@@ -480,6 +514,104 @@ class _HomePageState extends State<HomePage> {
           ]),
         ),
     ]);
+  }
+
+  String _measureText(Measurement m, double k) {
+    String mm(double v) => '${fmtNum(v * k, 2)} мм';
+    switch (m.tool) {
+      case MeasureTool.distance:
+        final d = m.delta;
+        return '${mm(m.distance)}   ΔX ${fmtNum(d.x.abs() * k, 2)} · ΔY ${fmtNum(d.y.abs() * k, 2)} · ΔZ ${fmtNum(d.z.abs() * k, 2)}';
+      case MeasureTool.circle:
+        final c = m.circle;
+        if (c == null) return 'Точки на одній прямій — коло не визначене';
+        return '⌀ ${mm(c.radius * 2)}   R ${mm(c.radius)}';
+      case MeasureTool.angle:
+        return '${fmtNum(m.angle, 1)}°';
+      case MeasureTool.none:
+        return '';
+    }
+  }
+
+  Widget _measurePanel(double k) {
+    final theme = Theme.of(context);
+    final mc = _measure;
+    final need = mc.tool.points;
+    String text;
+    if (mc.pending.isNotEmpty) {
+      text = 'Точка ${mc.pending.length + 1} з $need — торкніться моделі';
+    } else if (mc.done.isNotEmpty && mc.done.last.tool == mc.tool) {
+      text = _measureText(mc.done.last, k);
+    } else {
+      text = switch (mc.tool) {
+        MeasureTool.circle => 'Торкніться 3 точок на краю отвору чи дуги',
+        MeasureTool.angle => 'Торкніться 3 точок: кінець, вершина кута, кінець',
+        _ => 'Торкніться двох точок на моделі',
+      };
+    }
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.94),
+      borderRadius: BorderRadius.circular(12),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 6, 4, 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(children: [
+              Expanded(
+                child: SegmentedButton<MeasureTool>(
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  showSelectedIcon: false,
+                  segments: [
+                    for (final t in [MeasureTool.distance, MeasureTool.circle, MeasureTool.angle])
+                      ButtonSegment(value: t, label: Text(t.label)),
+                  ],
+                  selected: {mc.tool},
+                  onSelectionChanged: (v) => mc.tool = v.first,
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: mc.snap ? 'Прилипання до вершин: увімк.' : 'Прилипання до вершин: вимк.',
+                isSelected: mc.snap,
+                onPressed: () => mc.snap = !mc.snap,
+                icon: const Icon(Icons.filter_center_focus_outlined),
+                selectedIcon: Icon(Icons.filter_center_focus, color: theme.colorScheme.primary),
+              ),
+            ]),
+            Row(children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Text(
+                    text,
+                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                    maxLines: 2,
+                  ),
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Скасувати точку',
+                onPressed: mc.pending.isEmpty && mc.done.isEmpty ? null : mc.undo,
+                icon: const Icon(Icons.undo),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Очистити всі виміри',
+                onPressed: mc.pending.isEmpty && mc.done.isEmpty ? null : mc.clear,
+                icon: const Icon(Icons.delete_sweep_outlined),
+              ),
+            ]),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _panel(LoadedModel m) {

@@ -1,0 +1,143 @@
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
+
+/// Point in model coordinates (mm, relative to the model's bounding-box centre).
+class P3 {
+  final double x, y, z;
+
+  const P3(this.x, this.y, this.z);
+
+  P3 operator +(P3 o) => P3(x + o.x, y + o.y, z + o.z);
+  P3 operator -(P3 o) => P3(x - o.x, y - o.y, z - o.z);
+  P3 operator *(double k) => P3(x * k, y * k, z * k);
+
+  double dot(P3 o) => x * o.x + y * o.y + z * o.z;
+
+  P3 cross(P3 o) => P3(y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x);
+
+  double get length => math.sqrt(x * x + y * y + z * z);
+
+  P3 get normalized {
+    final l = length;
+    return l > 0 ? this * (1 / l) : this;
+  }
+}
+
+enum MeasureTool { none, distance, circle, angle }
+
+extension MeasureToolInfo on MeasureTool {
+  int get points => switch (this) {
+        MeasureTool.none => 0,
+        MeasureTool.distance => 2,
+        MeasureTool.circle => 3,
+        MeasureTool.angle => 3,
+      };
+
+  String get label => switch (this) {
+        MeasureTool.none => '',
+        MeasureTool.distance => 'Відстань',
+        MeasureTool.circle => 'Коло',
+        MeasureTool.angle => 'Кут',
+      };
+}
+
+class CircleFit {
+  final P3 center;
+  final double radius;
+  final P3 normal;
+
+  const CircleFit(this.center, this.radius, this.normal);
+}
+
+/// Circle through three points, or null when they are (almost) collinear.
+CircleFit? circleThrough(P3 p0, P3 p1, P3 p2) {
+  final a = p1 - p0, b = p2 - p0;
+  final n = a.cross(b);
+  final n2 = n.dot(n);
+  if (n2 < 1e-12 * math.max(1.0, a.dot(a) * b.dot(b))) return null;
+  final offset = (n.cross(a) * b.dot(b) + b.cross(n) * a.dot(a)) * (1 / (2 * n2));
+  final c = p0 + offset;
+  return CircleFit(c, offset.length, n.normalized);
+}
+
+/// Angle at [vertex] between the rays to [a] and [b], degrees.
+double angleAt(P3 a, P3 vertex, P3 b) {
+  final u = a - vertex, v = b - vertex;
+  final lu = u.length, lv = v.length;
+  if (lu < 1e-12 || lv < 1e-12) return 0;
+  final c = (u.dot(v) / (lu * lv)).clamp(-1.0, 1.0);
+  return math.acos(c) * 180 / math.pi;
+}
+
+class Measurement {
+  final MeasureTool tool;
+  final List<P3> points;
+
+  const Measurement(this.tool, this.points);
+
+  P3 get delta => points[1] - points[0];
+
+  double get distance => delta.length;
+
+  CircleFit? get circle => tool == MeasureTool.circle && points.length == 3 ? circleThrough(points[0], points[1], points[2]) : null;
+
+  double get angle => tool == MeasureTool.angle && points.length == 3 ? angleAt(points[0], points[1], points[2]) : 0;
+}
+
+/// Measuring state shared by the 3D view (taps, drawing) and the tool panel.
+class MeasureController extends ChangeNotifier {
+  MeasureTool _tool = MeasureTool.none;
+  bool _snap = true;
+  final List<P3> pending = [];
+  final List<Measurement> done = [];
+
+  MeasureTool get tool => _tool;
+  bool get active => _tool != MeasureTool.none;
+  bool get snap => _snap;
+
+  set tool(MeasureTool t) {
+    if (t == _tool) return;
+    _tool = t;
+    pending.clear();
+    notifyListeners();
+  }
+
+  set snap(bool v) {
+    _snap = v;
+    notifyListeners();
+  }
+
+  void add(P3 p) {
+    if (!active) return;
+    pending.add(p);
+    if (pending.length >= _tool.points) {
+      done.add(Measurement(_tool, List.of(pending)));
+      pending.clear();
+    }
+    notifyListeners();
+  }
+
+  void undo() {
+    if (pending.isNotEmpty) {
+      pending.removeLast();
+    } else if (done.isNotEmpty) {
+      done.removeLast();
+    }
+    notifyListeners();
+  }
+
+  void clear() {
+    pending.clear();
+    done.clear();
+    notifyListeners();
+  }
+
+  /// Forget everything (new model loaded).
+  void reset() {
+    pending.clear();
+    done.clear();
+    _tool = MeasureTool.none;
+    notifyListeners();
+  }
+}
