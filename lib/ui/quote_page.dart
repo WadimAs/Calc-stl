@@ -123,7 +123,7 @@ class _QuotePageState extends State<QuotePage> {
         padding: const EdgeInsets.all(16),
         children: [
           SegmentedButton<bool>(
-            segments: const [
+            segments: [
               ButtonSegment(value: false, label: Text(tr('Пропозиція')), icon: Icon(Icons.request_quote_outlined)),
               ButtonSegment(value: true, label: Text(tr('Рахунок')), icon: Icon(Icons.receipt_long_outlined)),
             ],

@@ -310,7 +310,7 @@ class _PrinterPageState extends State<PrinterPage> {
               if (v == 'edit') _edit();
               if (v == 'del') _delete();
             },
-            itemBuilder: (_) => const [
+            itemBuilder: (_) => [
               PopupMenuItem(value: 'edit', child: Text(tr('Змінити'))),
               PopupMenuItem(value: 'del', child: Text(tr('Видалити'))),
             ],

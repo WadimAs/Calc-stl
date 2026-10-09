@@ -240,7 +240,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
         if (s.supportsEnabled) ...[
           _withReset(
             SegmentedButton<String>(
-              segments: const [
+              segments: [
                 ButtonSegment(value: 'normal', label: Text(tr('Звичайні')), icon: Icon(Icons.view_column_outlined)),
                 ButtonSegment(value: 'tree', label: Text(tr('Деревоподібні')), icon: Icon(Icons.park_outlined)),
               ],
@@ -253,7 +253,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
           const SizedBox(height: 8),
           _withReset(
             SegmentedButton<bool>(
-              segments: const [
+              segments: [
                 ButtonSegment(value: false, label: Text(tr('Скрізь'))),
                 ButtonSegment(value: true, label: Text(tr('Лише від столу'))),
               ],
@@ -491,7 +491,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
         const SizedBox(height: 6),
         SegmentedButton<double>(
           showSelectedIcon: false,
-          segments: const [
+          segments: [
             ButtonSegment(value: 0, label: Text(tr('Ні'))),
             ButtonSegment(value: 1, label: Text('1')),
             ButtonSegment(value: 5, label: Text('5')),
@@ -684,7 +684,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
         const SizedBox(height: 8),
         _withReset(
           SegmentedButton<double>(
-            segments: const [
+            segments: [
               ButtonSegment(value: 1.75, label: Text(tr('1,75 мм'))),
               ButtonSegment(value: 2.85, label: Text(tr('2,85 мм'))),
             ],

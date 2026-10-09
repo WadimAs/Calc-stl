@@ -1207,7 +1207,7 @@ class _HomePageState extends State<HomePage> {
             child: SegmentedButton<bool>(
               style: const ButtonStyle(visualDensity: VisualDensity.compact),
               showSelectedIcon: false,
-              segments: const [
+              segments: [
                 ButtonSegment(value: false, label: Text(tr('Модель')), icon: Icon(Icons.view_in_ar_outlined)),
                 ButtonSegment(value: true, label: Text(tr('Шари')), icon: Icon(Icons.layers_outlined)),
               ],
@@ -2253,7 +2253,7 @@ class _HomePageState extends State<HomePage> {
             ),
             if (s.supportsEnabled)
               SegmentedButton<String>(
-                segments: const [
+                segments: [
                   ButtonSegment(value: 'normal', label: Text(tr('Звичайні')), icon: Icon(Icons.view_column_outlined)),
                   ButtonSegment(value: 'tree', label: Text(tr('Деревоподібні')), icon: Icon(Icons.park_outlined)),
                 ],
