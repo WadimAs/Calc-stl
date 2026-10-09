@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'weld.dart';
+
 /// A round hole whose axis is parallel to X, Y or Z.
 class HoleFeature {
   final int axis; // 0 = X, 1 = Y, 2 = Z
@@ -86,46 +88,16 @@ List<HoleFeature> findHoles(Float32List t, {bool inverted = false, int maxSlices
 
   final lo = [double.infinity, double.infinity, double.infinity];
   final hi = [-double.infinity, -double.infinity, -double.infinity];
-  double maxAbs = 0;
   for (int i = 0; i < nv0; i++) {
     for (int a = 0; a < 3; a++) {
       final v = t[i * 3 + a];
       if (v < lo[a]) lo[a] = v;
       if (v > hi[a]) hi[a] = v;
-      if (v.abs() > maxAbs) maxAbs = v.abs();
     }
   }
 
   // Weld vertices so contour pieces can be chained through shared edges.
-  // |v·q| ≤ 2^19 keeps every packed 21-bit field positive and the key below 2^63.
-  final q = math.min(1000.0, (1 << 19) / math.max(1e-9, maxAbs));
-  const off = 1 << 20;
-  final keys = Int64List(nv0);
-  for (int i = 0; i < nv0; i++) {
-    final ix = (t[i * 3] * q).round() + off;
-    final iy = (t[i * 3 + 1] * q).round() + off;
-    final iz = (t[i * 3 + 2] * q).round() + off;
-    keys[i] = (ix << 42) | (iy << 21) | iz;
-  }
-  final sorted = Int64List.fromList(keys)..sort();
-  int nv = 0;
-  for (int i = 0; i < nv0; i++) {
-    if (nv == 0 || sorted[i] != sorted[nv - 1]) sorted[nv++] = sorted[i];
-  }
-  final vid = Int32List(nv0);
-  for (int i = 0; i < nv0; i++) {
-    final k = keys[i];
-    int a = 0, b = nv - 1;
-    while (a < b) {
-      final m = (a + b) >> 1;
-      if (sorted[m] < k) {
-        a = m + 1;
-      } else {
-        b = m;
-      }
-    }
-    vid[i] = a;
-  }
+  final (vid, nv) = weldVertices(t);
 
   final flip = inverted ? -1.0 : 1.0;
   final nrm = Float64List(n * 3);

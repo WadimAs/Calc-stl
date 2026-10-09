@@ -75,11 +75,25 @@ class Bounds {
   }
 }
 
+/// A named part of a mesh: triangles [start, end).
+class MeshObject {
+  final String name;
+  final int start;
+  final int end;
+
+  const MeshObject(this.name, this.start, this.end);
+
+  int get triangles => end - start;
+}
+
 /// Triangle soup: 9 floats (3 vertices x XYZ, millimetres) per triangle.
 class Mesh {
   final Float32List tris;
 
-  const Mesh(this.tris);
+  /// Separate objects (3MF build items); empty means one object.
+  final List<MeshObject> objects;
+
+  const Mesh(this.tris, [this.objects = const []]);
 
   int get triangleCount => tris.length ~/ 9;
 

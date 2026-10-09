@@ -48,6 +48,7 @@ class _Ref {
 }
 
 class _Obj {
+  String? name;
   Float32List? verts;
   Int32List? idx;
   final List<_Ref> comps = [];
@@ -235,7 +236,7 @@ _ModelFile _parseModel(String s) {
           cur = null;
           curId = null;
         } else {
-          cur = _Obj();
+          cur = _Obj()..name = a['name'];
           curId = a['id'];
         }
         verts = null;
@@ -356,18 +357,39 @@ Mesh parse3mf(Uint8List bytes) {
     }
   }
 
+  // Bambu/Orca keep object names in model_settings.config.
+  final settingsNames = <String, String>{};
+  final ms = byLower['metadata/model_settings.config'];
+  if (ms != null) {
+    final text = utf8.decode(zip.read(ms), allowMalformed: true);
+    for (final m in RegExp(r'<object\s+id="([^"]+)"\s*>([\s\S]*?)</object>').allMatches(text)) {
+      final name = RegExp(r'<metadata\s+key="name"\s+value="([^"]*)"').firstMatch(m.group(2)!)?.group(1);
+      if (name != null && name.isNotEmpty) settingsNames[m.group(1)!] = name;
+    }
+  }
+  final objects = <MeshObject>[];
+  void emitObject(String fileKey, String id, Transform3 t) {
+    final start = out.length ~/ 9;
+    emit(fileKey, id, t, 0);
+    final end = out.length ~/ 9;
+    if (end > start) {
+      final name = settingsNames[id] ?? load(fileKey)?.objects[id]?.name ?? 'Об\'єкт ${objects.length + 1}';
+      objects.add(MeshObject(name, start, end));
+    }
+  }
+
   if (rootModel.build.isNotEmpty) {
     for (final item in rootModel.build) {
       final key = item.path != null ? _norm(item.path!) : rootKey;
-      emit(key, item.id, item.t, 0);
+      emitObject(key, item.id, item.t);
     }
   } else {
     for (final id in rootModel.objectOrder) {
-      emit(rootKey, id, _identity, 0);
+      emitObject(rootKey, id, _identity);
     }
   }
 
   final tris = out.toList();
   if (tris.isEmpty) throw const FormatException('3MF не містить трикутників');
-  return Mesh(tris);
+  return Mesh(tris, objects.length > 1 ? objects : const []);
 }

@@ -44,6 +44,9 @@ class PrinterProfile {
   /// Typical average consumption, W.
   final double powerW;
 
+  /// Build volume, mm.
+  final double bedX, bedY, bedZ;
+
   const PrinterProfile({
     required this.id,
     required this.brand,
@@ -58,6 +61,9 @@ class PrinterProfile {
     required this.accelFactor,
     required this.startMinutes,
     required this.powerW,
+    required this.bedX,
+    required this.bedY,
+    required this.bedZ,
   });
 
   String get fullName => '$brand $name';
@@ -78,6 +84,7 @@ PrinterProfile _p(
   String name,
   ({double outer, double inner, double sparse, double solid, double support, double first}) v, {
   required double power,
+  required (double, double, double) bed,
   double layer = 2.5,
   double accel = 1.6,
   double start = 4,
@@ -96,27 +103,60 @@ PrinterProfile _p(
       accelFactor: accel,
       startMinutes: start,
       powerW: power,
+      bedX: bed.$1,
+      bedY: bed.$2,
+      bedZ: bed.$3,
     );
 
 final printers = <PrinterProfile>[
-  _p('bambu', 'Bambu Lab', 'X1 / P1 / H2D', _fastCoreXY, power: 140),
-  _p('bambu_a1', 'Bambu Lab', 'A1 / A1 mini', _fastCoreXY, power: 95, accel: 1.7),
-  _p('creality_k1', 'Creality', 'K1 / K1C / K1 Max / K2', _fastCoreXY, power: 180, accel: 1.7),
-  _p('creality_v3', 'Creality', 'Ender-3 V3 / V3 KE / V3 Plus', _fastSlinger, power: 130),
-  _p('creality_v3se', 'Creality', 'Ender-3 V3 SE / Ender-5 S1', _mid, power: 120, accel: 1.5),
-  _p('creality_classic', 'Creality', 'Ender-3 / V2 / S1 / CR-10', _classic, power: 120, layer: 1.5, accel: 1.15, start: 5),
-  _p('anycubic_s1', 'Anycubic', 'Kobra S1', _fastCoreXY, power: 150, accel: 1.7),
-  _p('anycubic_k3', 'Anycubic', 'Kobra 3 / Kobra 2 Pro / Max', _fastSlinger, power: 140),
-  _p('anycubic_k2', 'Anycubic', 'Kobra 2 / Kobra 2 Neo', _mid, power: 130, accel: 1.5),
-  _p('anycubic_classic', 'Anycubic', 'Kobra / Vyper / i3 Mega', _classic, power: 120, layer: 1.5, accel: 1.15, start: 5),
-  _p('elegoo_cc', 'Elegoo', 'Centauri Carbon', _fastCoreXY, power: 150, accel: 1.7),
-  _p('elegoo_n4', 'Elegoo', 'Neptune 4 / 4 Pro / 4 Plus / 4 Max', _fastSlinger, power: 150),
-  _p('elegoo_n3', 'Elegoo', 'Neptune 3 / 3 Pro / 3 Plus / 3 Max', _classic, power: 120, layer: 1.5, accel: 1.15, start: 5),
-  _p('prusa_mk4', 'Prusa', 'MK4 / MK4S / Core One', _mid, power: 110, accel: 1.5),
-  _p('prusa_mk3', 'Prusa', 'MK3S / MK3S+', _classic, power: 100, layer: 1.5, accel: 1.15, start: 5),
-  _p('klipper', 'Інші', 'Швидкий Klipper (Voron тощо)', _fastSlinger, power: 160, layer: 2, accel: 1.5),
-  _p('classic', 'Інші', 'Класичний Marlin', _classic, power: 120, layer: 1.5, accel: 1.15, start: 5),
+  _p('bambu', 'Bambu Lab', 'X1 / P1 / P2S', _fastCoreXY, power: 140, bed: (256, 256, 256)),
+  _p('bambu_h2d', 'Bambu Lab', 'H2D / H2S', _fastCoreXY, power: 200, bed: (325, 320, 325)),
+  _p('bambu_a1', 'Bambu Lab', 'A1', _fastCoreXY, power: 95, accel: 1.7, bed: (256, 256, 256)),
+  _p('bambu_a1mini', 'Bambu Lab', 'A1 mini', _fastCoreXY, power: 80, accel: 1.7, bed: (180, 180, 180)),
+  _p('creality_k1', 'Creality', 'K1 / K1C / K1 SE', _fastCoreXY, power: 180, accel: 1.7, bed: (220, 220, 250)),
+  _p('creality_k1max', 'Creality', 'K1 Max / K2 Plus', _fastCoreXY, power: 220, accel: 1.7, bed: (300, 300, 300)),
+  _p('creality_v3', 'Creality', 'Ender-3 V3 / V3 KE', _fastSlinger, power: 130, bed: (220, 220, 240)),
+  _p('creality_v3plus', 'Creality', 'Ender-3 V3 Plus', _fastSlinger, power: 160, bed: (300, 300, 330)),
+  _p('creality_v3se', 'Creality', 'Ender-3 V3 SE / Ender-5 S1', _mid, power: 120, accel: 1.5, bed: (220, 220, 250)),
+  _p('creality_classic', 'Creality', 'Ender-3 / V2 / S1 / CR-10', _classic,
+      power: 120, layer: 1.5, accel: 1.15, start: 5, bed: (220, 220, 250)),
+  _p('anycubic_s1', 'Anycubic', 'Kobra S1', _fastCoreXY, power: 150, accel: 1.7, bed: (250, 250, 250)),
+  _p('anycubic_k3', 'Anycubic', 'Kobra 3 / Kobra 2 Pro', _fastSlinger, power: 140, bed: (250, 250, 260)),
+  _p('anycubic_k3max', 'Anycubic', 'Kobra 3 Max / Kobra 2 Max', _fastSlinger, power: 200, bed: (420, 420, 500)),
+  _p('anycubic_k2', 'Anycubic', 'Kobra 2 / Kobra 2 Neo', _mid, power: 130, accel: 1.5, bed: (220, 220, 250)),
+  _p('anycubic_classic', 'Anycubic', 'Kobra / Vyper / i3 Mega', _classic,
+      power: 120, layer: 1.5, accel: 1.15, start: 5, bed: (220, 220, 250)),
+  _p('elegoo_cc', 'Elegoo', 'Centauri Carbon', _fastCoreXY, power: 150, accel: 1.7, bed: (256, 256, 256)),
+  _p('elegoo_n4', 'Elegoo', 'Neptune 4 / 4 Pro', _fastSlinger, power: 150, bed: (225, 225, 265)),
+  _p('elegoo_n4max', 'Elegoo', 'Neptune 4 Plus / 4 Max', _fastSlinger, power: 200, bed: (320, 320, 385)),
+  _p('elegoo_n3', 'Elegoo', 'Neptune 3 / 3 Pro / Plus / Max', _classic,
+      power: 120, layer: 1.5, accel: 1.15, start: 5, bed: (220, 220, 280)),
+  _p('prusa_mk4', 'Prusa', 'MK4 / MK4S', _mid, power: 110, accel: 1.5, bed: (250, 210, 220)),
+  _p('prusa_core', 'Prusa', 'Core One', _mid, power: 130, accel: 1.5, bed: (250, 220, 270)),
+  _p('prusa_mk3', 'Prusa', 'MK3S / MK3S+', _classic, power: 100, layer: 1.5, accel: 1.15, start: 5, bed: (250, 210, 210)),
+  _p('klipper', 'Інші', 'Швидкий Klipper (Voron тощо)', _fastSlinger,
+      power: 160, layer: 2, accel: 1.5, bed: (300, 300, 300)),
+  _p('classic', 'Інші', 'Класичний Marlin', _classic, power: 120, layer: 1.5, accel: 1.15, start: 5, bed: (220, 220, 250)),
 ];
+
+/// A quantity discount: from [qty] pieces, [percent] off.
+class QtyDiscount {
+  final int qty;
+  final double percent;
+
+  const QtyDiscount(this.qty, this.percent);
+
+  List<num> toJson() => [qty, percent];
+}
+
+/// Discount percent for [copies] pieces under [tiers].
+double discountFor(List<QtyDiscount> tiers, int copies) {
+  double best = 0;
+  for (final t in tiers) {
+    if (copies >= t.qty && t.percent > best) best = t.percent;
+  }
+  return best;
+}
 
 List<String> get printerBrands => [
       for (final p in printers)
@@ -180,6 +220,22 @@ class SliceSettings {
   /// Price from the slicer's exact numbers when a sliced file has them.
   final bool preferSlicerData;
 
+  /// Full interface with every option; false = simplified.
+  final bool advancedUi;
+
+  // Bed adhesion (added to the weight of the first layer).
+  final double brimWidth; // mm, 0 = off
+  final int skirtLoops; // 0 = off
+
+  // Pricing rules.
+  final double failurePercent; // added to the cost price for failed prints
+  final double minOrderPrice;
+  final double roundTo; // 0 = no rounding
+  final List<QtyDiscount> discounts;
+
+  /// Build volume override (0 = printer profile's).
+  final double bedX, bedY, bedZ;
+
   const SliceSettings({
     this.layerHeight = 0.2,
     this.firstLayerHeight = 0.2,
@@ -212,7 +268,23 @@ class SliceSettings {
     this.timeSamples = const {},
     this.autoApplyFileSettings = false,
     this.preferSlicerData = true,
+    this.advancedUi = false,
+    this.brimWidth = 0,
+    this.skirtLoops = 0,
+    this.failurePercent = 0,
+    this.minOrderPrice = 0,
+    this.roundTo = 0,
+    this.discounts = const [],
+    this.bedX = 0,
+    this.bedY = 0,
+    this.bedZ = 0,
   });
+
+  /// Build volume in use: override or the printer profile's.
+  (double, double, double) get bed {
+    final p = printerById(printerId);
+    return (bedX > 0 ? bedX : p.bedX, bedY > 0 ? bedY : p.bedY, bedZ > 0 ? bedZ : p.bedZ);
+  }
 
   double get timeFactor => timeFactors[printerId] ?? 1;
 
@@ -284,6 +356,16 @@ class SliceSettings {
     Map<String, int>? timeSamples,
     bool? autoApplyFileSettings,
     bool? preferSlicerData,
+    bool? advancedUi,
+    double? brimWidth,
+    int? skirtLoops,
+    double? failurePercent,
+    double? minOrderPrice,
+    double? roundTo,
+    List<QtyDiscount>? discounts,
+    double? bedX,
+    double? bedY,
+    double? bedZ,
   }) {
     return SliceSettings(
       layerHeight: layerHeight ?? this.layerHeight,
@@ -317,13 +399,23 @@ class SliceSettings {
       timeSamples: timeSamples ?? this.timeSamples,
       autoApplyFileSettings: autoApplyFileSettings ?? this.autoApplyFileSettings,
       preferSlicerData: preferSlicerData ?? this.preferSlicerData,
+      advancedUi: advancedUi ?? this.advancedUi,
+      brimWidth: brimWidth ?? this.brimWidth,
+      skirtLoops: skirtLoops ?? this.skirtLoops,
+      failurePercent: failurePercent ?? this.failurePercent,
+      minOrderPrice: minOrderPrice ?? this.minOrderPrice,
+      roundTo: roundTo ?? this.roundTo,
+      discounts: discounts ?? this.discounts,
+      bedX: bedX ?? this.bedX,
+      bedY: bedY ?? this.bedY,
+      bedZ: bedZ ?? this.bedZ,
     );
   }
 
   /// Settings that change the slice geometry (copies, material, prices do not).
   String get geometryKey => '$layerHeight|$firstLayerHeight|$lineWidth|$walls|$topLayers|$bottomLayers|'
       '$infillPercent|$scalePercent|$supportsEnabled|$supportPlateOnly|$supportType|$supportAngle|$supportDensity|'
-      '$ensureVerticalShell';
+      '$ensureVerticalShell|$brimWidth|$skirtLoops';
 
   Map<String, dynamic> toJson() => {
         'layerHeight': layerHeight,
@@ -357,6 +449,16 @@ class SliceSettings {
         'timeSamples': timeSamples,
         'autoApplyFileSettings': autoApplyFileSettings,
         'preferSlicerData': preferSlicerData,
+        'advancedUi': advancedUi,
+        'brimWidth': brimWidth,
+        'skirtLoops': skirtLoops,
+        'failurePercent': failurePercent,
+        'minOrderPrice': minOrderPrice,
+        'roundTo': roundTo,
+        'discounts': [for (final d in discounts) d.toJson()],
+        'bedX': bedX,
+        'bedY': bedY,
+        'bedZ': bedZ,
         'v': 2,
       };
 
@@ -408,6 +510,21 @@ class SliceSettings {
       timeSamples: _intMap(j['timeSamples']),
       autoApplyFileSettings: flag('autoApplyFileSettings', d.autoApplyFileSettings),
       preferSlicerData: flag('preferSlicerData', d.preferSlicerData),
+      advancedUi: flag('advancedUi', d.advancedUi),
+      brimWidth: dbl('brimWidth', d.brimWidth),
+      skirtLoops: integer('skirtLoops', d.skirtLoops),
+      failurePercent: dbl('failurePercent', d.failurePercent),
+      minOrderPrice: dbl('minOrderPrice', d.minOrderPrice),
+      roundTo: dbl('roundTo', d.roundTo),
+      discounts: [
+        if (j['discounts'] is List)
+          for (final e in j['discounts'] as List)
+            if (e is List && e.length >= 2 && e[0] is num && e[1] is num)
+              QtyDiscount((e[0] as num).toInt(), (e[1] as num).toDouble()),
+      ],
+      bedX: dbl('bedX', d.bedX),
+      bedY: dbl('bedY', d.bedY),
+      bedZ: dbl('bedZ', d.bedZ),
     );
   }
 }
@@ -460,15 +577,20 @@ double estimatePrintSeconds({
   return moving * p.accelFactor + layers * p.layerSeconds;
 }
 
-/// Cost price (plastic + electricity + amortization) and the selling price.
+/// Cost price (plastic + electricity + amortization + failures) and the
+/// selling price with profit, quantity discount and per-order extras.
 class CostBreakdown {
   final double grams; // all copies, model + supports
   final double hours; // all copies
   final double material;
   final double electricity;
   final double amortization;
+  final double failure; // reserve for failed prints
   final double profit; // markup on the cost price
-  final double extra;
+  final double discount; // quantity discount
+  final double extra; // per-order surcharge
+  final double minimumAdd; // up to the minimum order price
+  final double rounding;
 
   const CostBreakdown({
     required this.grams,
@@ -476,29 +598,66 @@ class CostBreakdown {
     required this.material,
     required this.electricity,
     required this.amortization,
+    this.failure = 0,
     required this.profit,
+    this.discount = 0,
     required this.extra,
+    this.minimumAdd = 0,
+    this.rounding = 0,
   });
 
-  double get costPrice => material + electricity + amortization;
+  double get costPrice => material + electricity + amortization + failure;
 
-  double get price => costPrice + profit + extra;
+  /// Price of the parts alone (before per-order extras).
+  double get itemPrice => costPrice + profit - discount;
 
-  static CostBreakdown of(double gramsAllCopies, double hoursAllCopies, SliceSettings s) {
+  double get price => itemPrice + extra + minimumAdd + rounding;
+
+  /// [copies] only selects the quantity discount; [orderExtras] adds the
+  /// surcharge, minimum price and rounding (off for items inside an order).
+  static CostBreakdown of(double gramsAllCopies, double hoursAllCopies, SliceSettings s,
+      {int copies = 1, bool orderExtras = true}) {
     final material = gramsAllCopies * s.pricePerKg / 1000.0;
     final electricity = hoursAllCopies * s.powerW / 1000.0 * s.tariff;
     final amortization = hoursAllCopies * s.amortizationPerHour;
-    final cost = material + electricity + amortization;
+    final failure = (material + electricity + amortization) * s.failurePercent / 100.0;
+    final cost = material + electricity + amortization + failure;
+    final profit = cost * s.markupPercent / 100.0;
+    final discount = (cost + profit) * discountFor(s.discounts, copies) / 100.0;
+    final items = cost + profit - discount;
+    final extra = orderExtras ? s.extraCost : 0.0;
+    final fin = finishPrice(items + extra, s, apply: orderExtras);
     return CostBreakdown(
       grams: gramsAllCopies,
       hours: hoursAllCopies,
       material: material,
       electricity: electricity,
       amortization: amortization,
-      profit: cost * s.markupPercent / 100.0,
-      extra: s.extraCost,
+      failure: failure,
+      profit: profit,
+      discount: discount,
+      extra: extra,
+      minimumAdd: fin.$1,
+      rounding: fin.$2,
     );
   }
+}
+
+/// Minimum price and rounding for a subtotal: (minimum add-on, rounding add-on).
+(double, double) finishPrice(double subtotal, SliceSettings s, {bool apply = true}) {
+  if (!apply) return (0, 0);
+  return finishPriceRaw(subtotal, s.minOrderPrice, s.roundTo);
+}
+
+(double, double) finishPriceRaw(double subtotal, double minPrice, double roundTo) {
+  final minAdd = subtotal < minPrice ? minPrice - subtotal : 0.0;
+  final p = subtotal + minAdd;
+  double round = 0;
+  if (roundTo > 0 && p > 0) {
+    final r = (p / roundTo - 1e-9).ceil() * roundTo;
+    round = r - p;
+  }
+  return (minAdd, round);
 }
 
 extension SliceSettingsDefaults on SliceSettings {
@@ -514,7 +673,7 @@ extension SliceSettingsDefaults on SliceSettings {
 
   /// Everything back to defaults; prices and calibration kept unless [prices].
   SliceSettings resetAll({bool prices = false}) {
-    const d = SliceSettings();
+    final d = const SliceSettings().copyWith(advancedUi: advancedUi);
     return prices
         ? d
         : d.copyWith(

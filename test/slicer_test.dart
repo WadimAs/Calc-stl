@@ -7,6 +7,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:stl_weight/history/history.dart';
 import 'package:stl_weight/mesh/holes.dart';
 import 'package:stl_weight/mesh/loader.dart';
+import 'package:stl_weight/mesh/mesh_check.dart';
+import 'package:stl_weight/mesh/transform.dart';
+import 'package:stl_weight/orders/orders.dart';
+import 'package:stl_weight/spools/spools.dart';
 import 'package:stl_weight/mesh/slicer_project.dart';
 import 'package:stl_weight/mesh/mesh.dart';
 import 'package:stl_weight/mesh/stl_parser.dart';
@@ -503,13 +507,13 @@ void main() {
       expect(p.density, 1.26);
       expect(p.lineWidth, 0.45);
       expect(p.materialId, 'PLA');
-      expect(p.printerId, 'bambu_a1');
+      expect(p.printerId, 'bambu_a1mini');
       expect(p.isSliced, isFalse);
       final s = p.applyTo(const SliceSettings());
       expect(s.walls, 6);
       expect(s.infillPercent, 25);
       expect(s.density, 1.26);
-      expect(s.printerId, 'bambu_a1');
+      expect(s.printerId, 'bambu_a1mini');
       expect(s.supportsEnabled, isFalse);
       expect(p.describe(), isNotEmpty);
     });
@@ -595,4 +599,160 @@ void main() {
       expect(s.resetAll().weightFactor, closeTo(1.15, 1e-9));
     });
   });
+
+  group('geometry tools', () {
+    test('mesh check: watertight, holes, flipped faces, shells', () {
+      final ok = checkMesh(box(10, 10, 10));
+      expect(ok.isWatertight, isTrue);
+      expect(ok.hasProblems, isFalse);
+      expect(ok.shells, 1);
+
+      final open = Float32List.fromList(box(10, 10, 10).sublist(9));
+      final r = checkMesh(open);
+      expect(r.openEdges, 3);
+      expect(r.hasProblems, isTrue);
+
+      final flipped = Float32List.fromList(box(10, 10, 10));
+      for (int k = 0; k < 3; k++) {
+        final t = flipped[3 + k];
+        flipped[3 + k] = flipped[6 + k];
+        flipped[6 + k] = t;
+      }
+      expect(checkMesh(flipped).flippedEdges, 3);
+
+      final two = Float32List.fromList([...box(5, 5, 5), ...box(5, 5, 5, 20, 0, 0)]);
+      expect(checkMesh(two).shells, 2);
+    });
+
+    test('rotations and lay flat', () {
+      for (final n in [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.3, -0.5, 0.8), (0.0, 0.0, 1.0), (0.0, 0.0, -1.0)]) {
+        final m = rotateToDown(n.$1, n.$2, n.$3);
+        final l = math.sqrt(n.$1 * n.$1 + n.$2 * n.$2 + n.$3 * n.$3);
+        final z = (m[6] * n.$1 + m[7] * n.$2 + m[8] * n.$3) / l;
+        expect(z, closeTo(-1, 1e-9));
+      }
+      final r = mul3(rot90(2), mul3(rot90(2), mul3(rot90(2), rot90(2))));
+      expect(isIdentity(r), isTrue);
+
+      // A standing 5×5×40 bar is laid down on a long face.
+      final bar = box(5, 5, 40);
+      final m = autoOrient(bar);
+      final b = Bounds.of(applyMat3(bar, m));
+      expect(b.sizeZ, closeTo(5, 1e-4));
+    });
+
+    test('brim and skirt add first-layer plastic', () {
+      final plain = sliceMesh(box(20, 20, 4), const SliceSettings());
+      final brim = sliceMesh(box(20, 20, 4), const SliceSettings(brimWidth: 5));
+      expect(plain.brimVolumeMm3, 0);
+      // 4·20·5 + π·5² ≈ 478.5 mm² × 0.2 mm
+      expect(brim.brimVolumeMm3, closeTo(95.7, 95.7 * 0.12));
+      expect(brim.volumeMm3, closeTo(plain.volumeMm3, plain.volumeMm3 * 0.01));
+      expect(brim.preview!.classes.contains(SliceClass.adhesion), isTrue);
+      final skirt = sliceMesh(box(20, 20, 4), const SliceSettings(skirtLoops: 1));
+      // ring at ~2.2 mm: (80 + 2π·2.2) × 0.42 × 0.2
+      expect(skirt.brimVolumeMm3, closeTo(7.9, 7.9 * 0.3));
+    });
+
+    test('3MF objects: names, selection, rotation', () async {
+      const model = '<?xml version="1.0" encoding="UTF-8"?>\n'
+          '<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n'
+          ' <resources>'
+          '<object id="1" name="Кубик" type="model"><mesh><vertices>'
+          '<vertex x="0" y="0" z="0"/><vertex x="10" y="0" z="0"/><vertex x="0" y="10" z="0"/><vertex x="0" y="0" z="10"/>'
+          '</vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="1" v3="3"/>'
+          '<triangle v1="0" v2="3" v3="2"/><triangle v1="1" v2="2" v3="3"/></triangles></mesh></object>'
+          '<object id="2" name="Друга" type="model"><mesh><vertices>'
+          '<vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="20"/>'
+          '</vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="1" v3="3"/>'
+          '<triangle v1="0" v2="3" v3="2"/><triangle v1="1" v2="2" v3="3"/></triangles></mesh></object>'
+          '</resources>\n <build><item objectid="1"/><item objectid="2" transform="1 0 0 0 1 0 0 0 1 50 0 0"/></build>\n</model>';
+      final m = await loadModel('two.3mf', zip({'3D/3dmodel.model': model}));
+      expect(m.source.objects.length, 2);
+      expect(m.source.objects.first.name, 'Кубик');
+      expect(m.mesh.triangleCount, 8);
+      final only = await deriveModel(m, enabled: [false, true]);
+      expect(only.mesh.triangleCount, 4);
+      expect(only.bounds.sizeX, closeTo(20, 1e-4));
+      final turned = await deriveModel(only, rotation: rot90(0));
+      expect(turned.bounds.sizeY, closeTo(20, 1e-4));
+      expect(turned.mesh.signedVolume(), closeTo(only.mesh.signedVolume(), 1e-3));
+    });
+  });
+
+  group('business', () {
+    test('pricing rules: failure, discount, minimum, rounding', () {
+      const s = SliceSettings(
+        pricesPerKg: {'PLA': 1000},
+        powerW: 0,
+        amortizationPerHour: 0,
+        failurePercent: 10,
+        markupPercent: 100,
+        discounts: [QtyDiscount(5, 10), QtyDiscount(10, 20)],
+        extraCost: 0,
+        minOrderPrice: 0,
+        roundTo: 5,
+      );
+      final c = CostBreakdown.of(100, 1, s, copies: 10);
+      expect(c.material, closeTo(100, 1e-9));
+      expect(c.failure, closeTo(10, 1e-9));
+      expect(c.costPrice, closeTo(110, 1e-9));
+      expect(c.profit, closeTo(110, 1e-9));
+      expect(c.discount, closeTo(44, 1e-9)); // 20 % of 220
+      expect(c.price, closeTo(180, 1e-9)); // 176 rounded up to 5
+      final small = CostBreakdown.of(1, 0.1, s.copyWith(minOrderPrice: 50));
+      expect(small.price, closeTo(50, 1e-9));
+      expect(discountFor(s.discounts, 7), 10);
+    });
+
+    test('order totals and JSON', () {
+      final o = Order(
+        id: 'o1',
+        createdAt: DateTime(2026, 10, 9),
+        client: 'Іван',
+        extraCost: 20,
+        roundTo: 50,
+        discounts: const [QtyDiscount(3, 10)],
+        items: const [
+          OrderItem(
+            id: 'i1',
+            name: 'a.stl',
+            material: 'PLA',
+            materialId: 'PLA',
+            qty: 3,
+            gramsEach: 10,
+            hoursEach: 0.5,
+            costEach: 40,
+            priceEach: 100,
+          ),
+        ],
+      );
+      final t = o.totals;
+      expect(t.subtotal, 300);
+      expect(t.discount, closeTo(30, 1e-9));
+      expect(t.total, closeTo(300, 1e-9)); // 290 → 300
+      expect(t.cost, 120);
+      expect(t.profit, closeTo(180, 1e-9));
+      expect(t.grams, 30);
+      final back = Order.fromJson(jsonDecode(jsonEncode(o.toJson())))!;
+      expect(back.totals.total, closeTo(300, 1e-9));
+      expect(back.client, 'Іван');
+      expect(OrderStatus.done.printed, isTrue);
+
+      final sp = Spool(
+        id: 's1',
+        materialId: 'PETG',
+        name: 'Bambu',
+        colorArgb: 0xFF000000,
+        totalGrams: 1000,
+        remainingGrams: 120,
+        createdAt: _epoch,
+      );
+      final sb = Spool.fromJson(jsonDecode(jsonEncode(sp.toJson())))!;
+      expect(sb.remainingGrams, 120);
+      expect(sb.isLow, isTrue);
+    });
+  });
 }
+
+final _epoch = DateTime.fromMillisecondsSinceEpoch(0);

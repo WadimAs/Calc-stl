@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -6,9 +7,13 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../backup/backup.dart';
 import '../history/history.dart';
 import '../mesh/loader.dart';
+import '../mesh/mesh_check.dart';
 import '../mesh/slicer_project.dart';
+import '../mesh/transform.dart';
+import '../orders/orders.dart';
 import '../platform/files.dart';
 import '../platform/updates.dart';
 import '../slicer/settings.dart';
@@ -17,7 +22,11 @@ import '../slicer/slicer.dart';
 import '../viewer/measure.dart';
 import '../viewer/model_viewer.dart';
 import 'history_page.dart';
+import 'orders_page.dart';
+import 'quote_page.dart';
 import 'settings_sheet.dart';
+import 'spools_page.dart';
+import 'stats_page.dart';
 import 'widgets.dart';
 
 class HomePage extends StatefulWidget {
@@ -49,6 +58,14 @@ class _HomePageState extends State<HomePage> {
   UpdateInfo? _update;
   bool _autoCalibrated = false;
   final MeasureController _measure = MeasureController();
+
+  MeshReport? _report;
+  List<double>? _objectVolumes; // per printed object, mm³
+  bool _orientOpen = false;
+  bool _pickFace = false;
+  bool _reorienting = false;
+
+  bool get _adv => _settings.advancedUi;
 
   @override
   void initState() {
@@ -93,19 +110,7 @@ class _HomePageState extends State<HomePage> {
     try {
       final m = await loadModel(f.name, f.bytes);
       if (!mounted) return;
-      _job?.cancel();
-      _job = null;
-      setState(() {
-        _model = m;
-        _loading = false;
-        _result = null;
-        _progress = null;
-        _sliceError = null;
-        _manualHours = null;
-        _layersView = false;
-        _autoCalibrated = false;
-        _measure.attachModel(m.mesh.tris, inverted: !m.outwardNormals);
-      });
+      _setModel(m, fresh: true);
       await _offerFileSettings(m);
       if (!mounted || !identical(_model, m)) return;
       _slice();
@@ -117,6 +122,273 @@ class _HomePageState extends State<HomePage> {
             ? 'Не вдалося прочитати «${f.name}»:\n$e'
             : 'Файл «${f.name}» не схожий на STL, 3MF чи G-code.';
       });
+    }
+  }
+
+  /// Shows [m]; [fresh] = a newly opened file (not a re-orientation).
+  void _setModel(LoadedModel m, {required bool fresh}) {
+    _job?.cancel();
+    _job = null;
+    setState(() {
+      _model = m;
+      _loading = false;
+      _result = null;
+      _progress = null;
+      _sliceError = null;
+      _objectVolumes = null;
+      _layersView = false;
+      _pickFace = false;
+      if (fresh) {
+        _manualHours = null;
+        _autoCalibrated = false;
+        _orientOpen = false;
+        _report = null;
+      }
+      _measure.attachModel(m.mesh.tris, inverted: !m.outwardNormals);
+    });
+    if (m.hasMesh) _checkMesh(m);
+  }
+
+  Future<void> _checkMesh(LoadedModel m) async {
+    final tris = m.mesh.tris;
+    try {
+      final r = await Isolate.run(() => checkMesh(tris));
+      if (mounted && identical(_model, m)) setState(() => _report = r);
+    } catch (_) {}
+  }
+
+  /// Same file, new orientation / object selection.
+  Future<void> _derive({Mat3? rotation, List<bool>? enabled}) async {
+    final m = _model;
+    if (m == null || !m.hasMesh || _reorienting) return;
+    setState(() => _reorienting = true);
+    try {
+      final next = await deriveModel(m, rotation: rotation, enabled: enabled);
+      if (!mounted || !identical(_model, m)) return;
+      _setModel(next, fresh: false);
+      _slice();
+    } catch (e) {
+      _snack('Не вдалося: $e');
+    } finally {
+      if (mounted) setState(() => _reorienting = false);
+    }
+  }
+
+  void _rotate(int axis) {
+    final m = _model;
+    if (m == null) return;
+    _derive(rotation: mul3(rot90(axis), m.rotation));
+  }
+
+  Future<void> _autoOrient() async {
+    final m = _model;
+    if (m == null || !m.hasMesh) return;
+    final tris = m.mesh.tris;
+    final outward = m.outwardNormals;
+    setState(() => _reorienting = true);
+    final r = await Isolate.run(() => autoOrient(tris, outward: outward));
+    if (!mounted) return;
+    setState(() => _reorienting = false);
+    if (isIdentity(r)) {
+      _snack('Модель уже лежить найбільшою гранню вниз');
+      return;
+    }
+    _derive(rotation: mul3(r, m.rotation));
+  }
+
+  void _layFlat(double nx, double ny, double nz) {
+    final m = _model;
+    if (m == null) return;
+    setState(() => _pickFace = false);
+    _derive(rotation: mul3(rotateToDown(nx, ny, nz), m.rotation));
+  }
+
+  Future<void> _computeObjectVolumes(SliceResult r) async {
+    final m = _model;
+    if (m == null || m.mesh.objects.length < 2 || m.mesh.objects.length > 40) return;
+    final s = _settings;
+    try {
+      final v = await sliceObjectVolumes(m.mesh.tris, m.mesh.objects, s);
+      if (mounted && identical(_model, m) && identical(_result, r)) setState(() => _objectVolumes = v);
+    } catch (_) {}
+  }
+
+  // ---- Menu actions ----
+
+  void _openOrders() =>
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => OrdersPage(settings: _settings)));
+
+  void _openSpools() => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SpoolsPage()));
+
+  void _openStats() => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const StatsPage()));
+
+  Future<void> _exportBackup() async {
+    try {
+      final bytes = await Backup.export(_settings);
+      final d = DateTime.now();
+      final name = 'stl-vaga-backup-${d.year}${d.month.toString().padLeft(2, '0')}${d.day.toString().padLeft(2, '0')}.json';
+      final ok = await PlatformFiles.saveFile(name, 'application/json', bytes);
+      if (ok) _snack('Резервну копію збережено');
+    } catch (e) {
+      _snack('Не вдалося зберегти: $e');
+    }
+  }
+
+  Future<void> _importBackup() async {
+    try {
+      final f = await PlatformFiles.pick();
+      if (f == null || !mounted) return;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Відновити з копії?'),
+          content: Text('Налаштування, історія, замовлення й котушки буде замінено вмістом «${f.name}».'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Скасувати')),
+            FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Відновити')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      final s = await Backup.restore(f.bytes);
+      if (!mounted) return;
+      _updateSettings(s);
+      _snack('Дані відновлено');
+    } catch (e) {
+      _snack('Не вдалося відновити: $e');
+    }
+  }
+
+  void _onMenu(String v) {
+    switch (v) {
+      case 'history':
+        _openHistory();
+      case 'orders':
+        _openOrders();
+      case 'spools':
+        _openSpools();
+      case 'stats':
+        _openStats();
+      case 'export':
+        _exportBackup();
+      case 'import':
+        _importBackup();
+      case 'mode':
+        _updateSettings(_settings.copyWith(advancedUi: !_adv));
+        if (_adv) {
+          _measure.tool = MeasureTool.none;
+          setState(() => _layersView = false);
+        }
+        _snack(_adv ? 'Розширений режим' : 'Простий режим');
+    }
+  }
+
+  // ---- Orders ----
+
+  OrderItem? _orderItem({String? thumbPath, String? id}) {
+    final m = _model;
+    final fig = _figures();
+    if (m == null || fig == null) return null;
+    final s = _settings;
+    final copies = s.copies;
+    final mat = materialById(s.materialId);
+    // Per piece, without the quantity discount and per-order extras.
+    final c = CostBreakdown.of(fig.grams1, fig.hours / copies, s, orderExtras: false);
+    return OrderItem(
+      id: id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+      name: m.name,
+      material: mat.id == 'custom' ? 'Свій (${fmtNum(s.density, 2)} г/см³)' : mat.name,
+      materialId: s.materialId,
+      qty: copies,
+      gramsEach: fig.grams1,
+      hoursEach: fig.hours / copies,
+      costEach: c.costPrice,
+      priceEach: c.costPrice + c.profit,
+      thumbPath: thumbPath,
+      source: fig.source ?? '',
+    );
+  }
+
+  Future<void> _addToOrder() async {
+    if (_orderItem() == null) return;
+    final orders = (await OrderStore.load()).where((o) => !o.status.printed).toList();
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<Object>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: ListView(shrinkWrap: true, children: [
+          ListTile(
+            leading: const Icon(Icons.add_circle_outline),
+            title: const Text('Нове замовлення'),
+            onTap: () => Navigator.pop(ctx, 'new'),
+          ),
+          for (final o in orders)
+            ListTile(
+              leading: const Icon(Icons.receipt_long_outlined),
+              title: Text(o.title),
+              subtitle: Text('${o.items.length} поз. · ${fmtMoney(o.totals.total)}'),
+              onTap: () => Navigator.pop(ctx, o),
+            ),
+        ]),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    Order order;
+    if (picked is Order) {
+      order = picked;
+    } else {
+      final client = await askText(context, title: 'Нове замовлення', label: 'Клієнт (необов\'язково)');
+      if (client == null) return;
+      order = Order.create(_settings, client: client);
+    }
+    final id = DateTime.now().microsecondsSinceEpoch.toString();
+    final png = await _captureThumb();
+    final thumb = png == null ? null : await HistoryStore.saveThumb('o$id', png);
+    final item = _orderItem(thumbPath: thumb, id: id);
+    if (item == null) return;
+    order.items.add(item);
+    await OrderStore.upsert(order);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Додано до «${order.title}»'),
+      action: SnackBarAction(
+        label: 'Відкрити',
+        onPressed: () => Navigator.of(context)
+            .push(MaterialPageRoute<void>(builder: (_) => OrderPage(orderId: order.id))),
+      ),
+    ));
+  }
+
+  Future<void> _shareChoice() async {
+    final how = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.image_outlined),
+            title: const Text('Картинкою для клієнта'),
+            onTap: () => Navigator.pop(ctx, 'image'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.text_snippet_outlined),
+            title: const Text('Текстом'),
+            onTap: () => Navigator.pop(ctx, 'text'),
+          ),
+        ]),
+      ),
+    );
+    if (how == 'text') {
+      _share();
+    } else if (how == 'image') {
+      final id = DateTime.now().microsecondsSinceEpoch.toString();
+      final png = await _captureThumb();
+      final thumb = png == null ? null : await HistoryStore.saveThumb('q$id', png);
+      final item = _orderItem(thumbPath: thumb, id: id);
+      if (item == null || !mounted) return;
+      final o = Order.create(_settings)..items.add(item);
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => QuotePage(order: o)));
     }
   }
 
@@ -221,6 +493,7 @@ class _HomePageState extends State<HomePage> {
         _layer = r.layers - 1;
       });
       _maybeAutoCalibrate(r);
+      _computeObjectVolumes(r);
     } on SliceCancelled {
       // A newer job replaced this one.
     } catch (e) {
@@ -279,7 +552,7 @@ class _HomePageState extends State<HomePage> {
         support1: 0,
         meters: meters1 * copies,
         hours: hours,
-        cost: CostBreakdown.of(grams, hours, s),
+        cost: CostBreakdown.of(grams, hours, s, copies: copies),
         estimateGrams: r == null ? null : r.grams(s.density, copies: copies) * s.weightFactor,
       );
     }
@@ -292,9 +565,10 @@ class _HomePageState extends State<HomePage> {
       grams1: grams1,
       model1: r.modelGrams(s.density) * f,
       support1: r.supportGrams(s.density) * f,
+      brim1: r.brimGrams(s.density) * f,
       meters: r.filamentMeters(s.filamentDiameter, copies: copies) * f,
       hours: hours,
-      cost: CostBreakdown.of(grams1 * copies, hours, s),
+      cost: CostBreakdown.of(grams1 * copies, hours, s, copies: copies),
     );
   }
 
@@ -436,8 +710,27 @@ class _HomePageState extends State<HomePage> {
         title: Text(model?.name ?? 'STL Вага', overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(tooltip: 'Відкрити файл', onPressed: _loading ? null : _pick, icon: const Icon(Icons.folder_open)),
-          IconButton(tooltip: 'Історія', onPressed: _openHistory, icon: const Icon(Icons.history)),
           IconButton(tooltip: 'Налаштування', onPressed: _openSettings, icon: const Icon(Icons.tune)),
+          PopupMenuButton<String>(
+            onSelected: _onMenu,
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'history', child: ListTile(leading: Icon(Icons.history), title: Text('Історія'))),
+              const PopupMenuItem(
+                  value: 'orders', child: ListTile(leading: Icon(Icons.receipt_long_outlined), title: Text('Замовлення'))),
+              if (_adv) ...[
+                const PopupMenuItem(
+                    value: 'spools', child: ListTile(leading: Icon(Icons.album_outlined), title: Text('Котушки'))),
+                const PopupMenuItem(
+                    value: 'stats', child: ListTile(leading: Icon(Icons.bar_chart), title: Text('Статистика'))),
+                const PopupMenuItem(
+                    value: 'export', child: ListTile(leading: Icon(Icons.backup_outlined), title: Text('Зберегти копію даних'))),
+                const PopupMenuItem(
+                    value: 'import', child: ListTile(leading: Icon(Icons.restore), title: Text('Відновити з копії'))),
+              ],
+              const PopupMenuDivider(),
+              CheckedPopupMenuItem(value: 'mode', checked: _adv, child: const Text('Розширений режим')),
+            ],
+          ),
         ],
       ),
       body: Column(children: [
@@ -532,7 +825,8 @@ class _HomePageState extends State<HomePage> {
     final b = m.bounds;
     String mm(double v) => fmtNum(v * k, 1);
     final preview = _result?.preview;
-    final layersMode = _layersView && preview != null && preview.layers > 0;
+    final layersMode = _adv && _layersView && preview != null && preview.layers > 0;
+    final fit = _bedFit(m);
     final chipDecoration = BoxDecoration(
       color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.88),
       borderRadius: BorderRadius.circular(8),
@@ -553,9 +847,11 @@ class _HomePageState extends State<HomePage> {
                 showLayers: layersMode,
                 maxLayer: layer,
                 measure: _measure,
+                onFacePicked: _pickFace && !layersMode ? _layFlat : null,
               ),
             ),
           ),
+          if (_adv)
           Positioned(
             left: 10,
             top: 8,
@@ -589,19 +885,63 @@ class _HomePageState extends State<HomePage> {
             Positioned(
               right: 10,
               top: 50,
-              child: AnimatedBuilder(
-                animation: _measure,
-                builder: (context, _) => _measure.active
-                    ? IconButton.filled(
-                        tooltip: 'Закрити вимірювання',
-                        onPressed: () => _measure.tool = MeasureTool.none,
-                        icon: const Icon(Icons.straighten),
-                      )
-                    : IconButton.filledTonal(
-                        tooltip: 'Вимірювання',
-                        onPressed: () => _measure.tool = MeasureTool.distance,
-                        icon: const Icon(Icons.straighten),
-                      ),
+              child: Column(children: [
+                if (_adv)
+                  AnimatedBuilder(
+                    animation: _measure,
+                    builder: (context, _) => _measure.active
+                        ? IconButton.filled(
+                            tooltip: 'Закрити вимірювання',
+                            onPressed: () => _measure.tool = MeasureTool.none,
+                            icon: const Icon(Icons.straighten),
+                          )
+                        : IconButton.filledTonal(
+                            tooltip: 'Вимірювання',
+                            onPressed: () {
+                              setState(() {
+                                _orientOpen = false;
+                                _pickFace = false;
+                              });
+                              _measure.tool = MeasureTool.distance;
+                            },
+                            icon: const Icon(Icons.straighten),
+                          ),
+                  ),
+                const SizedBox(height: 4),
+                (_orientOpen ? IconButton.filled : IconButton.filledTonal)(
+                  tooltip: 'Положення на столі',
+                  onPressed: () {
+                    _measure.tool = MeasureTool.none;
+                    setState(() {
+                      _orientOpen = !_orientOpen;
+                      _pickFace = false;
+                    });
+                  },
+                  icon: const Icon(Icons.screen_rotation_alt),
+                ),
+              ]),
+            ),
+          if (!layersMode && fit != null)
+            Positioned(
+              left: 10,
+              top: _adv ? 54 : 10,
+              right: 64,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: GestureDetector(
+                  onTap: fit.$3 ? () => _rotate(2) : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: (fit.$1 ? const Color(0xFF2E7D32) : theme.colorScheme.error).withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      fit.$2,
+                      style: theme.textTheme.labelSmall?.copyWith(color: Colors.white, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
               ),
             ),
           if (!layersMode)
@@ -609,10 +949,12 @@ class _HomePageState extends State<HomePage> {
               left: 8,
               right: 8,
               bottom: 8,
-              child: AnimatedBuilder(
-                animation: _measure,
-                builder: (context, _) => _measure.active ? _measurePanel(k) : const SizedBox.shrink(),
-              ),
+              child: _orientOpen
+                  ? _orientPanel(m)
+                  : AnimatedBuilder(
+                      animation: _measure,
+                      builder: (context, _) => _measure.active ? _measurePanel(k) : const SizedBox.shrink(),
+                    ),
             ),
           if (layersMode)
             Positioned(
@@ -623,7 +965,7 @@ class _HomePageState extends State<HomePage> {
                 spacing: 6,
                 runSpacing: 4,
                 children: [
-                  for (final c in [1, 2, 3, 4, if (_settings.supportsEnabled) 5])
+                  for (final c in [1, 2, 3, 4, if (_settings.supportsEnabled) 5, if (_settings.brimWidth > 0 || _settings.skirtLoops > 0) 7])
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: chipDecoration,
@@ -689,6 +1031,85 @@ class _HomePageState extends State<HomePage> {
           ]),
         ),
     ]);
+  }
+
+  /// (fits, label, fits after a 90° turn) for the current printer's bed.
+  (bool, String, bool)? _bedFit(LoadedModel m) {
+    if (!m.hasMesh) return null;
+    final k = _settings.scalePercent / 100;
+    final (bx, by, bz) = _settings.bed;
+    final x = m.bounds.sizeX * k, y = m.bounds.sizeY * k, z = m.bounds.sizeZ * k;
+    final name = printerById(_settings.printerId).name;
+    if (x <= bx && y <= by && z <= bz) return (true, '✓ влазить на $name', false);
+    if (y <= bx && x <= by && z <= bz) return (false, 'Не влазить — торкніться, щоб повернути на 90°', true);
+    final over = <String>[
+      if (x > bx) 'X ${fmtNum(x, 0)}>${fmtNum(bx, 0)}',
+      if (y > by) 'Y ${fmtNum(y, 0)}>${fmtNum(by, 0)}',
+      if (z > bz) 'Z ${fmtNum(z, 0)}>${fmtNum(bz, 0)}',
+    ];
+    return (false, '✗ не влазить на $name: ${over.join(', ')} мм', false);
+  }
+
+  Widget _orientPanel(LoadedModel m) {
+    final theme = Theme.of(context);
+    Widget btn(String label, IconData icon, VoidCallback? onTap, {bool selected = false}) => Padding(
+          padding: const EdgeInsets.only(right: 6, bottom: 6),
+          child: selected
+              ? FilledButton.icon(
+                  style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+                  onPressed: onTap,
+                  icon: Icon(icon, size: 18),
+                  label: Text(label),
+                )
+              : FilledButton.tonalIcon(
+                  style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+                  onPressed: onTap,
+                  icon: Icon(icon, size: 18),
+                  label: Text(label),
+                ),
+        );
+    final busy = _reorienting;
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.95),
+      borderRadius: BorderRadius.circular(12),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 8, 4, 4),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(
+              child: Text(
+                _pickFace ? 'Торкніться грані, яка має лягти на стіл' : 'Положення на столі',
+                style: theme.textTheme.titleSmall,
+              ),
+            ),
+            if (busy)
+              const Padding(
+                padding: EdgeInsets.all(8),
+                child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+              ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              onPressed: () => setState(() {
+                _orientOpen = false;
+                _pickFace = false;
+              }),
+              icon: const Icon(Icons.close),
+            ),
+          ]),
+          Wrap(children: [
+            btn('Авто', Icons.auto_fix_high, busy ? null : _autoOrient),
+            btn('Гранню на стіл', Icons.touch_app_outlined, busy ? null : () => setState(() => _pickFace = !_pickFace),
+                selected: _pickFace),
+            btn('X 90°', Icons.rotate_right, busy ? null : () => _rotate(0)),
+            btn('Y 90°', Icons.rotate_right, busy ? null : () => _rotate(1)),
+            btn('Z 90°', Icons.rotate_right, busy ? null : () => _rotate(2)),
+            if (!isIdentity(m.rotation))
+              btn('Як у файлі', Icons.restart_alt, busy ? null : () => _derive(rotation: identity3)),
+          ]),
+        ]),
+      ),
+    );
   }
 
   String _measureText(Measurement m, double k) {
@@ -841,10 +1262,14 @@ class _HomePageState extends State<HomePage> {
         _costCard(),
         const SizedBox(height: 8),
         if (m.hasMesh) ...[
-          _quickSettings(),
+          _adv ? _quickSettings() : _simpleSettings(),
           const SizedBox(height: 8),
         ],
-        _modelInfo(m),
+        if (m.source.objects.length > 1) ...[
+          _objectsCard(m),
+          const SizedBox(height: 8),
+        ],
+        if (_adv || !m.hasMesh) _modelInfo(m),
       ],
     );
   }
@@ -945,18 +1370,36 @@ class _HomePageState extends State<HomePage> {
               Text(_sliceError!, style: TextStyle(color: theme.colorScheme.error)),
               TextButton(onPressed: _slice, child: const Text('Спробувати ще раз')),
             ],
+            if (_report != null && _report!.hasProblems)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Row(children: [
+                  Icon(Icons.warning_amber_rounded, size: 18, color: theme.colorScheme.error),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _report!.isWatertight
+                          ? 'У моделі є перевернуті грані — вага може бути неточною'
+                          : 'Модель має дірки в сітці — вага може бути неточною',
+                      style: small?.copyWith(color: theme.colorScheme.error),
+                    ),
+                  ),
+                ]),
+              ),
             if (fig != null && cost != null) ...[
               const SizedBox(height: 6),
-              if (fig.source != null && fig.estimateGrams != null)
+              if (_adv && fig.source != null && fig.estimateGrams != null)
                 Text('наш розрахунок: ${fmtGrams(fig.estimateGrams!)}', style: small),
-              if (fig.source == null && s.supportsEnabled)
+              if (fig.source == null && fig.brim1 > 0)
+                Text('у т.ч. кайма / спідниця: ${fmtGrams(fig.brim1 * s.copies)}', style: small),
+              if (_adv && fig.source == null && s.supportsEnabled)
                 Text(
                   'модель ${fmtGrams(fig.model1 * s.copies)} · підтримки ${fmtGrams(fig.support1 * s.copies)}',
                   style: theme.textTheme.bodyMedium,
                 ),
               if (s.copies > 1)
                 Text('${s.copies} шт. · одна: ${fmtGrams(fig.grams1)}', style: theme.textTheme.bodyMedium),
-              if (canChooseSource) ...[
+              if (_adv && canChooseSource) ...[
                 const SizedBox(height: 8),
                 SegmentedButton<bool>(
                   style: const ButtonStyle(visualDensity: VisualDensity.compact),
@@ -974,7 +1417,8 @@ class _HomePageState extends State<HomePage> {
                   },
                 ),
               ],
-              const SizedBox(height: 12),
+              if (_adv) const SizedBox(height: 12),
+              if (_adv)
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
@@ -1005,13 +1449,22 @@ class _HomePageState extends State<HomePage> {
               ),
               Text(timeNote(), style: small),
               const SizedBox(height: 10),
-              line('Пластик', fmtMoney(cost.material)),
-              line('Електроенергія', fmtMoney(cost.electricity)),
-              line('Амортизація', fmtMoney(cost.amortization)),
+              if (_adv) ...[
+                line('Пластик', fmtMoney(cost.material)),
+                line('Електроенергія', fmtMoney(cost.electricity)),
+                line('Амортизація', fmtMoney(cost.amortization)),
+                if (cost.failure > 0) line('Брак ${fmtNum(s.failurePercent, 0)}%', fmtMoney(cost.failure)),
+              ],
               line('Собівартість', fmtMoney(cost.costPrice), strong: true),
-              const SizedBox(height: 4),
-              line('Заробіток ${fmtNum(s.markupPercent, 0)}%', fmtMoney(cost.profit)),
-              if (cost.extra != 0) line('Доплата', fmtMoney(cost.extra)),
+              if (_adv) ...[
+                const SizedBox(height: 4),
+                line('Заробіток ${fmtNum(s.markupPercent, 0)}%', fmtMoney(cost.profit)),
+              ],
+              if (cost.discount > 0)
+                line('Знижка ${fmtNum(discountFor(s.discounts, s.copies), 0)}% (від кількості)', '−${fmtMoney(cost.discount)}'),
+              if (_adv && cost.extra != 0) line('Доплата', fmtMoney(cost.extra)),
+              if (cost.minimumAdd > 0) line('До мінімальної ціни', fmtMoney(cost.minimumAdd)),
+              if (_adv && cost.rounding > 0.004) line('Округлення', fmtMoney(cost.rounding)),
               const SizedBox(height: 6),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -1033,7 +1486,7 @@ class _HomePageState extends State<HomePage> {
               Row(children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: busy && fig.source == null ? null : _share,
+                    onPressed: busy && fig.source == null ? null : _shareChoice,
                     icon: const Icon(Icons.share_outlined),
                     label: const Text('Поділитися'),
                   ),
@@ -1047,7 +1500,13 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
               ]),
-              if (r != null && fig.source == null)
+              const SizedBox(height: 8),
+              FilledButton.tonalIcon(
+                onPressed: busy && fig.source == null ? null : _addToOrder,
+                icon: const Icon(Icons.add_shopping_cart),
+                label: const Text('До замовлення'),
+              ),
+              if (_adv && r != null && fig.source == null)
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
@@ -1057,7 +1516,7 @@ class _HomePageState extends State<HomePage> {
                     label: const Text('Підігнати під слайсер'),
                   ),
                 ),
-              if (r != null)
+              if (_adv && r != null)
                 Text(
                   'Суцільна модель (100%): ${fmtGrams(r.solidGrams(s.density))}',
                   style: small,
@@ -1098,6 +1557,7 @@ class _HomePageState extends State<HomePage> {
                   onChanged: (v) => _updateSettings(_settings.copyWith(markupPercent: v)),
                 ),
               ),
+              if (_adv) ...[
               const SizedBox(width: 12),
               Expanded(
                 child: NumberField(
@@ -1107,8 +1567,10 @@ class _HomePageState extends State<HomePage> {
                   onChanged: (v) => _updateSettings(_settings.copyWith(extraCost: v)),
                 ),
               ),
+              ],
             ]),
             const SizedBox(height: 4),
+            if (_adv)
             TextButton.icon(
               style: TextButton.styleFrom(alignment: Alignment.centerLeft),
               onPressed: _openSettings,
@@ -1121,6 +1583,138 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Simplified print settings: material, quality, strength, supports, copies.
+  Widget _simpleSettings() {
+    final theme = Theme.of(context);
+    final s = _settings;
+    const quality = [(0.28, 'Чорнова'), (0.2, 'Стандарт'), (0.12, 'Висока')];
+    const strength = [(10.0, 'Легка'), (15.0, 'Звичайна'), (30.0, 'Міцна'), (100.0, 'Суцільна')];
+    Widget title(String t) => Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 6),
+          child: Text(t, style: theme.textTheme.titleSmall),
+        );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          title('Пластик'),
+          Wrap(spacing: 6, runSpacing: 6, children: [
+            for (final m in materials.where((m) => m.id != 'custom').take(6))
+              ChoiceChip(
+                label: Text(m.name),
+                selected: s.materialId == m.id,
+                onSelected: (_) => _updateSettings(s.copyWith(materialId: m.id, density: m.density)),
+              ),
+          ]),
+          title('Якість'),
+          SegmentedButton<double>(
+            showSelectedIcon: false,
+            segments: [for (final (h, l) in quality) ButtonSegment(value: h, label: Text(l))],
+            selected: {
+              for (final (h, _) in quality)
+                if ((h - s.layerHeight).abs() < 1e-6) h,
+            },
+            emptySelectionAllowed: true,
+            onSelectionChanged: (v) {
+              if (v.isNotEmpty) _updateSettings(s.copyWith(layerHeight: v.first));
+            },
+          ),
+          title('Міцність (заповнення)'),
+          SegmentedButton<double>(
+            showSelectedIcon: false,
+            style: const ButtonStyle(padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 4))),
+            segments: [for (final (p, l) in strength) ButtonSegment(value: p, label: Text(l, maxLines: 1))],
+            selected: {
+              for (final (p, _) in strength)
+                if ((p - s.infillPercent).abs() < 1e-6) p,
+            },
+            emptySelectionAllowed: true,
+            onSelectionChanged: (v) {
+              if (v.isNotEmpty) _updateSettings(s.copyWith(infillPercent: v.first));
+            },
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Підтримки'),
+            subtitle: const Text('Для нависань і мостів'),
+            value: s.supportsEnabled,
+            onChanged: (v) => _updateSettings(s.copyWith(supportsEnabled: v)),
+          ),
+          StepperRow(
+            label: 'Кількість',
+            value: s.copies.toDouble(),
+            min: 1,
+            max: 500,
+            step: 1,
+            unit: ' шт',
+            onChanged: (v) => _updateSettings(s.copyWith(copies: v.round())),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _objectsCard(LoadedModel m) {
+    final theme = Theme.of(context);
+    final s = _settings;
+    final objs = m.source.objects;
+    final vols = _objectVolumes;
+    // Volumes come for printed objects in order; map them back to source indices.
+    final volBySource = <int, double>{};
+    if (vols != null) {
+      int j = 0;
+      for (int i = 0; i < objs.length && j < vols.length; i++) {
+        if (i < m.enabled.length && m.enabled[i]) volBySource[i] = vols[j++];
+      }
+    }
+    final enabledCount = m.enabled.where((e) => e).length;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 8, 12, 8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 0, 4),
+            child: Row(children: [
+              Expanded(child: Text('Об\'єкти (${objs.length})', style: theme.textTheme.titleSmall)),
+              if (_reorienting || (vols == null && _result != null && enabledCount > 1))
+                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            ]),
+          ),
+          for (int i = 0; i < objs.length; i++)
+            CheckboxListTile(
+              dense: true,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: i < m.enabled.length && m.enabled[i],
+              onChanged: _reorienting
+                  ? null
+                  : (v) {
+                      final next = List<bool>.of(m.enabled);
+                      next[i] = v ?? false;
+                      if (!next.contains(true)) {
+                        _snack('Залиште хоча б один об\'єкт');
+                        return;
+                      }
+                      _derive(enabled: next);
+                    },
+              title: Text(objs[i].name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              secondary: volBySource[i] != null
+                  ? Text(fmtGrams(volBySource[i]! * s.density / 1000 * s.weightFactor),
+                      style: theme.textTheme.bodyMedium)
+                  : null,
+            ),
+          if (enabledCount > 1)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 0, 4),
+              child: Text(
+                'Вага кожного — окремим нарізанням, без кайми',
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ),
+        ]),
       ),
     );
   }
@@ -1250,6 +1844,15 @@ class _HomePageState extends State<HomePage> {
             row('Площа поверхні', '${fmtNum(m.area * k * k / 100, 1)} см²'),
             if (_settings.scalePercent != 100) row('Масштаб', '${fmtNum(_settings.scalePercent, 0)}%'),
             if (_result != null) row('Час розрахунку', '${fmtNum(_result!.millis / 1000, 1)} с'),
+            if (_report != null) ...[
+              row('Сітка', _report!.hasProblems ? '⚠ є помилки' : '✓ без помилок'),
+              if (_report!.openEdges > 0) row('Відкриті ребра (дірки)', '${_report!.openEdges}'),
+              if (_report!.nonManifoldEdges > 0) row('Неоднозначні ребра', '${_report!.nonManifoldEdges}'),
+              if (_report!.flippedEdges > 0) row('Перевернуті грані (ребер)', '${_report!.flippedEdges}'),
+              if (_report!.degenerate > 0) row('Вироджені трикутники', '${_report!.degenerate}'),
+              if (_report!.shells > 1) row('Окремих частин', '${_report!.shells}'),
+            ],
+            if (!isIdentity(m.rotation)) row('Положення', 'змінене'),
             ],
             if (p != null && p.hasSettings)
               Align(
@@ -1437,6 +2040,7 @@ class _Figures {
   final String? source; // slicer name when the numbers are exact
   final double grams1; // one copy, model + supports
   final double model1, support1;
+  final double brim1;
   final double meters; // all copies
   final double hours; // all copies
   final CostBreakdown cost;
@@ -1447,6 +2051,7 @@ class _Figures {
     required this.grams1,
     required this.model1,
     required this.support1,
+    this.brim1 = 0,
     required this.meters,
     required this.hours,
     required this.cost,

@@ -6,10 +6,22 @@ import 'mesh.dart';
 import 'slicer_project.dart';
 import 'stl_parser.dart';
 import 'threemf_parser.dart';
+import 'transform.dart';
 
 /// Everything the UI needs about an opened model.
 class LoadedModel {
   final String name;
+
+  /// Geometry as read from the file (all objects, original orientation).
+  final Mesh source;
+
+  /// Rotation applied on the bed.
+  final Mat3 rotation;
+
+  /// Which of the source objects are printed (empty for a single object).
+  final List<bool> enabled;
+
+  /// What is printed: enabled objects, rotated.
   final Mesh mesh;
   final Bounds bounds;
   final double volume; // mm³, solid
@@ -27,6 +39,9 @@ class LoadedModel {
 
   const LoadedModel({
     required this.name,
+    required this.source,
+    required this.rotation,
+    required this.enabled,
     required this.mesh,
     required this.bounds,
     required this.volume,
@@ -49,6 +64,14 @@ bool isSupportedFile(String name) {
 /// Parses the file in a background isolate.
 Future<LoadedModel> loadModel(String name, Uint8List bytes) {
   return Isolate.run(() => _load(name, bytes));
+}
+
+/// Same file with another orientation and/or selection of objects.
+Future<LoadedModel> deriveModel(LoadedModel m, {Mat3? rotation, List<bool>? enabled}) {
+  final name = m.name, source = m.source, project = m.project;
+  final rot = rotation ?? m.rotation;
+  final en = enabled ?? m.enabled;
+  return Isolate.run(() => _build(name, source, project, rot, en));
 }
 
 LoadedModel _load(String name, Uint8List bytes) {
@@ -76,6 +99,28 @@ LoadedModel _load(String name, Uint8List bytes) {
   if (mesh.triangleCount == 0 && !(project?.isSliced ?? false)) {
     throw const FormatException('Модель порожня');
   }
+  return _build(name, mesh, project, identity3, List<bool>.filled(mesh.objects.length, true));
+}
+
+LoadedModel _build(String name, Mesh source, SlicerProject? project, Mat3 rotation, List<bool> enabled) {
+  Float32List picked = source.tris;
+  final derivedObjects = <MeshObject>[];
+  if (source.objects.isNotEmpty) {
+    int total = 0;
+    for (int i = 0; i < source.objects.length; i++) {
+      if (i < enabled.length && enabled[i]) total += source.objects[i].triangles;
+    }
+    picked = Float32List(total * 9);
+    int at = 0;
+    for (int i = 0; i < source.objects.length; i++) {
+      if (i >= enabled.length || !enabled[i]) continue;
+      final o = source.objects[i];
+      picked.setRange(at * 9, (at + o.triangles) * 9, source.tris, o.start * 9);
+      derivedObjects.add(MeshObject(o.name, at, at + o.triangles));
+      at += o.triangles;
+    }
+  }
+  final mesh = Mesh(applyMat3(picked, rotation), derivedObjects.length > 1 ? derivedObjects : const []);
   final b = Bounds.of(mesh.tris);
   final signed = mesh.signedVolume();
   final view = _simplify(mesh.tris, b, 120000);
@@ -102,6 +147,9 @@ LoadedModel _load(String name, Uint8List bytes) {
   }
   return LoadedModel(
     name: name,
+    source: source,
+    rotation: rotation,
+    enabled: enabled,
     mesh: mesh,
     bounds: b,
     volume: signed.abs(),

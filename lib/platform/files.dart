@@ -58,6 +58,11 @@ class PlatformFiles {
     return r ?? false;
   }
 
+  /// Shares a file (e.g. a PNG quote) through the Android share sheet.
+  static Future<void> shareFile(String name, String mime, Uint8List bytes, {String? text}) async {
+    await _channel.invokeMethod<bool>('shareFile', {'name': name, 'mime': mime, 'bytes': bytes, 'text': text});
+  }
+
   /// Opens the Android share sheet with plain text.
   static Future<void> shareText(String text) async {
     await _channel.invokeMethod<bool>('shareText', {'text': text});

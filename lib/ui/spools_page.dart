@@ -1,0 +1,280 @@
+import 'package:flutter/material.dart';
+
+import '../slicer/settings.dart';
+import '../spools/spools.dart';
+import 'widgets.dart';
+
+const spoolColors = <int>[
+  0xFFFFFFFF, 0xFF202020, 0xFF9E9E9E, 0xFFE53935, 0xFFFF8A3D, 0xFFFDD835, //
+  0xFF43A047, 0xFF1E88E5, 0xFF8E24AA, 0xFFEC407A, 0xFF795548, 0xFF00ACC1,
+];
+
+class SpoolsPage extends StatefulWidget {
+  const SpoolsPage({super.key});
+
+  @override
+  State<SpoolsPage> createState() => _SpoolsPageState();
+}
+
+class _SpoolsPageState extends State<SpoolsPage> {
+  List<Spool>? _spools;
+
+  @override
+  void initState() {
+    super.initState();
+    SpoolStore.load().then((v) {
+      if (mounted) setState(() => _spools = v);
+    });
+  }
+
+  Future<void> _edit([Spool? s]) async {
+    final result = await showDialog<Spool>(context: context, builder: (_) => _SpoolDialog(spool: s));
+    if (result == null) return;
+    final list = await SpoolStore.upsert(result);
+    if (mounted) setState(() => _spools = list);
+  }
+
+  Future<void> _delete(Spool s) async {
+    final list = await SpoolStore.remove(s.id);
+    if (mounted) setState(() => _spools = list);
+  }
+
+  Future<void> _writeOff(Spool s) async {
+    final c = TextEditingController();
+    final g = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Списати вручну'),
+        content: TextField(
+          controller: c,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'Скільки грамів', helperText: 'Напр. невдалий друк або продувка'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Скасувати')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, double.tryParse(c.text.replaceAll(',', '.'))),
+            child: const Text('Списати'),
+          ),
+        ],
+      ),
+    );
+    if (g == null || g <= 0) return;
+    final list = await SpoolStore.adjust({s.id: -g});
+    if (mounted) setState(() => _spools = list);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final list = _spools;
+    final total = list?.fold(0.0, (a, s) => a + s.remainingGrams) ?? 0;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Котушки')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _edit(),
+        icon: const Icon(Icons.add),
+        label: const Text('Котушка'),
+      ),
+      body: list == null
+          ? const Center(child: CircularProgressIndicator())
+          : list.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Text(
+                      'Додайте свої котушки — коли замовлення стане «Готово», '
+                      'використаний пластик спишеться автоматично.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 96),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                      child: Text('Усього на котушках: ${fmtGrams(total)}', style: theme.textTheme.labelLarge),
+                    ),
+                    for (final s in list)
+                      Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => _edit(s),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: Color(s.colorArgb),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: theme.colorScheme.outlineVariant, width: 2),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text(
+                                    s.name.isEmpty ? materialById(s.materialId).name : '${materialById(s.materialId).name} · ${s.name}',
+                                    style: theme.textTheme.titleSmall,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  LinearProgressIndicator(
+                                    value: s.fraction,
+                                    minHeight: 6,
+                                    borderRadius: BorderRadius.circular(3),
+                                    color: s.isLow ? theme.colorScheme.error : null,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${fmtGrams(s.remainingGrams)} з ${fmtGrams(s.totalGrams)}'
+                                    '${s.isLow ? ' — закінчується' : ''}',
+                                    style: theme.textTheme.bodySmall
+                                        ?.copyWith(color: s.isLow ? theme.colorScheme.error : null),
+                                  ),
+                                ]),
+                              ),
+                              PopupMenuButton<String>(
+                                onSelected: (v) {
+                                  if (v == 'off') _writeOff(s);
+                                  if (v == 'del') _delete(s);
+                                },
+                                itemBuilder: (_) => const [
+                                  PopupMenuItem(value: 'off', child: Text('Списати вручну')),
+                                  PopupMenuItem(value: 'del', child: Text('Видалити')),
+                                ],
+                              ),
+                            ]),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+    );
+  }
+}
+
+class _SpoolDialog extends StatefulWidget {
+  final Spool? spool;
+
+  const _SpoolDialog({this.spool});
+
+  @override
+  State<_SpoolDialog> createState() => _SpoolDialogState();
+}
+
+class _SpoolDialogState extends State<_SpoolDialog> {
+  late String _material = widget.spool?.materialId ?? 'PLA';
+  late int _color = widget.spool?.colorArgb ?? spoolColors[4];
+  late final _name = TextEditingController(text: widget.spool?.name ?? '');
+  late final _total = TextEditingController(text: _fmt(widget.spool?.totalGrams ?? 1000));
+  late final _left = TextEditingController(text: _fmt(widget.spool?.remainingGrams ?? 1000));
+
+  static String _fmt(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _total.dispose();
+    _left.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.spool == null ? 'Нова котушка' : 'Котушка'),
+      content: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          DropdownButtonFormField<String>(
+            // ignore: deprecated_member_use
+            value: _material,
+            decoration: const InputDecoration(labelText: 'Пластик'),
+            items: [
+              for (final m in materials) DropdownMenuItem(value: m.id, child: Text(m.name)),
+            ],
+            onChanged: (v) => setState(() => _material = v ?? _material),
+          ),
+          TextField(
+            controller: _name,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(labelText: 'Виробник, колір', hintText: 'Bambu, жовтий'),
+          ),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final c in spoolColors)
+              GestureDetector(
+                onTap: () => setState(() => _color = c),
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: Color(c),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: _color == c ? Theme.of(context).colorScheme.primary : Colors.black26,
+                      width: _color == c ? 3 : 1,
+                    ),
+                  ),
+                ),
+              ),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _total,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Вага нової, г'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                controller: _left,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Залишилось, г'),
+              ),
+            ),
+          ]),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Скасувати')),
+        FilledButton(
+          onPressed: () {
+            final total = double.tryParse(_total.text.replaceAll(',', '.')) ?? 1000;
+            final left = double.tryParse(_left.text.replaceAll(',', '.')) ?? total;
+            final old = widget.spool;
+            Navigator.pop(
+              context,
+              old == null
+                  ? Spool(
+                      id: DateTime.now().microsecondsSinceEpoch.toString(),
+                      materialId: _material,
+                      name: _name.text.trim(),
+                      colorArgb: _color,
+                      totalGrams: total,
+                      remainingGrams: left,
+                      createdAt: DateTime.now(),
+                    )
+                  : old.copyWith(
+                      materialId: _material,
+                      name: _name.text.trim(),
+                      colorArgb: _color,
+                      totalGrams: total,
+                      remainingGrams: left,
+                    ),
+            );
+          },
+          child: const Text('Зберегти'),
+        ),
+      ],
+    );
+  }
+}

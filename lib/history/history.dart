@@ -221,6 +221,8 @@ class HistoryStore {
     }
   }
 
+  static Future<void> replaceAll(List<HistoryEntry> list) => _save(list);
+
   static Future<List<HistoryEntry>> add(HistoryEntry e) async {
     final list = await load();
     list.insert(0, e);

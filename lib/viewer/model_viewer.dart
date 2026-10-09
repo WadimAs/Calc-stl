@@ -47,6 +47,7 @@ const sliceColors = <Color>[
   Color(0xFFC0392B), // sparse infill
   Color(0xFF2ECC71), // support
   Color(0xFF138D4B), // support interface
+  Color(0xFF4DD0E1), // brim / skirt
 ];
 
 const sliceClassNames = <String>[
@@ -57,6 +58,7 @@ const sliceClassNames = <String>[
   'Заповнення',
   'Підтримки',
   'Контакт підтримок',
+  'Кайма / спідниця',
 ];
 
 /// Interactive 3D preview: drag to rotate, pinch to zoom/pan, double tap to reset.
@@ -72,6 +74,9 @@ class ModelViewer extends StatefulWidget {
   final int maxLayer;
   final MeasureController? measure;
 
+  /// When set, a tap picks a face and reports its unit normal (lay flat).
+  final void Function(double nx, double ny, double nz)? onFacePicked;
+
   const ModelViewer({
     super.key,
     required this.model,
@@ -81,6 +86,7 @@ class ModelViewer extends StatefulWidget {
     this.showLayers = false,
     this.maxLayer = 1 << 30,
     this.measure,
+    this.onFacePicked,
   });
 
   @override
@@ -100,7 +106,10 @@ class _ModelViewerState extends State<ModelViewer> {
   _LayerMeshes? _layers;
   Size _size = Size.zero;
 
-  bool get _measuring => widget.measure?.active == true && !widget.showLayers;
+  bool get _measuring =>
+      (widget.measure?.active == true && !widget.showLayers) || widget.onFacePicked != null;
+
+  int _lastTri = -1;
 
   /// Point of the model surface under [pos], snapped to a vertex if close.
   P3? _pick(Offset pos, {bool? snap}) {
@@ -146,6 +155,7 @@ class _ModelViewerState extends State<ModelViewer> {
         b2 = l2;
       }
     }
+    _lastTri = bestT;
     if (bestT < 0) return null;
     final o = bestT * 9;
     P3 vert(int j) => P3(t[o + j * 3] - bx, t[o + j * 3 + 1] - by, t[o + j * 3 + 2] - bz);
@@ -167,6 +177,23 @@ class _ModelViewerState extends State<ModelViewer> {
 
   void _onTap(TapUpDetails d) {
     if (!_measuring) return;
+    final face = widget.onFacePicked;
+    if (face != null) {
+      _lastTri = -1;
+      _pick(d.localPosition, snap: false);
+      final k = _lastTri;
+      if (k < 0) return;
+      final t = widget.model.mesh.tris;
+      final b = k * 9;
+      final ux = t[b + 3] - t[b], uy = t[b + 4] - t[b + 1], uz = t[b + 5] - t[b + 2];
+      final vx = t[b + 6] - t[b], vy = t[b + 7] - t[b + 1], vz = t[b + 8] - t[b + 2];
+      double nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      final l = math.sqrt(nx * nx + ny * ny + nz * nz);
+      if (l <= 0) return;
+      final sign = widget.model.outwardNormals ? 1.0 : -1.0;
+      face(nx / l * sign, ny / l * sign, nz / l * sign);
+      return;
+    }
     final mc = widget.measure!;
     if (mc.tool == MeasureTool.holes) {
       final p = _pick(d.localPosition, snap: false);

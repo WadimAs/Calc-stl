@@ -13,6 +13,9 @@ class SliceResult {
   /// Support material volume for one copy, mm³ (0 when supports are off).
   final double supportVolumeMm3;
 
+  /// Brim + skirt on the first layer, mm³.
+  final double brimVolumeMm3;
+
   /// Extrusion path lengths for the time estimate.
   final PathLengths lengths;
 
@@ -29,6 +32,7 @@ class SliceResult {
   const SliceResult({
     required this.volumeMm3,
     required this.supportVolumeMm3,
+    this.brimVolumeMm3 = 0,
     required this.lengths,
     this.preview,
     required this.solidVolumeMm3,
@@ -40,7 +44,7 @@ class SliceResult {
     required this.sizeZ,
   });
 
-  double get totalVolumeMm3 => volumeMm3 + supportVolumeMm3;
+  double get totalVolumeMm3 => volumeMm3 + supportVolumeMm3 + brimVolumeMm3;
 
   /// Estimated print time of one copy (without heating / start sequence).
   double printSeconds(SliceSettings s) => estimatePrintSeconds(
@@ -61,6 +65,8 @@ class SliceResult {
 
   double supportGrams(double density) => supportVolumeMm3 * density / 1000.0;
 
+  double brimGrams(double density) => brimVolumeMm3 * density / 1000.0;
+
   double solidGrams(double density) => solidVolumeMm3 * density / 1000.0;
 
   double filamentMeters(double diameter, {int copies = 1}) {
@@ -71,6 +77,7 @@ class SliceResult {
   Map<String, dynamic> toMap() => {
         'volumeMm3': volumeMm3,
         'supportVolumeMm3': supportVolumeMm3,
+        'brimVolumeMm3': brimVolumeMm3,
         'lengths': lengths.toList(),
         if (preview != null) 'preview': preview!.toMap(),
         'solidVolumeMm3': solidVolumeMm3,
@@ -85,6 +92,7 @@ class SliceResult {
   static SliceResult fromMap(Map m) => SliceResult(
         volumeMm3: (m['volumeMm3'] as num).toDouble(),
         supportVolumeMm3: (m['supportVolumeMm3'] as num? ?? 0).toDouble(),
+        brimVolumeMm3: (m['brimVolumeMm3'] as num? ?? 0).toDouble(),
         lengths: PathLengths.fromList(m['lengths']),
         preview: m['preview'] is Map ? SlicePreview.fromMap(m['preview'] as Map) : null,
         solidVolumeMm3: (m['solidVolumeMm3'] as num).toDouble(),
@@ -129,6 +137,7 @@ class SliceClass {
   static const sparse = 4;
   static const support = 5;
   static const supportInterface = 6;
+  static const adhesion = 7; // brim / skirt
 }
 
 /// Per-layer rectangles (slicer coordinates: scaled mm, bed at z = 0).
@@ -181,6 +190,9 @@ typedef ProgressCallback = void Function(double fraction);
 const double kSupportXyGapMm = 0.6;
 const int kSupportInterfaceLayers = 2;
 const double kSupportInterfaceDensity = 0.7;
+
+/// Gap between the model (or its brim) and the skirt, mm.
+const double kSkirtGapMm = 2.0;
 
 /// Tree supports (Orca/Bambu style): tips under every overhang, branches
 /// lean towards their neighbours by up to the branch angle per layer, merge
@@ -406,10 +418,14 @@ SliceResult sliceMesh(
   // Raster grid.
   final lineW = st.lineWidth.clamp(0.1, 2.0).toDouble();
   final side = math.max(maxX - minX, maxY - minY);
-  final s = math.max(0.1, math.max(lineW * 0.5, side / maxCellsPerSide));
-  final ox = minX - 2 * s, oy = minY - 2 * s;
-  final nx = ((maxX - minX) / s).ceil() + 4;
-  final ny = ((maxY - minY) / s).ceil() + 4;
+  final brimW = st.brimWidth > 0 ? st.brimWidth : 0.0;
+  final skirtW = st.skirtLoops > 0 ? st.skirtLoops * lineW : 0.0;
+  final adhesion = brimW + (skirtW > 0 ? kSkirtGapMm + skirtW : 0.0);
+  final s = math.max(0.1, math.max(lineW * 0.5, (side + 2 * adhesion) / maxCellsPerSide));
+  final pad = 3 * s + adhesion;
+  final ox = minX - pad, oy = minY - pad;
+  final nx = ((maxX - minX + 2 * pad) / s).ceil() + 1;
+  final ny = ((maxY - minY + 2 * pad) / s).ceil() + 1;
   final nCells = nx * ny;
 
   // Triangles bucketed by the layers whose cutting plane they cross,
@@ -1117,6 +1133,93 @@ SliceResult sliceMesh(
       infoUp.copyFrom(infoHere);
     }
   }
+  // ---- Brim and skirt around the first layer. ----
+  double brimVolume = 0;
+  if (adhesion > 0) {
+    final base = Uint8List(nCells);
+    final info0 = _LayerInfo();
+    genLayer(0, base, info0);
+    if (info0.count > 0) {
+      // Outside cells reachable from the border (no brim inside holes).
+      final outside = Uint8List(nCells);
+      final queue = Int32List(nCells);
+      int qh = 0, qt = 0;
+      void seed(int idx) {
+        if (base[idx] == 0 && outside[idx] == 0) {
+          outside[idx] = 1;
+          queue[qt++] = idx;
+        }
+      }
+
+      for (int x = 0; x < nx; x++) {
+        seed(x);
+        seed((ny - 1) * nx + x);
+      }
+      for (int y = 0; y < ny; y++) {
+        seed(y * nx);
+        seed(y * nx + nx - 1);
+      }
+      while (qh < qt) {
+        final idx = queue[qh++];
+        final x = idx % nx, y = idx ~/ nx;
+        if (x > 0) seed(idx - 1);
+        if (x < nx - 1) seed(idx + 1);
+        if (y > 0) seed(idx - nx);
+        if (y < ny - 1) seed(idx + nx);
+      }
+      // Distance (cells) from the model.
+      final d = Float32List(nCells);
+      for (int i = 0; i < nCells; i++) {
+        d[i] = base[i] != 0 ? 0.0 : 1e9;
+      }
+      for (int y = 0; y < ny; y++) {
+        final row = y * nx;
+        for (int x = 0; x < nx; x++) {
+          final idx = row + x;
+          double v = d[idx];
+          if (v == 0) continue;
+          if (x > 0 && d[idx - 1] + 1 < v) v = d[idx - 1] + 1;
+          if (y > 0) {
+            if (d[idx - nx] + 1 < v) v = d[idx - nx] + 1;
+            if (x > 0 && d[idx - nx - 1] + r2 < v) v = d[idx - nx - 1] + r2;
+            if (x < nx - 1 && d[idx - nx + 1] + r2 < v) v = d[idx - nx + 1] + r2;
+          }
+          d[idx] = v;
+        }
+      }
+      for (int y = ny - 1; y >= 0; y--) {
+        final row = y * nx;
+        for (int x = nx - 1; x >= 0; x--) {
+          final idx = row + x;
+          double v = d[idx];
+          if (v == 0) continue;
+          if (x < nx - 1 && d[idx + 1] + 1 < v) v = d[idx + 1] + 1;
+          if (y < ny - 1) {
+            if (d[idx + nx] + 1 < v) v = d[idx + nx] + 1;
+            if (x < nx - 1 && d[idx + nx + 1] + r2 < v) v = d[idx + nx + 1] + r2;
+            if (x > 0 && d[idx + nx - 1] + r2 < v) v = d[idx + nx - 1] + r2;
+          }
+          d[idx] = v;
+        }
+      }
+      final skirtFrom = brimW + kSkirtGapMm, skirtTo = skirtFrom + skirtW;
+      int cells = 0;
+      for (int idx = 0; idx < nCells; idx++) {
+        if (outside[idx] == 0) continue;
+        final mm = (d[idx] - 0.5) * s;
+        final inBrim = brimW > 0 && mm < brimW;
+        final inSkirt = skirtW > 0 && mm >= skirtFrom && mm < skirtTo;
+        if (!inBrim && !inSkirt) continue;
+        cells++;
+        final pIdx = centerMap[idx];
+        if (pIdx >= 0) previewCls[pIdx] = SliceClass.adhesion;
+      }
+      final area = cells * s * s;
+      brimVolume = area * heights[0];
+      firstLen += area / lineW;
+    }
+  }
+
   // ---- Layer preview: merge equal cells into rectangles. ----
   final rects = FloatBuf(1 << 14);
   final rectCls = IntBuf(1 << 12);
@@ -1183,6 +1286,7 @@ SliceResult sliceMesh(
   return SliceResult(
     volumeMm3: volume,
     supportVolumeMm3: supportVolume,
+    brimVolumeMm3: brimVolume,
     lengths: PathLengths(
       outer: outerLen,
       inner: innerLen,

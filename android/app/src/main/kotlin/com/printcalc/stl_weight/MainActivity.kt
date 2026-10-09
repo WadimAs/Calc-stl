@@ -96,6 +96,35 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "shareFile" -> {
+                    val name = (call.argument<String>("name") ?: "file.png").replace("/", "_")
+                    val mime = call.argument<String>("mime") ?: "image/png"
+                    val text = call.argument<String>("text")
+                    val bytes = call.argument<ByteArray>("bytes")
+                    if (bytes == null) {
+                        result.error("args", "no bytes", null)
+                    } else {
+                        try {
+                            val dir = java.io.File(cacheDir, "share")
+                            dir.mkdirs()
+                            java.io.File(dir, name).writeBytes(bytes)
+                            val uri = Uri.parse("content://$packageName.share/$name")
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = mime
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                if (text != null) putExtra(Intent.EXTRA_TEXT, text)
+                                clipData = android.content.ClipData.newRawUri(name, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            val chooser = Intent.createChooser(send, null)
+                            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            startActivity(chooser)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("share", e.message, null)
+                        }
+                    }
+                }
                 "shareText" -> {
                     val text = call.argument<String>("text") ?: ""
                     val send = Intent(Intent.ACTION_SEND).apply {

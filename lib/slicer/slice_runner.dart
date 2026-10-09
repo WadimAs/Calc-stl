@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import '../mesh/mesh.dart';
 import 'settings.dart';
 import 'slicer.dart';
 
@@ -82,4 +83,16 @@ void _entry(List<Object> args) {
   } catch (e) {
     send.send({'error': e.toString()});
   }
+}
+
+/// Plastic volume (mm³, one copy, without brim) of every object on its own.
+Future<List<double>> sliceObjectVolumes(Float32List tris, List<MeshObject> objects, SliceSettings st) {
+  final ranges = [for (final o in objects) (o.start, o.end)];
+  final json = st.copyWith(brimWidth: 0, skirtLoops: 0).toJson();
+  return Isolate.run(() {
+    final s = SliceSettings.fromJson(json);
+    return [
+      for (final (a, b) in ranges) sliceMesh(Float32List.sublistView(tris, a * 9, b * 9), s).totalVolumeMm3,
+    ];
+  });
 }

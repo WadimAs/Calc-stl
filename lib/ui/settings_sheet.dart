@@ -93,6 +93,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
     const d = SliceSettings();
     final theme = Theme.of(context);
     final currentPrinter = printerById(s.printerId);
+    final adv = s.advancedUi;
     return ListView(
       controller: widget.controller,
       padding: const EdgeInsets.fromLTRB(20, 0, 12, 32),
@@ -107,6 +108,16 @@ class _SettingsBodyState extends State<_SettingsBody> {
             ),
           ],
         ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Розширений режим'),
+          subtitle: Text(adv
+              ? 'Усі параметри друку, калібрування, котушки, статистика'
+              : 'Увімкніть, щоб бачити всі параметри друку'),
+          value: adv,
+          onChanged: (v) => _set(_s.copyWith(advancedUi: v)),
+        ),
+        if (adv) ...[
         _section('Шари'),
         StepperRow(
           label: 'Висота шару',
@@ -263,6 +274,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
               ),
             ),
         ],
+        ],
         _section('Принтер'),
         _withReset(
           InputDecorator(
@@ -315,6 +327,32 @@ class _SettingsBodyState extends State<_SettingsBody> {
           s.printerId != d.printerId,
           () => _set(_s.copyWith(printerId: d.printerId, powerW: printerById(d.printerId).powerW)),
         ),
+        if (adv) ...[
+        const SizedBox(height: 12),
+        Text('Робоча зона, мм (0 — як у профілі)', style: theme.textTheme.bodyMedium),
+        const SizedBox(height: 8),
+        Row(children: [
+          for (final (axis, value, def) in [
+            ('X', s.bedX, currentPrinter.bedX),
+            ('Y', s.bedY, currentPrinter.bedY),
+            ('Z', s.bedZ, currentPrinter.bedZ),
+          ]) ...[
+            Expanded(
+              child: NumberField(
+                key: ValueKey('bed$axis-${s.printerId}'),
+                label: '$axis (${fmtNum(def, 0)})',
+                value: value,
+                defaultValue: 0,
+                onChanged: (v) => _set(switch (axis) {
+                  'X' => _s.copyWith(bedX: v),
+                  'Y' => _s.copyWith(bedY: v),
+                  _ => _s.copyWith(bedZ: v),
+                }),
+              ),
+            ),
+            if (axis != 'Z') const SizedBox(width: 8),
+          ],
+        ]),
         _section('Калібрування під слайсер'),
         _withReset(
           Padding(
@@ -346,6 +384,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
           value: s.autoApplyFileSettings,
           onChanged: (v) => _set(_s.copyWith(autoApplyFileSettings: v)),
         ),
+        ],
         _section('Собівартість'),
         NumberField(
           key: ValueKey('price-${s.materialId}'),
@@ -357,6 +396,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
             (v - _s.defaultPricePerKg).abs() < 1e-9 ? _s.withoutPriceOverride() : _s.withPrice(v),
           ),
         ),
+        if (adv) ...[
         const SizedBox(height: 12),
         NumberField(
           key: ValueKey('power-${s.printerId}'),
@@ -383,6 +423,16 @@ class _SettingsBodyState extends State<_SettingsBody> {
           defaultValue: d.amortizationPerHour,
           onChanged: (v) => _set(_s.copyWith(amortizationPerHour: v)),
         ),
+        const SizedBox(height: 12),
+        NumberField(
+          label: 'Запас на брак',
+          helper: 'Додається до собівартості на невдалі друки',
+          suffix: '%',
+          value: s.failurePercent,
+          defaultValue: d.failurePercent,
+          onChanged: (v) => _set(_s.copyWith(failurePercent: v)),
+        ),
+        ],
         _section('Заробіток'),
         NumberField(
           label: 'Націнка на собівартість',
@@ -391,6 +441,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
           defaultValue: d.markupPercent,
           onChanged: (v) => _set(_s.copyWith(markupPercent: v)),
         ),
+        if (adv) ...[
         const SizedBox(height: 12),
         NumberField(
           label: 'Доплата за замовлення',
@@ -400,6 +451,114 @@ class _SettingsBodyState extends State<_SettingsBody> {
           defaultValue: d.extraCost,
           onChanged: (v) => _set(_s.copyWith(extraCost: v)),
         ),
+        ],
+        _section('Ціна для клієнта'),
+        NumberField(
+          label: 'Мінімальна ціна замовлення',
+          suffix: currency,
+          value: s.minOrderPrice,
+          defaultValue: d.minOrderPrice,
+          onChanged: (v) => _set(_s.copyWith(minOrderPrice: v)),
+        ),
+        const SizedBox(height: 12),
+        Text('Округлювати ціну вгору до', style: theme.textTheme.bodyMedium),
+        const SizedBox(height: 6),
+        SegmentedButton<double>(
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(value: 0, label: Text('Ні')),
+            ButtonSegment(value: 1, label: Text('1')),
+            ButtonSegment(value: 5, label: Text('5')),
+            ButtonSegment(value: 10, label: Text('10')),
+            ButtonSegment(value: 50, label: Text('50')),
+          ],
+          selected: {
+            for (final r in const [0.0, 1.0, 5.0, 10.0, 50.0])
+              if (r == s.roundTo) r,
+          },
+          emptySelectionAllowed: true,
+          onSelectionChanged: (v) {
+            if (v.isNotEmpty) _set(_s.copyWith(roundTo: v.first));
+          },
+        ),
+        if (adv) ...[
+          const SizedBox(height: 14),
+          Text('Знижки від кількості', style: theme.textTheme.bodyMedium),
+          for (int i = 0; i < s.discounts.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(children: [
+                Expanded(
+                  child: NumberField(
+                    key: ValueKey('dq$i-${s.discounts.length}'),
+                    label: 'від, шт',
+                    value: s.discounts[i].qty.toDouble(),
+                    onChanged: (v) {
+                      final l = List<QtyDiscount>.of(_s.discounts);
+                      l[i] = QtyDiscount(v.round().clamp(1, 100000).toInt(), l[i].percent);
+                      _set(_s.copyWith(discounts: l));
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: NumberField(
+                    key: ValueKey('dp$i-${s.discounts.length}'),
+                    label: 'знижка',
+                    suffix: '%',
+                    value: s.discounts[i].percent,
+                    onChanged: (v) {
+                      final l = List<QtyDiscount>.of(_s.discounts);
+                      l[i] = QtyDiscount(l[i].qty, v.clamp(0, 90).toDouble());
+                      _set(_s.copyWith(discounts: l));
+                    },
+                  ),
+                ),
+                IconButton(
+                  onPressed: () {
+                    final l = List<QtyDiscount>.of(_s.discounts)..removeAt(i);
+                    _set(_s.copyWith(discounts: l));
+                  },
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ]),
+            ),
+          if (s.discounts.length < 4)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () {
+                  final last = s.discounts.isEmpty ? null : s.discounts.last;
+                  final l = List<QtyDiscount>.of(_s.discounts)
+                    ..add(QtyDiscount(last == null ? 5 : last.qty * 2, last == null ? 5 : last.percent + 5));
+                  _set(_s.copyWith(discounts: l));
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('Додати знижку'),
+              ),
+            ),
+          _section('Кайма та спідниця'),
+          StepperRow(
+            label: 'Кайма (brim)',
+            hint: 'ширина навколо першого шару; 0 — без кайми',
+            value: s.brimWidth,
+            defaultValue: d.brimWidth,
+            min: 0,
+            max: 20,
+            step: 1,
+            unit: ' мм',
+            onChanged: (v) => _set(_s.copyWith(brimWidth: v)),
+          ),
+          StepperRow(
+            label: 'Спідниця (skirt)',
+            hint: 'кількість контурів навколо моделі',
+            value: s.skirtLoops.toDouble(),
+            defaultValue: d.skirtLoops.toDouble(),
+            min: 0,
+            max: 5,
+            step: 1,
+            onChanged: (v) => _set(_s.copyWith(skirtLoops: v.round())),
+          ),
         _section('Модель'),
         StepperRow(
           label: 'Масштаб',
@@ -420,6 +579,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
           step: 1,
           onChanged: (v) => _set(_s.copyWith(copies: v.round())),
         ),
+        ],
         _section('Матеріал'),
         _withReset(
           InputDecorator(
@@ -455,6 +615,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
             _set(_s.copyWith(materialId: d.materialId, density: d.density));
           },
         ),
+        if (adv) ...[
         const SizedBox(height: 12),
         _withReset(
           TextField(
@@ -492,11 +653,12 @@ class _SettingsBodyState extends State<_SettingsBody> {
           s.filamentDiameter != d.filamentDiameter,
           () => _set(_s.copyWith(filamentDiameter: d.filamentDiameter)),
         ),
+        ],
         const SizedBox(height: 20),
         Padding(
           padding: const EdgeInsets.only(right: 8),
           child: Text(
-            'Розрахунок не враховує кайму (brim), спідницю та очищувальну вежу.',
+            'Розрахунок не враховує очищувальну вежу й змішування кольорів.',
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
         ),

@@ -39,6 +39,8 @@ class SlicerProject {
   final bool? ensureVertical;
   final double? density;
   final double? filamentDiameter;
+  final double? brimWidth;
+  final int? skirtLoops;
   final List<SlicedPlate> plates;
   final Uint8List? thumbnail;
 
@@ -62,6 +64,8 @@ class SlicerProject {
     this.ensureVertical,
     this.density,
     this.filamentDiameter,
+    this.brimWidth,
+    this.skirtLoops,
     this.plates = const [],
     this.thumbnail,
   });
@@ -101,28 +105,35 @@ class SlicerProject {
     if (m == null || m.isEmpty) return null;
     bool has(String s) => m.contains(s);
     if (has('bambu') || has('bbl')) {
+      if (has('a1 mini') || has('a1m')) return 'bambu_a1mini';
       if (has('a1')) return 'bambu_a1';
+      if (has('h2')) return 'bambu_h2d';
       return 'bambu';
     }
     if (has('creality') || has('ender') || has('k1') || has('k2') || has('cr-')) {
-      if (has('k1') || has('k2')) return 'creality_k1';
+      if (has('k1 max') || has('k2 plus') || has('k2')) return 'creality_k1max';
+      if (has('k1')) return 'creality_k1';
+      if (has('v3 plus')) return 'creality_v3plus';
       if (has('v3 se') || has('ender-5 s1') || has('ender 5 s1')) return 'creality_v3se';
       if (has('v3')) return 'creality_v3';
       return 'creality_classic';
     }
     if (has('anycubic') || has('kobra') || has('vyper') || has('i3 mega')) {
       if (has('s1')) return 'anycubic_s1';
-      if (has('kobra 3') || has('kobra 2 pro') || has('kobra 2 max') || has('kobra 2 plus')) return 'anycubic_k3';
+      if (has('max')) return 'anycubic_k3max';
+      if (has('kobra 3') || has('kobra 2 pro') || has('kobra 2 plus')) return 'anycubic_k3';
       if (has('kobra 2')) return 'anycubic_k2';
       return 'anycubic_classic';
     }
     if (has('elegoo') || has('neptune') || has('centauri')) {
       if (has('centauri')) return 'elegoo_cc';
+      if ((has('neptune 4') || has('neptune4')) && (has('plus') || has('max'))) return 'elegoo_n4max';
       if (has('neptune 4') || has('neptune4')) return 'elegoo_n4';
       return 'elegoo_n3';
     }
     if (has('prusa') || has('mk4') || has('mk3') || has('core one')) {
       if (has('mk3')) return 'prusa_mk3';
+      if (has('core one')) return 'prusa_core';
       return 'prusa_mk4';
     }
     if (has('voron')) return 'klipper';
@@ -150,6 +161,8 @@ class SlicerProject {
       filamentDiameter: filamentDiameter == null ? null : (filamentDiameter! > 2.3 ? 2.85 : 1.75),
       printerId: printerId,
       powerW: printerId == null ? null : printerById(printerId!).powerW,
+      brimWidth: brimWidth,
+      skirtLoops: skirtLoops,
     );
   }
 
@@ -166,6 +179,8 @@ class SlicerProject {
       if (walls != null) 'Стінки: $walls',
       if (topLayers != null || bottomLayers != null) 'Верх / низ: ${topLayers ?? '—'} / ${bottomLayers ?? '—'} шарів',
       if (infillPercent != null) 'Заповнення: ${n(infillPercent!, 0)}%',
+      if (brimWidth != null && brimWidth! > 0) 'Кайма: ${n(brimWidth!, 0)} мм',
+      if (skirtLoops != null && skirtLoops! > 0) 'Спідниця: $skirtLoops',
       if (supports != null)
         supports!
             ? 'Підтримки: ${supportTree == true ? 'деревоподібні' : 'звичайні'}'
@@ -277,6 +292,17 @@ SlicerProject _fromConfig(String app, Map<String, String> c,
   if (thr != null) angle = 90 - (thr > 0 ? thr : 30);
 
   final filament = _first(g(['filament_type']));
+  // Brim: Bambu/Orca brim_type + brim_width; Prusa brim_width. "auto" is
+  // decided by the slicer per model, so it is not assumed here.
+  double? brim;
+  final brimType = g(['brim_type'])?.toLowerCase();
+  final brimW = _num(g(['brim_width']));
+  if (brimType != null) {
+    brim = (brimType.contains('no_brim') || brimType.contains('auto') || brimW == null) ? 0 : brimW;
+  } else if (brimW != null) {
+    brim = brimW;
+  }
+  final skirt = _num(g(['skirt_loops', 'skirts']))?.round();
   return SlicerProject(
     app: app,
     printProfile: _first(g(['print_settings_id'])),
@@ -297,6 +323,8 @@ SlicerProject _fromConfig(String app, Map<String, String> c,
     ensureVertical: _flag(g(['ensure_vertical_shell_thickness'])),
     density: _num(g(['filament_density'])),
     filamentDiameter: _num(g(['filament_diameter'])),
+    brimWidth: brim,
+    skirtLoops: skirt,
     plates: plates,
     thumbnail: thumbnail,
   );
