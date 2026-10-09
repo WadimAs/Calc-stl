@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../mesh/holes.dart';
 import '../mesh/loader.dart';
 import '../mesh/mesh.dart';
 import '../slicer/slicer.dart';
@@ -102,7 +103,7 @@ class _ModelViewerState extends State<ModelViewer> {
   bool get _measuring => widget.measure?.active == true && !widget.showLayers;
 
   /// Point of the model surface under [pos], snapped to a vertex if close.
-  P3? _pick(Offset pos) {
+  P3? _pick(Offset pos, {bool? snap}) {
     final m = widget.model;
     final b = m.bounds;
     final v = _View.of(b, _size, _yaw, _pitch, _zoom, _pan);
@@ -149,7 +150,7 @@ class _ModelViewerState extends State<ModelViewer> {
     final o = bestT * 9;
     P3 vert(int j) => P3(t[o + j * 3] - bx, t[o + j * 3 + 1] - by, t[o + j * 3 + 2] - bz);
     final v0 = vert(0), v1 = vert(1), v2 = vert(2);
-    if (widget.measure?.snap ?? false) {
+    if (snap ?? widget.measure?.snap ?? false) {
       P3? snapped;
       double bestPx = 18;
       for (final q in [v0, v1, v2]) {
@@ -166,8 +167,19 @@ class _ModelViewerState extends State<ModelViewer> {
 
   void _onTap(TapUpDetails d) {
     if (!_measuring) return;
+    final mc = widget.measure!;
+    if (mc.tool == MeasureTool.holes) {
+      final p = _pick(d.localPosition, snap: false);
+      final b = widget.model.bounds;
+      mc.selectHoleAt(
+        p == null ? null : p.x + b.centerX,
+        p == null ? null : p.y + b.centerY,
+        p == null ? null : p.z + b.centerZ,
+      );
+      return;
+    }
     final p = _pick(d.localPosition);
-    if (p != null) widget.measure!.add(p);
+    if (p != null) mc.add(p);
   }
 
   bool _wasMeasuring = false;
@@ -401,10 +413,65 @@ class _ModelPainter extends CustomPainter {
     tp.paint(canvas, Offset(r.left + 6, r.top + 3));
   }
 
+  void _paintHoles(Canvas canvas, _View v, MeasureController mc) {
+    final list = mc.holes;
+    if (list == null || list.isEmpty) return;
+    final b = model.bounds;
+    final k = previewScale;
+    P3 rel(List<double> p) => P3(p[0] - b.centerX, p[1] - b.centerY, p[2] - b.centerZ);
+    final normal = Paint()
+      ..color = _measureColor
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    final picked = Paint()
+      ..color = const Color(0xFFFFC107)
+      ..strokeWidth = 3.5
+      ..style = PaintingStyle.stroke;
+
+    void ring(HoleFeature h, double w, double r, Paint paint) {
+      final c = rel(h.pointAt(w));
+      final u = List<double>.filled(3, 0)..[(h.axis + 1) % 3] = 1;
+      final ww = List<double>.filled(3, 0)..[(h.axis + 2) % 3] = 1;
+      final pu = P3(u[0], u[1], u[2]), pw = P3(ww[0], ww[1], ww[2]);
+      final path = Path();
+      for (int i = 0; i <= 48; i++) {
+        final a = i / 48 * 2 * math.pi;
+        final o = v.p(c + pu * (r * math.cos(a)) + pw * (r * math.sin(a)));
+        if (i == 0) {
+          path.moveTo(o.dx, o.dy);
+        } else {
+          path.lineTo(o.dx, o.dy);
+        }
+      }
+      canvas.drawPath(path, paint);
+    }
+
+    for (final h in list) {
+      if (identical(h, mc.selectedHole)) continue;
+      ring(h, h.w0, h.radius, normal);
+      ring(h, h.w1, h.radius, normal);
+    }
+    final sel = mc.selectedHole;
+    if (sel != null) {
+      ring(sel, sel.w0, sel.radius, picked);
+      ring(sel, sel.w1, sel.radius, picked);
+      canvas.drawLine(v.p(rel(sel.pointAt(sel.w0))), v.p(rel(sel.pointAt(sel.w1))), picked);
+    }
+    // Labels last so they stay readable.
+    for (final h in list) {
+      final top = v.p(rel(h.pointAt(h.w1)));
+      final bottom = v.p(rel(h.pointAt(h.w0)));
+      final at = top.dy < bottom.dy ? top : bottom;
+      _label(canvas, at + const Offset(0, -16), '⌀${(h.diameter * k).toStringAsFixed(2).replaceAll('.', ',')}');
+    }
+  }
+
   void _paintMeasure(Canvas canvas, Size size) {
     final mc = measure;
-    if (mc == null || (mc.done.isEmpty && mc.pending.isEmpty)) return;
+    if (mc == null) return;
     final v = _View.of(model.bounds, size, yaw, pitch, zoom, pan);
+    if (mc.tool == MeasureTool.holes) _paintHoles(canvas, v, mc);
+    if (mc.done.isEmpty && mc.pending.isEmpty) return;
     final k = previewScale;
     final line = Paint()
       ..color = _measureColor
@@ -455,6 +522,7 @@ class _ModelPainter extends CustomPainter {
           canvas.drawLine(v.p(pts[1]), v.p(pts[2]), line);
           _label(canvas, v.p(pts[1]) + const Offset(0, -18), '${m.angle.toStringAsFixed(1).replaceAll('.', ',')}°');
         case MeasureTool.none:
+        case MeasureTool.holes:
           break;
       }
       for (final q in pts) {

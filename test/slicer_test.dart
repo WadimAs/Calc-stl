@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:stl_weight/history/history.dart';
+import 'package:stl_weight/mesh/holes.dart';
 import 'package:stl_weight/mesh/mesh.dart';
 import 'package:stl_weight/mesh/stl_parser.dart';
 import 'package:stl_weight/mesh/threemf_parser.dart';
@@ -397,5 +398,65 @@ void main() {
     expect(mc.pending, isEmpty);
     mc.undo();
     expect(mc.done, isEmpty);
+  });
+
+  test('automatic holes: tube along Z and X, chamfer, no holes in a box', () {
+    // Tube: outer R10, hole R4, 12 mm tall, 48 segments, outward winding.
+    List<double> tube({double rOut = 10, double rIn = 4, double h = 12, int seg = 48}) {
+      final out = <double>[];
+      void tri(List<double> a, List<double> b, List<double> c) => out
+        ..addAll(a)
+        ..addAll(b)
+        ..addAll(c);
+      for (int i = 0; i < seg; i++) {
+        final a0 = 2 * math.pi * i / seg, a1 = 2 * math.pi * (i + 1) / seg;
+        List<double> p(double r, double a, double z) => [r * math.cos(a), r * math.sin(a), z];
+        tri(p(rOut, a0, 0), p(rOut, a1, 0), p(rOut, a1, h));
+        tri(p(rOut, a0, 0), p(rOut, a1, h), p(rOut, a0, h));
+        tri(p(rIn, a0, 0), p(rIn, a1, h), p(rIn, a1, 0));
+        tri(p(rIn, a0, 0), p(rIn, a0, h), p(rIn, a1, h));
+        tri(p(rOut, a0, h), p(rOut, a1, h), p(rIn, a1, h));
+        tri(p(rOut, a0, h), p(rIn, a1, h), p(rIn, a0, h));
+        tri(p(rOut, a0, 0), p(rIn, a1, 0), p(rOut, a1, 0));
+        tri(p(rOut, a0, 0), p(rIn, a0, 0), p(rIn, a1, 0));
+      }
+      return out;
+    }
+
+    final z = Float32List.fromList(tube());
+    expect(Mesh(z).signedVolume(), greaterThan(0));
+    final hz = findHoles(z);
+    expect(hz.length, 1);
+    expect(hz.single.axis, 2);
+    expect(hz.single.diameter, closeTo(8, 0.12));
+    expect(hz.single.depth, closeTo(12, 0.5));
+    expect(hz.single.wallDistance(4, 0, 6), closeTo(0, 0.1));
+    expect(hz.single.wallDistance(10, 0, 6), greaterThan(1));
+
+    // Same tube lying along X: (x, y, z) -> (z, x, y).
+    final src = tube();
+    final xs = Float32List(src.length);
+    for (int i = 0; i < src.length; i += 3) {
+      xs[i] = src[i + 2];
+      xs[i + 1] = src[i];
+      xs[i + 2] = src[i + 1];
+    }
+    final hx = findHoles(xs);
+    expect(hx.length, 1);
+    expect(hx.single.axis, 0);
+    expect(hx.single.diameter, closeTo(8, 0.12));
+
+    // Inverted winding is handled with the flag.
+    final inv = Float32List.fromList(tube());
+    for (int i = 0; i < inv.length; i += 9) {
+      for (int k = 0; k < 3; k++) {
+        final tmp = inv[i + 3 + k];
+        inv[i + 3 + k] = inv[i + 6 + k];
+        inv[i + 6 + k] = tmp;
+      }
+    }
+    expect(findHoles(inv, inverted: true).length, 1);
+
+    expect(findHoles(box(20, 20, 20)), isEmpty);
   });
 }

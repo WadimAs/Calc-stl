@@ -101,7 +101,7 @@ class _HomePageState extends State<HomePage> {
         _sliceError = null;
         _manualHours = null;
         _layersView = false;
-        _measure.reset();
+        _measure.attachModel(m.mesh.tris, inverted: !m.outwardNormals);
       });
       _slice();
     } catch (e) {
@@ -529,8 +529,40 @@ class _HomePageState extends State<HomePage> {
       case MeasureTool.angle:
         return '${fmtNum(m.angle, 1)}°';
       case MeasureTool.none:
+      case MeasureTool.holes:
         return '';
     }
+  }
+
+  static String _holesWord(int n) {
+    final m10 = n % 10, m100 = n % 100;
+    if (m10 == 1 && m100 != 11) return 'отвір';
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'отвори';
+    return 'отворів';
+  }
+
+  String _holesText(double k) {
+    final mc = _measure;
+    if (mc.holesBusy) return 'Шукаю отвори…';
+    if (mc.holesError != null) return mc.holesError!;
+    final list = mc.holes;
+    if (list == null) return '';
+    if (list.isEmpty) return 'Круглих отворів уздовж осей X, Y, Z не знайдено';
+    final h = mc.selectedHole;
+    if (h != null) {
+      final chamfer = h.chamferRadius > h.radius ? ' · фаска до ⌀${fmtNum(h.chamferRadius * 2 * k, 2)}' : '';
+      return 'Отвір ⌀${fmtNum(h.diameter * k, 2)} мм · глибина ≈${fmtNum(h.depth * k, 1)} мм · вісь ${h.axisName}$chamfer';
+    }
+    final groups = <String, int>{};
+    for (final x in list) {
+      final key = fmtNum(x.diameter * k, 1);
+      groups[key] = (groups[key] ?? 0) + 1;
+    }
+    final keys = groups.keys.toList()
+      ..sort((a, b) => double.parse(a.replaceAll(',', '.')).compareTo(double.parse(b.replaceAll(',', '.'))));
+    final parts = [for (final d in keys) groups[d]! > 1 ? '⌀$d ×${groups[d]}' : '⌀$d'];
+    final miss = mc.holeMiss ? 'Тут немає отвору. ' : '';
+    return '$miss${list.length} ${_holesWord(list.length)}: ${parts.join(' · ')} — торкніться отвору';
   }
 
   Widget _measurePanel(double k) {
@@ -538,7 +570,9 @@ class _HomePageState extends State<HomePage> {
     final mc = _measure;
     final need = mc.tool.points;
     String text;
-    if (mc.pending.isNotEmpty) {
+    if (mc.tool == MeasureTool.holes) {
+      text = _holesText(k);
+    } else if (mc.pending.isNotEmpty) {
       text = 'Точка ${mc.pending.length + 1} з $need — торкніться моделі';
     } else if (mc.done.isNotEmpty && mc.done.last.tool == mc.tool) {
       text = _measureText(mc.done.last, k);
@@ -565,23 +599,17 @@ class _HomePageState extends State<HomePage> {
                   style: const ButtonStyle(
                     visualDensity: VisualDensity.compact,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 4)),
+                    textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500)),
                   ),
                   showSelectedIcon: false,
                   segments: [
-                    for (final t in [MeasureTool.distance, MeasureTool.circle, MeasureTool.angle])
-                      ButtonSegment(value: t, label: Text(t.label)),
+                    for (final t in [MeasureTool.distance, MeasureTool.circle, MeasureTool.angle, MeasureTool.holes])
+                      ButtonSegment(value: t, label: Text(t.label, maxLines: 1)),
                   ],
                   selected: {mc.tool},
                   onSelectionChanged: (v) => mc.tool = v.first,
                 ),
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                tooltip: mc.snap ? 'Прилипання до вершин: увімк.' : 'Прилипання до вершин: вимк.',
-                isSelected: mc.snap,
-                onPressed: () => mc.snap = !mc.snap,
-                icon: const Icon(Icons.filter_center_focus_outlined),
-                selectedIcon: Icon(Icons.filter_center_focus, color: theme.colorScheme.primary),
               ),
             ]),
             Row(children: [
@@ -591,9 +619,23 @@ class _HomePageState extends State<HomePage> {
                   child: Text(
                     text,
                     style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                    maxLines: 2,
+                    maxLines: 3,
                   ),
                 ),
+              ),
+              if (mc.tool == MeasureTool.holes && mc.holesBusy)
+                const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                ),
+              if (mc.tool != MeasureTool.holes) ...[
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: mc.snap ? 'Прилипання до вершин: увімк.' : 'Прилипання до вершин: вимк.',
+                isSelected: mc.snap,
+                onPressed: () => mc.snap = !mc.snap,
+                icon: const Icon(Icons.filter_center_focus_outlined),
+                selectedIcon: Icon(Icons.filter_center_focus, color: theme.colorScheme.primary),
               ),
               IconButton(
                 visualDensity: VisualDensity.compact,
@@ -607,6 +649,7 @@ class _HomePageState extends State<HomePage> {
                 onPressed: mc.pending.isEmpty && mc.done.isEmpty ? null : mc.clear,
                 icon: const Icon(Icons.delete_sweep_outlined),
               ),
+              ],
             ]),
           ],
         ),

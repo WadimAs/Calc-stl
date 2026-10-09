@@ -1,6 +1,10 @@
+import 'dart:isolate';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+
+import '../mesh/holes.dart';
 
 /// Point in model coordinates (mm, relative to the model's bounding-box centre).
 class P3 {
@@ -24,7 +28,7 @@ class P3 {
   }
 }
 
-enum MeasureTool { none, distance, circle, angle }
+enum MeasureTool { none, distance, circle, angle, holes }
 
 extension MeasureToolInfo on MeasureTool {
   int get points => switch (this) {
@@ -32,6 +36,7 @@ extension MeasureToolInfo on MeasureTool {
         MeasureTool.distance => 2,
         MeasureTool.circle => 3,
         MeasureTool.angle => 3,
+        MeasureTool.holes => 1,
       };
 
   String get label => switch (this) {
@@ -39,6 +44,7 @@ extension MeasureToolInfo on MeasureTool {
         MeasureTool.distance => 'Відстань',
         MeasureTool.circle => 'Коло',
         MeasureTool.angle => 'Кут',
+        MeasureTool.holes => 'Отвори',
       };
 }
 
@@ -101,6 +107,79 @@ class MeasureController extends ChangeNotifier {
     _tool = t;
     pending.clear();
     notifyListeners();
+    if (t == MeasureTool.holes) _findHoles();
+  }
+
+  // ---- Automatic holes ----
+  Float32List? _tris;
+  bool _inverted = false;
+  int _generation = 0;
+
+  /// Holes of the current model (null until the first analysis finishes).
+  List<HoleFeature>? holes;
+  bool holesBusy = false;
+  String? holesError;
+  HoleFeature? selectedHole;
+
+  /// The last tap in holes mode did not hit a hole wall.
+  bool holeMiss = false;
+
+  /// New model: forget everything computed for the previous one.
+  void attachModel(Float32List tris, {required bool inverted}) {
+    _tris = tris;
+    _inverted = inverted;
+    _generation++;
+    holes = null;
+    holesBusy = false;
+    holesError = null;
+    selectedHole = null;
+    holeMiss = false;
+    reset();
+  }
+
+  Future<void> _findHoles() async {
+    final tris = _tris;
+    if (tris == null || holes != null || holesBusy) return;
+    final gen = _generation;
+    final inverted = _inverted;
+    holesBusy = true;
+    holesError = null;
+    notifyListeners();
+    try {
+      final found = await Isolate.run(() => findHoles(tris, inverted: inverted));
+      if (gen != _generation) return;
+      holes = found;
+    } catch (e) {
+      if (gen != _generation) return;
+      holesError = 'Не вдалося проаналізувати модель: $e';
+    } finally {
+      if (gen == _generation) {
+        holesBusy = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Selects the hole whose wall is at the absolute point, if any.
+  void selectHoleAt(double? x, double? y, double? z) {
+    final list = holes;
+    if (list == null) return;
+    HoleFeature? best;
+    if (x != null && y != null && z != null) {
+      double bestD = double.infinity;
+      for (final h in list) {
+        final d = h.wallDistance(x, y, z);
+        if (d == null) continue;
+        final tol = math.max(0.3, h.radius * 0.2);
+        if (d <= tol && d < bestD) {
+          bestD = d;
+          best = h;
+        }
+      }
+    }
+    selectedHole = best;
+    holeMiss = best == null;
+    notifyListeners();
   }
 
   set snap(bool v) {
@@ -109,7 +188,7 @@ class MeasureController extends ChangeNotifier {
   }
 
   void add(P3 p) {
-    if (!active) return;
+    if (!active || _tool == MeasureTool.holes) return;
     pending.add(p);
     if (pending.length >= _tool.points) {
       done.add(Measurement(_tool, List.of(pending)));
@@ -138,6 +217,8 @@ class MeasureController extends ChangeNotifier {
     pending.clear();
     done.clear();
     _tool = MeasureTool.none;
+    selectedHole = null;
+    holeMiss = false;
     notifyListeners();
   }
 }
