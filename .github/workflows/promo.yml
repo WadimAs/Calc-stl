@@ -46,7 +46,9 @@ jobs:
         run: |
           d=shots; [ -f shots/04_model.png ] || d=$(dirname "$(find shots -name 04_model.png | head -1)")
           [ -d clips ] && export PROMO_CLIPS=$PWD/clips
-          python3 tool/promo/make_video.py "$d" promo.mp4
+          if [ -n "$ELEVENLABS_API_KEY" ]; then echo "voice: ElevenLabs ${ELEVEN_MODEL} ${ELEVEN_VOICE:-George}" > render.log; else echo "voice: Edge $PROMO_VOICE (no ElevenLabs key)" > render.log; fi
+          python3 tool/promo/make_video.py "$d" promo.mp4 2>&1 | tee -a render.log
+          test -s promo.mp4
           ls -la promo.mp4
       - uses: softprops/action-gh-release@v2
         with:
@@ -54,5 +56,7 @@ jobs:
           name: Промо-відео
           prerelease: true
           make_latest: false
-          files: promo.mp4
+          files: |
+            promo.mp4
+            render.log
           body: Промо-відео застосунку (згенеровано автоматично).
