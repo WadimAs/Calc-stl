@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -11,6 +12,7 @@ import 'package:stl_weight/main.dart' as app;
 import 'package:stl_weight/printers/print_hub.dart';
 import 'package:stl_weight/printers/printers.dart';
 import 'package:stl_weight/platform/files.dart';
+import 'package:stl_weight/platform/updates.dart';
 import 'package:stl_weight/ui/home_page.dart';
 import 'package:stl_weight/ui/spool_icon.dart';
 
@@ -78,6 +80,58 @@ Future<Uint8List> labelPng() async {
   return bd!.buffer.asUint8List();
 }
 
+/// A spur gear with a centre hole (nicer demo model; also shows a hole).
+Uint8List gearStl() {
+  const teeth = 18, n = teeth * 8, h = 8.0, rIn = 6.0, rRoot = 24.0, rTip = 28.0;
+  double rOut(int i) {
+    final t = (i % 8) / 8.0; // position within one tooth
+    if (t < 0.2) return rRoot;
+    if (t < 0.35) return rRoot + (rTip - rRoot) * (t - 0.2) / 0.15;
+    if (t < 0.65) return rTip;
+    if (t < 0.8) return rTip - (rTip - rRoot) * (t - 0.65) / 0.15;
+    return rRoot;
+  }
+
+  List<double> p(double r, int i, double z) {
+    final a = 2 * math.pi * i / n;
+    return [30 + r * math.cos(a), 30 + r * math.sin(a), z];
+  }
+
+  final tris = <double>[];
+  void tri(List<double> a, List<double> b, List<double> c) => tris
+    ..addAll(a)
+    ..addAll(b)
+    ..addAll(c);
+  for (int i = 0; i < n; i++) {
+    final j = (i + 1) % n;
+    final oi = rOut(i), oj = rOut(j);
+    // top (z = h) and bottom (z = 0) rings
+    tri(p(rIn, i, h), p(oi, i, h), p(oj, j, h));
+    tri(p(rIn, i, h), p(oj, j, h), p(rIn, j, h));
+    tri(p(rIn, i, 0), p(oj, j, 0), p(oi, i, 0));
+    tri(p(rIn, i, 0), p(rIn, j, 0), p(oj, j, 0));
+    // outer wall
+    tri(p(oi, i, 0), p(oj, j, 0), p(oj, j, h));
+    tri(p(oi, i, 0), p(oj, j, h), p(oi, i, h));
+    // hole wall (facing the axis)
+    tri(p(rIn, i, 0), p(rIn, i, h), p(rIn, j, h));
+    tri(p(rIn, i, 0), p(rIn, j, h), p(rIn, j, 0));
+  }
+  final nt = tris.length ~/ 9;
+  final bd = ByteData(84 + nt * 50);
+  bd.setUint32(80, nt, Endian.little);
+  int o = 84;
+  for (int t = 0; t < nt; t++) {
+    o += 12;
+    for (int k = 0; k < 9; k++) {
+      bd.setFloat32(o, tris[t * 9 + k], Endian.little);
+      o += 4;
+    }
+    o += 2;
+  }
+  return bd.buffer.asUint8List();
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final errors = <String>[];
@@ -121,7 +175,7 @@ void main() {
         await Directory(screensDir!).create(recursive: true);
         final view = tester.binding.renderViews.first;
         final layer = view.debugLayer! as OffsetLayer;
-        final img = await layer.toImage(view.paintBounds, pixelRatio: 0.5);
+        final img = await layer.toImage(view.paintBounds, pixelRatio: 1.0);
         final data = await img.toByteData(format: ui.ImageByteFormat.png);
         img.dispose();
         if (data != null) {
@@ -194,6 +248,7 @@ void main() {
       await tap(find.text(item));
     }
 
+    Updates.disabled = true;
     debugForceLang = 'uk'; // the emulator is English; the walk-through starts in Ukrainian
     app.main();
     await settle(3000);
@@ -216,7 +271,7 @@ void main() {
     await step('open_model', () async {
       final open = HomePage.debugOpen;
       if (open == null) throw StateError('debugOpen не встановлено');
-      open(PickedFile('bracket.stl', bracketStl()));
+      open(PickedFile('gear.stl', gearStl()));
       await waitFor(find.text('До замовлення'), seconds: 60);
       await waitFor(find.text('Підігнати під слайсер'), seconds: 60); // slicing done
       await settle(800);
@@ -413,7 +468,7 @@ void main() {
       PrinterHub.instance.debugEmit(const FinishedPrint(
         printer: PrinterConn(id: 'test', name: 'A1 mini', kind: PrinterKind.bambu, host: '', serial: 'TEST'),
         key: 'test:1',
-        job: 'bracket',
+        job: 'gear',
         failed: false,
         lines: [UsageLine(slotKey: '0-0', type: 'PLA', color: 0xFFFFFFFF, grams: 12.5)],
         source: 'test',
@@ -428,7 +483,7 @@ void main() {
       await shot('32f_spools_after_print');
       await tap(find.byTooltip('Журнал списань'));
       await shot('32g_writeoffs');
-      await tap(find.text('bracket'));
+      await tap(find.text('gear'));
       await waitFor(find.text('Списання'));
       await shot('32i_writeoff_edit');
       await tap(find.text('Зберегти'));
@@ -537,7 +592,7 @@ void main() {
     });
 
     await step('en_model', () async {
-      HomePage.debugOpen!(PickedFile('bracket.stl', bracketStl()));
+      HomePage.debugOpen!(PickedFile('gear.stl', gearStl()));
       await waitFor(find.text('To order'), seconds: 60);
       await waitFor(find.text('Match the slicer'), seconds: 60);
       await settle(800);

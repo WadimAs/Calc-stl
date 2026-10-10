@@ -45,7 +45,11 @@ class Updates {
   }
 
   /// Returns a newer release, or null when up to date / offline.
+  /// UI tests / screenshots: never show the update banner.
+  static bool disabled = false;
+
   static Future<UpdateInfo?> check() async {
+    if (disabled) return null;
     final current = await installedBuild();
     if (current == null) return null;
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
