@@ -55,9 +55,9 @@ def main():
             cands.append((label, v["voice_id"], v.get("public_owner_id")))
     except urllib.error.HTTPError as e:
         print("shared-voices:", e.code, e.read()[:300])
-    shared = cands[:6]
+    shared = cands[:8]
     lines, n = [], 0
-    for label, vid, owner in shared + [(a, b, None) for a, b in PREMADE]:
+    for label, vid, owner in shared + ([(a, b, None) for a, b in PREMADE] if not shared else []):
         n += 1
         safe = re.sub(r"[^\w]+", "_", label)[:40].strip("_")
         path = os.path.join(out, f"{n:02d}_{safe}.mp3")
