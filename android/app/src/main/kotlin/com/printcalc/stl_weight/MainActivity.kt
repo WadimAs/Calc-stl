@@ -31,6 +31,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         initialUri = extractUri(intent)
+        if (intent?.getBooleanExtra("ocrSelfTest", false) == true) ocrSelfTest()
         if (initialUri == null) initialLink = extractLink(intent)
         val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
         channel = ch
@@ -381,6 +382,28 @@ class MainActivity : FlutterActivity() {
                 }
             }
             else -> null
+        }
+    }
+
+    /** CI check that text recognition works in the minified release build. */
+    private fun ocrSelfTest() {
+        val bmp = android.graphics.Bitmap.createBitmap(900, 300, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(bmp)
+        c.drawColor(android.graphics.Color.WHITE)
+        val p = android.graphics.Paint().apply {
+            color = android.graphics.Color.BLACK
+            textSize = 80f
+            isAntiAlias = true
+        }
+        c.drawText("PETG Black 1000g", 30f, 170f, p)
+        try {
+            com.google.mlkit.vision.text.TextRecognition
+                .getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
+                .process(com.google.mlkit.vision.common.InputImage.fromBitmap(bmp, 0))
+                .addOnSuccessListener { android.util.Log.i("STLVAGA", "OCR_SELFTEST_OK " + it.text.replace('\n', ' ')) }
+                .addOnFailureListener { android.util.Log.e("STLVAGA", "OCR_SELFTEST_FAIL " + it) }
+        } catch (e: Throwable) {
+            android.util.Log.e("STLVAGA", "OCR_SELFTEST_FAIL " + e)
         }
     }
 

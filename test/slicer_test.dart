@@ -1077,6 +1077,15 @@ void main() {
       expect(l.materialId, 'ASA');
       expect(l.colorArgb, 0xFF9E9E9E);
 
+      // SUNLU spool label without the brand name (photo from a user).
+      l = parseSpoolLabel('PETG Black Ø1.75mm\n01240722Z\n\nPrint Temp:230-240℃50-100mm/s\n'
+          'Print Temp:240-260℃100-200mm/s\nBed temp:60-70℃\n\n1000g\n');
+      expect(l.materialId, 'PETG');
+      expect(l.colorName, 'Black');
+      expect(l.colorArgb, 0xFF202020);
+      expect(l.weightGrams, 1000);
+      expect(l.name, 'Black');
+
       expect(parseSpoolLabel('hello world').isEmpty, isTrue);
     });
   });

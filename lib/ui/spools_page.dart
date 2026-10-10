@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/records.dart';
 import '../expenses/expenses.dart';
@@ -293,7 +294,8 @@ class _SpoolDialogState extends State<_SpoolDialog> {
               ]);
       });
     } catch (e) {
-      if (mounted) setState(() => _scanNote = trf('Не вдалося розпізнати: {0}', [e]));
+      final msg = e is PlatformException ? (e.message ?? e.code) : '$e';
+      if (mounted) setState(() => _scanNote = trf('Не вдалося розпізнати: {0}', [msg]));
     } finally {
       if (mounted) setState(() => _scanning = false);
     }

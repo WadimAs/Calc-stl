@@ -9,6 +9,8 @@ on:
       - 'test_driver/**'
       - '.github/workflows/ui-test.yml'
       - '.github/scripts/ui_run.sh'
+      - 'android/**'
+      - '.github/scripts/add_deps.py'
 
 permissions:
   contents: write
@@ -47,6 +49,11 @@ jobs:
       - name: Build debug APK
         run: flutter build apk --debug
 
+      - name: Build release APK (x86_64, for the R8 check)
+        run: |
+          flutter build apk --release --target-platform android-x64
+          cp build/app/outputs/flutter-apk/app-release.apk release-x64.apk
+
       - name: Run on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -64,7 +71,7 @@ jobs:
         run: |
           mkdir -p screenshots
           cp drive.txt logcat.txt screenshots/ 2>/dev/null || true
-          grep -E "UI_STEP_FAILED|UI_ERRORS|EXCEPTION CAUGHT|flutter test exit|All tests passed|Some tests failed" drive.txt | head -60 | while read -r l; do echo "::warning::$l"; done || true
+          grep -E "OCR_SELFTEST|UI_STEP_FAILED|UI_ERRORS|EXCEPTION CAUGHT|flutter test exit|All tests passed|Some tests failed" drive.txt | head -60 | while read -r l; do echo "::warning::$l"; done || true
           cd screenshots && zip -q -r ../ui-results.zip . && cd ..
           ls -la screenshots | head -80
 
