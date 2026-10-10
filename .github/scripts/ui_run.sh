@@ -31,12 +31,36 @@ adb shell settings put global window_animation_scale 0 || true
 : > drive.txt
 for attempt in 1 2 3; do
   echo "=== attempt $attempt" >> drive.txt
-  timeout 900 flutter test integration_test/app_test.dart -d emulator-5554 -r expanded >> drive.txt 2>&1
+  # Screen on and unlocked, otherwise the app may never draw a frame.
+  adb shell input keyevent KEYCODE_WAKEUP || true
+  adb shell wm dismiss-keyguard || true
+  adb shell input keyevent 82 || true
+  start=$(wc -l < drive.txt)
+  timeout 600 flutter test integration_test/app_test.dart -d emulator-5554 -r expanded >> drive.txt 2>&1 &
+  TEST=$!
+  # Watchdog: if the walk-through has not started within 3 minutes the app is
+  # stuck (rare first-launch hang) — stop and try again instead of waiting.
+  started=0
+  for i in $(seq 1 90); do
+    if ! kill -0 $TEST 2>/dev/null; then break; fi
+    if tail -n +$((start + 1)) drive.txt | grep -q "UI_LOG step"; then started=1; break; fi
+    sleep 2
+  done
+  if [ $started = 0 ] && kill -0 $TEST 2>/dev/null; then
+    echo "watchdog: no progress, restarting" >> drive.txt
+    pkill -f "flutter test" || true
+    kill $TEST 2>/dev/null || true
+    wait $TEST 2>/dev/null
+    adb shell am force-stop $PKG || true
+    sleep 5
+    continue
+  fi
+  wait $TEST
   code=$?
   echo "flutter test exit $code" >> drive.txt
-  if grep -q "UI_LOG DONE" drive.txt; then break; fi
-  if grep -q "UI_LOG step" drive.txt; then break; fi  # ran but failed somewhere: keep the results
-  sleep 20
+  if tail -n +$((start + 1)) drive.txt | grep -q "UI_LOG DONE"; then break; fi
+  if tail -n +$((start + 1)) drive.txt | grep -q "UI_LOG step"; then break; fi  # ran but failed: keep results
+  sleep 5
 done
 
 pull
