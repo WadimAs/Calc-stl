@@ -202,8 +202,8 @@ void main() {
       await settle(600);
       await glide(-900, ms: 1300);
       await settle(1500);
-      await home();
     });
+    await home();
 
     await clip('supports', () async {
       HomePage.debugOpen!(PickedFile('bracket.stl', bracketStl()));
@@ -259,8 +259,8 @@ void main() {
       await tap(find.text('Рахунок'), after: 1500);
       await glide(-400, ms: 1200);
       await settle(800);
-      await home();
     });
+    await home();
 
     await clip('ocr', () async {
       PlatformFiles.debugImage = await labelPng();
@@ -288,8 +288,8 @@ void main() {
       await tap(find.text('Списати'), after: 1200);
       await menu('Котушки');
       await settle(1800);
-      await home();
     });
+    await home();
 
     await clip('business', () async {
       await menu('Замовлення');
@@ -299,14 +299,14 @@ void main() {
       await settle(1500);
       await glide(-500, ms: 1200);
       await settle(1500);
-      await home();
     });
+    await home();
 
     await clip('printers', () async {
       await menu('Принтери');
       await tap(find.text('Принтер'), after: 1800);
-      await home();
     });
+    await home();
 
     await clip('lang', () async {
       await settle(800);
@@ -314,8 +314,8 @@ void main() {
       applyLang('en');
       await settle(2500);
       await tap(find.byIcon(Icons.more_vert), after: 1500);
-      await home();
     });
+    await home();
 
     // ignore: avoid_print
     print('PROMO_DONE');
