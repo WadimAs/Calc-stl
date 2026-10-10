@@ -452,9 +452,9 @@ class _SpoolDialogState extends State<_SpoolDialog> {
                 showSelectedIcon: false,
                 style: const ButtonStyle(visualDensity: VisualDensity.compact),
                 segments: [
-                  ButtonSegment(value: 1, label: Text(tr('1 колір'))),
-                  ButtonSegment(value: 2, label: Text(tr('2 кольори'))),
-                  ButtonSegment(value: 3, label: Text(tr('3 кольори'))),
+                  ButtonSegment(value: 1, label: Text(tr('1 колір'), maxLines: 1, softWrap: false)),
+                  const ButtonSegment(value: 2, label: Text('2', maxLines: 1)),
+                  const ButtonSegment(value: 3, label: Text('3', maxLines: 1)),
                 ],
                 selected: {_colors.length},
                 onSelectionChanged: (v) => _setCount(v.first),
