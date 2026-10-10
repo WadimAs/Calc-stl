@@ -7,8 +7,8 @@ on:
         description: "Edge TTS voice (if no ElevenLabs key)"
         default: "uk-UA-OstapNeural"
       eleven_voice:
-        description: "ElevenLabs voice_id (empty = George)"
-        default: ""
+        description: "ElevenLabs voice_id (default: Evgeniy Shevchenko)"
+        default: "Ntd0iVwICtUtA6Fvx27M"
       eleven_model:
         description: "ElevenLabs model"
         default: "eleven_multilingual_v2"

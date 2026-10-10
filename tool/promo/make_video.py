@@ -200,11 +200,90 @@ LOGO_IMG = None
 PHONE_TOP = 430
 
 
+TOUCH_R = 30  # finger mark radius on the screen image (SCREEN_W wide), px
+TOUCH_FADE = 380  # ms of the release ripple
+
+
+def load_touches(clips_dir):
+    """PROMO_VIEW / PROMO_TOUCH lines -> (view, {pointer: [(ms, kind, x, y)]})."""
+    view, touches = None, {}
+    p = os.path.join(clips_dir, "marks.txt")
+    if not os.path.exists(p):
+        return None, {}
+    for line in open(p, encoding="utf-8", errors="replace"):
+        parts = line.split()
+        try:
+            if parts[0] == "PROMO_VIEW":
+                view = (float(parts[1]), float(parts[2]), float(parts[3]))
+            elif parts[0] == "PROMO_TOUCH":
+                touches.setdefault(parts[1], []).append(
+                    (int(parts[5]), parts[2], float(parts[3]), float(parts[4])))
+        except (IndexError, ValueError):
+            pass
+    return view, touches
+
+
+def touch_marks(view, touches, t_ms):
+    """Finger marks at device time t_ms: list of (x, y, kind, progress)."""
+    if not view:
+        return []
+    pw, ph, dpr = view
+    sx, sy = SCREEN_W * dpr / pw, SCREEN_H * dpr / (ph * 0.974)
+    out = []
+    for evs in touches.values():
+        down = evs[0][0]
+        up = next((e[0] for e in evs if e[1] == "up"), evs[-1][0])
+        if t_ms < down or t_ms > up + TOUCH_FADE:
+            continue
+        pos = evs[0]
+        for e in evs:
+            if e[0] <= t_ms:
+                pos = e
+            else:
+                break
+        x, y = pos[2] * sx, pos[3] * sy
+        if t_ms <= up:
+            out.append((x, y, "hold", min(1.0, (t_ms - down) / 120.0)))
+        else:
+            out.append((x, y, "release", (t_ms - up) / TOUCH_FADE))
+    return out
+
+
+def draw_touches(img, marks):
+    if not marks:
+        return img
+    img = img.convert("RGBA")
+    k = 3  # supersampling for smooth circles
+    for x, y, kind, p in marks:
+        if kind == "hold":
+            r = TOUCH_R * (0.7 + 0.3 * ease(p))
+            fill_a, ring_a, ring_r = 110, 235, r
+        else:
+            q = ease(p)
+            r = TOUCH_R
+            fill_a, ring_a, ring_r = int(110 * (1 - q) ** 2), int(235 * (1 - q)), TOUCH_R * (1 + 1.1 * q)
+        size = int((ring_r + 10) * 2)
+        patch = Image.new("RGBA", (size * k, size * k), (0, 0, 0, 0))
+        d = ImageDraw.Draw(patch)
+        c = size * k / 2
+        if fill_a > 0:
+            d.ellipse([c - (r + 3) * k, c - (r + 3) * k, c + (r + 3) * k, c + (r + 3) * k],
+                      outline=(0, 0, 0, int(fill_a * 0.5)), width=2 * k)
+            d.ellipse([c - r * k, c - r * k, c + r * k, c + r * k], fill=(255, 255, 255, fill_a))
+        if ring_a > 0:
+            d.ellipse([c - ring_r * k, c - ring_r * k, c + ring_r * k, c + ring_r * k],
+                      outline=ACCENT + (ring_a,), width=4 * k)
+        patch = patch.resize((size, size), Image.LANCZOS)
+        img.alpha_composite(patch, (int(x - size / 2), int(y - size / 2)))
+    return img.convert("RGB")
+
+
 class Clip:
     """Frames of a screen recording between two PROMO_MARKs (decoded on demand)."""
 
-    def __init__(self, folder, idx):
+    def __init__(self, folder, idx, start_ms=None, view=None, touches=None):
         self.folder, self.n = folder, idx
+        self.start_ms, self.view, self.touches = start_ms, view, touches or {}
         self.cache = {}
 
     def get(self, i):
@@ -212,7 +291,10 @@ class Clip:
         if i not in self.cache:
             if len(self.cache) > 4:
                 self.cache.clear()
-            self.cache[i] = phone(Image.open(os.path.join(self.folder, f"{i + 1:05d}.jpg")))
+            img = Image.open(os.path.join(self.folder, f"{i + 1:05d}.jpg"))
+            if self.start_ms is not None:
+                img = draw_touches(img, touch_marks(self.view, self.touches, self.start_ms + i * 1000.0 / FPS))
+            self.cache[i] = phone(img)
         return self.cache[i]
 
 
@@ -271,7 +353,8 @@ def extract_clip(clips_dir, marks, name, tmp):
         return None
     n = len([x for x in os.listdir(folder) if x.endswith(".jpg")])
     print(f"clip {name}: {' '.join(used)}, {n} frames", flush=True)
-    return Clip(folder, n) if n else None
+    view, touches = load_touches(clips_dir)
+    return Clip(folder, n, m["start"], view, touches) if n else None
 
 
 def frame(scene, phones, shadow, t, dur, caption, global_t, total):

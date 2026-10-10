@@ -1,6 +1,7 @@
 // Slow, human-paced walk through the app for the promo video. The CI script
 // records the emulator screen; every clip is marked in the log with device
 // time (PROMO_MARK <name> start|end <epoch ms>) so the video can be cut.
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -16,7 +17,11 @@ import 'package:stl_weight/viewer/model_viewer.dart';
 import 'demo_models.dart';
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  // Gestures are sent as device input: the test binding then does not paint
+  // its debug crosshairs, and the video draws its own touch marks from the
+  // PROMO_TOUCH log (logical px, device time).
+  binding.shouldPropagateDevicePointerEvents = true;
 
   testWidgets('promo recording', (tester) async {
     Future<void> settle([int ms = 1200]) async {
@@ -36,6 +41,34 @@ void main() {
     void mark(String name, String what) {
       // ignore: avoid_print
       print('PROMO_MARK $name $what ${DateTime.now().millisecondsSinceEpoch}');
+    }
+
+    int nextPointer = 100;
+    Future<void> dispatch(PointerEvent e) async {
+      final kind = e is PointerDownEvent ? 'down' : (e is PointerUpEvent || e is PointerCancelEvent ? 'up' : 'move');
+      // ignore: avoid_print
+      print('PROMO_TOUCH ${e.pointer} $kind ${e.position.dx.toStringAsFixed(1)} '
+          '${e.position.dy.toStringAsFixed(1)} ${DateTime.now().millisecondsSinceEpoch}');
+      binding.handlePointerEventForSource(e, source: TestBindingEventSource.device);
+    }
+
+    Future<TestGesture> press(Offset at) async {
+      final g = TestGesture(dispatcher: dispatch, pointer: nextPointer++);
+      await g.down(at);
+      return g;
+    }
+
+    /// A finger drag with ~60 fps moves (visible and smooth in the recording).
+    Future<void> swipe(Offset from, Offset by, int ms) async {
+      final g = await press(from);
+      await tester.pump(const Duration(milliseconds: 60));
+      final steps = (ms / 16).ceil().clamp(4, 400);
+      for (int i = 0; i < steps; i++) {
+        await g.moveBy(by / steps.toDouble());
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await tester.pump(const Duration(milliseconds: 60));
+      await g.up();
     }
 
     Future<void> clip(String name, Future<void> Function() body) async {
@@ -58,7 +91,9 @@ void main() {
       await waitFor(f);
       await tester.ensureVisible(f.first);
       await settle(150);
-      await tester.tap(f.first, warnIfMissed: false);
+      final g = await press(tester.getCenter(f.first));
+      await settle(90);
+      await g.up();
       await settle(after);
     }
 
@@ -91,7 +126,12 @@ void main() {
 
     /// Smooth scroll (visible in the recording, unlike a jump).
     Future<void> glide(double dy, {int ms = 900}) async {
-      await tester.timedDrag(mainScroll(), Offset(0, dy), Duration(milliseconds: ms));
+      final r = tester.getRect(mainScroll());
+      // Start from the middle (above it the 3D view may take the gesture),
+      // lower for long upward swipes so the finger stays on screen.
+      final y = dy < 0 ? (r.center.dy - dy * 0.4).clamp(r.center.dy, r.bottom - r.height * 0.1) : r.center.dy;
+      final from = Offset(r.center.dx + 60, y.toDouble());
+      await swipe(from, Offset(0, dy), ms);
       await settle(500);
     }
 
@@ -123,6 +163,8 @@ void main() {
 
     Finder inDialog(Finder f) => find.descendant(of: find.byType(AlertDialog), matching: f);
 
+    // ignore: avoid_print
+    print('PROMO_VIEW ${tester.view.physicalSize.width} ${tester.view.physicalSize.height} ${tester.view.devicePixelRatio}');
     Updates.disabled = true;
     debugForceLang = 'uk';
     app.main();
@@ -148,13 +190,13 @@ void main() {
       final v = find.byType(ModelViewer);
       await waitFor(v);
       final c = tester.getCenter(v);
-      await tester.timedDragFrom(c + const Offset(-150, 0), const Offset(320, 40), const Duration(milliseconds: 1800));
+      await swipe(c + const Offset(-150, 0), const Offset(320, 40), 1800);
       await settle(300);
-      await tester.timedDragFrom(c + const Offset(100, 60), const Offset(-200, -160), const Duration(milliseconds: 1500));
+      await swipe(c + const Offset(100, 60), const Offset(-200, -160), 1500);
       await settle(300);
       // Two-finger zoom in.
-      final g1 = await tester.startGesture(c + const Offset(-40, 0));
-      final g2 = await tester.startGesture(c + const Offset(40, 0));
+      final g1 = await press(c + const Offset(-40, 0));
+      final g2 = await press(c + const Offset(40, 0));
       try {
         for (int i = 0; i < 20; i++) {
           await g1.moveBy(const Offset(-5, 0));
@@ -185,7 +227,7 @@ void main() {
       await glideTo(slider);
       final s = tester.getRect(slider.first);
       final from = Offset(s.left + s.width * 0.15, s.center.dy);
-      final g = await tester.startGesture(from);
+      final g = await press(from);
       for (int i = 0; i < 40; i++) {
         await g.moveBy(Offset(s.width * 0.6 / 40, 0));
         await tester.pump(const Duration(milliseconds: 60));
@@ -218,13 +260,12 @@ void main() {
     });
 
     await clip('layers', () async {
-      await tester.dragUntilVisible(find.text('Шари'), mainScroll(), const Offset(0, 400), maxIteration: 10);
-      await settle(400);
+      await glideTo(find.text('Шари'));
       await tap(find.text('Шари'), after: 1200);
       final sl = find.byType(Slider).first;
       await waitFor(sl);
       final r = tester.getRect(sl);
-      final g = await tester.startGesture(Offset(r.left + 12, r.center.dy));
+      final g = await press(Offset(r.left + 12, r.center.dy));
       for (int i = 0; i < 50; i++) {
         await g.moveBy(Offset((r.width - 24) / 50, 0));
         await tester.pump(const Duration(milliseconds: 70));
