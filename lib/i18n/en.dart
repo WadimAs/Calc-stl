@@ -767,4 +767,7 @@ const Map<String, String> en = {
   '2 кольори': '2 colors',
   '3 кольори': '3 colors',
   'Колір:': 'Color:',
+  'Списання': 'Write-off',
+  'Ще котушка': 'Another spool',
+  '{0} з {1}': '{0} of {1}',
 };

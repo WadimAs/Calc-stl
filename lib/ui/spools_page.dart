@@ -5,11 +5,13 @@ import '../data/records.dart';
 import '../expenses/expenses.dart';
 import '../slicer/settings.dart';
 import '../spools/spools.dart';
+import '../orders/orders.dart';
 import '../history/history.dart';
 import '../spools/writeoffs.dart';
 import '../spools/label_parser.dart';
 import '../platform/files.dart';
 import 'spool_icon.dart';
+import 'spool_picker.dart';
 import 'widgets.dart';
 import '../i18n/i18n.dart';
 
@@ -693,6 +695,20 @@ class _WriteOffsPageState extends State<WriteOffsPage> {
         _ => tr('Для себе'),
       };
 
+  Future<void> _edit(WriteOff w) async {
+    final spools = await SpoolStore.load();
+    final orders = (await OrderStore.load()).where((o) => !o.status.printed || o.id == w.orderId).toList();
+    if (!mounted) return;
+    final changed = await showDialog<WriteOff>(
+      context: context,
+      builder: (_) => _EditWriteOffDialog(writeOff: w, spools: spools, orders: orders),
+    );
+    if (changed == null) return;
+    await undoWriteOff(w);
+    await applyWriteOff(changed);
+    _reload();
+  }
+
   Future<void> _undo(WriteOff w) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -743,6 +759,7 @@ class _WriteOffsPageState extends State<WriteOffsPage> {
                           title: Text(w.job.isEmpty ? tr('Без назви') : w.job, maxLines: 1, overflow: TextOverflow.ellipsis),
                           subtitle: Text('${formatDate(w.date)} · ${w.printer}\n${_purpose(w)}'),
                           isThreeLine: true,
+                          onTap: () => _edit(w),
                           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                             Text(fmtGrams(w.total), style: theme.textTheme.titleSmall),
                             IconButton(
@@ -755,6 +772,130 @@ class _WriteOffsPageState extends State<WriteOffsPage> {
                       ),
                   ],
                 ),
+    );
+  }
+}
+
+/// Change the spools, grams or purpose of a write-off.
+class _EditWriteOffDialog extends StatefulWidget {
+  final WriteOff writeOff;
+  final List<Spool> spools;
+  final List<Order> orders;
+
+  const _EditWriteOffDialog({required this.writeOff, required this.spools, required this.orders});
+
+  @override
+  State<_EditWriteOffDialog> createState() => _EditWriteOffDialogState();
+}
+
+class _EditWriteOffDialogState extends State<_EditWriteOffDialog> {
+  late final List<(String?, TextEditingController)> _lines = [
+    for (final e in widget.writeOff.grams.entries) (e.key, TextEditingController(text: fmtNum(e.value, 1))),
+  ];
+  late String _purpose = widget.writeOff.orderId != null
+      ? (widget.orders.any((o) => o.id == widget.writeOff.orderId) ? widget.writeOff.orderId! : 'self')
+      : (widget.writeOff.purpose == 'failed' ? 'failed' : 'self');
+
+  // Current spool weights as if this write-off had not happened.
+  late final List<Spool> _spools = [
+    for (final s in widget.spools)
+      s.copyWith(remainingGrams: s.remainingGrams + (widget.writeOff.grams[s.id] ?? 0)),
+  ];
+
+  @override
+  void dispose() {
+    for (final l in _lines) {
+      l.$2.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final w = widget.writeOff;
+    return AlertDialog(
+      title: Text(tr('Списання')),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text(w.job.isEmpty ? tr('Без назви') : w.job, style: theme.textTheme.titleSmall),
+            Text('${formatDate(w.date)} · ${w.printer}', style: theme.textTheme.bodySmall),
+            const SizedBox(height: 8),
+            for (int i = 0; i < _lines.length; i++)
+              Row(children: [
+                Expanded(
+                  child: SpoolDropdown(
+                    spools: _spools,
+                    value: _lines[i].$1,
+                    need: double.tryParse(_lines[i].$2.text.replaceAll(',', '.')),
+                    onChanged: (v) => setState(() => _lines[i] = (v, _lines[i].$2)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 80,
+                  child: TextField(
+                    controller: _lines[i].$2,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(suffixText: tr('г'), isDense: true),
+                  ),
+                ),
+              ]),
+            TextButton.icon(
+              onPressed: () => setState(() => _lines.add((null, TextEditingController()))),
+              icon: const Icon(Icons.add),
+              label: Text(tr('Ще котушка')),
+            ),
+            const SizedBox(height: 8),
+            Text(tr('Для чого був друк'), style: theme.textTheme.bodyMedium),
+            DropdownButton<String>(
+              isExpanded: true,
+              value: _purpose,
+              items: [
+                DropdownMenuItem(value: 'self', child: Text(tr('Для себе'))),
+                DropdownMenuItem(value: 'failed', child: Text(tr('Невдалий друк (брак)'))),
+                for (final o in widget.orders)
+                  DropdownMenuItem(
+                    value: o.id,
+                    child: Text(trf('Замовлення: {0}', [o.title]), overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged: (v) => setState(() => _purpose = v ?? 'self'),
+            ),
+          ]),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Скасувати'))),
+        FilledButton(
+          onPressed: () {
+            final grams = <String, double>{};
+            for (final (id, c) in _lines) {
+              final g = double.tryParse(c.text.replaceAll(',', '.').replaceAll(' ', ''));
+              if (id == null || g == null || g <= 0) continue;
+              grams[id] = (grams[id] ?? 0) + g;
+            }
+            final order = widget.orders.where((o) => o.id == _purpose);
+            Navigator.pop(
+              context,
+              WriteOff(
+                id: w.id,
+                date: w.date,
+                printer: w.printer,
+                job: w.job,
+                purpose: order.isNotEmpty ? 'order' : _purpose,
+                orderId: order.isNotEmpty ? order.first.id : null,
+                orderTitle: order.isNotEmpty ? order.first.title : '',
+                grams: grams,
+              ),
+            );
+          },
+          child: Text(tr('Зберегти')),
+        ),
+      ],
     );
   }
 }

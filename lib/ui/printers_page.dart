@@ -398,7 +398,8 @@ class _PrinterPageState extends State<PrinterPage> {
                 Expanded(
                   child: Text(
                     '${materialById(s.materialId).name}${s.title.isEmpty ? '' : ' · ${s.title}'} — '
-                    '${fmtGrams(j.gramsFor(materialById(s.materialId).density))}',
+                    '${fmtGrams(j.gramsFor(materialById(s.materialId).density))}\n'
+                    '${trf('залишилось {0}', [fmtGrams(s.remainingGrams)])}',
                   ),
                 ),
               ]),

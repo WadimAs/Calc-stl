@@ -330,6 +330,12 @@ void main() {
       await shot('30_expense_dialog');
       await tap(inDialog(find.text('Зберегти')));
       await shot('31_expenses_list');
+      await tap(find.byType(PopupMenuButton<String>).first);
+      await tap(find.text('Змінити'));
+      await tester.enterText(inDialog(find.byType(TextField)).first, '700');
+      await tap(inDialog(find.text('Зберегти')));
+      await waitFor(find.textContaining('700'));
+      await shot('31b_expense_edited');
       await home();
     });
 
@@ -422,6 +428,10 @@ void main() {
       await shot('32f_spools_after_print');
       await tap(find.byTooltip('Журнал списань'));
       await shot('32g_writeoffs');
+      await tap(find.text('bracket'));
+      await waitFor(find.text('Списання'));
+      await shot('32i_writeoff_edit');
+      await tap(find.text('Зберегти'));
       await home();
     });
 

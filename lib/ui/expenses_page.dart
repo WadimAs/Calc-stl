@@ -120,7 +120,22 @@ class _ExpensesPageState extends State<ExpensesPage> {
                         leading: Icon(expenseIcon(e.category)),
                         title: Text(e.note.isEmpty ? tr(e.category) : e.note, maxLines: 1, overflow: TextOverflow.ellipsis),
                         subtitle: Text('${tr(e.category)} · ${formatDate(e.date).split(' ').first}'),
-                        trailing: Text(fmtMoney(e.amount), style: theme.textTheme.titleSmall),
+                        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Text(fmtMoney(e.amount), style: theme.textTheme.titleSmall),
+                          PopupMenuButton<String>(
+                            onSelected: (v) async {
+                              if (v == 'edit') _edit(e);
+                              if (v == 'del') {
+                                await expenseStore.remove(e.id);
+                                _reload();
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              PopupMenuItem(value: 'edit', child: Text(tr('Змінити'))),
+                              PopupMenuItem(value: 'del', child: Text(tr('Видалити'))),
+                            ],
+                          ),
+                        ]),
                         onTap: () => _edit(e),
                       ),
                     ),

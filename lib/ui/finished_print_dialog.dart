@@ -8,7 +8,7 @@ import '../printers/printers.dart';
 import '../slicer/settings.dart';
 import '../spools/spools.dart';
 import '../spools/writeoffs.dart';
-import 'spool_icon.dart';
+import 'spool_picker.dart';
 import 'widgets.dart';
 
 String _norm(String s) => s
@@ -217,26 +217,10 @@ class _FinishedPrintDialogState extends State<_FinishedPrintDialog> {
                 child: Row(children: [
                   Expanded(
                     flex: 3,
-                    child: DropdownButton<String?>(
-                      isExpanded: true,
+                    child: SpoolDropdown(
+                      spools: widget.spools,
                       value: l.spoolId,
-                      items: [
-                        DropdownMenuItem<String?>(value: null, child: Text(tr('Не списувати'))),
-                        for (final s in widget.spools)
-                          DropdownMenuItem<String?>(
-                            value: s.id,
-                            child: Row(children: [
-                              SpoolIcon.of(s, size: 22),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  '${materialById(s.materialId).name}${s.title.isEmpty ? '' : ' · ${s.title}'}',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ]),
-                          ),
-                      ],
+                      need: double.tryParse(l.grams.text.replaceAll(',', '.')),
                       onChanged: (v) => setState(() {
                         l.spoolId = v;
                         if (l.source.grams == null && l.source.filamentMm != null) _fillGrams(l);
@@ -249,6 +233,7 @@ class _FinishedPrintDialogState extends State<_FinishedPrintDialog> {
                     child: TextField(
                       controller: l.grams,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      onChanged: (_) => setState(() {}),
                       decoration: InputDecoration(suffixText: tr('г'), isDense: true, hintText: '?'),
                     ),
                   ),
