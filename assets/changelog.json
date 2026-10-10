@@ -1,0 +1,40 @@
+[
+  {
+    "id": "2026-10-10",
+    "version": "1.3",
+    "uk": [
+      "Валюта розрахунку: гривня, євро або долар — суми перераховуються за курсом НБУ (Налаштування, поруч із мовою).",
+      "Нова котушка з фото етикетки: пластик, колір, вага й виробник заповнюються самі.",
+      "Фото готових виробів у замовленнях, прайс-листі та в пропозиції чи рахунку для клієнта.",
+      "Англійська мова інтерфейсу.",
+      "Менший файл застосунку; в оновленнях приходять лише перевірені версії.",
+      "Це вікно «Що нового» після кожного оновлення (його можна відкрити в меню ⋮)."
+    ],
+    "en": [
+      "Currency: hryvnia, euro or US dollar — amounts are converted at the National Bank of Ukraine rate (Settings, next to the language).",
+      "Add a spool from a photo of its label: material, color, weight and brand are filled in automatically.",
+      "Photos of finished products in orders, the price list and in quotes or invoices for clients.",
+      "English interface.",
+      "Smaller app file; only tested versions are offered as updates.",
+      "This “What's new” window after every update (you can open it from the ⋮ menu)."
+    ]
+  },
+  {
+    "id": "2026-10-09",
+    "version": "1.2",
+    "uk": [
+      "Клієнти, терміни замовлень із нагадуваннями, рахунок і пропозиція в PDF.",
+      "Прайс-лист готових виробів, витрати й чистий прибуток у статистиці.",
+      "Принтери в мережі: Bambu Lab (статус, AMS) і Klipper.",
+      "Відкриття моделей за посиланням і з архівів .zip, автокопія даних на Google Диск.",
+      "Кілька копій на столі, масштаб під розмір, режим вази, багатоколірні 3MF."
+    ],
+    "en": [
+      "Clients, order deadlines with reminders, PDF quotes and invoices.",
+      "Price list of ready products, expenses and net profit in statistics.",
+      "Network printers: Bambu Lab (status, AMS) and Klipper.",
+      "Open models from links and .zip archives, automatic backup to Google Drive.",
+      "Several copies per plate, scale to size, vase mode, multicolor 3MF."
+    ]
+  }
+]

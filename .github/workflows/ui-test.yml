@@ -79,8 +79,10 @@ jobs:
         if: always()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ui-${{ github.run_number }}
-          name: UI test ${{ github.run_number }}
+          # One pre-release that is overwritten each run (not offered as an update).
+          tag_name: ui-results
+          name: UI test (останній запуск)
+          body: Знімки екрана й журнал автотесту на емуляторі, запуск ${{ github.run_number }}.
           prerelease: true
           make_latest: false
           files: ui-results.zip

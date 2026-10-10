@@ -689,4 +689,6 @@ const Map<String, String> en = {
   'Не вдалося розпізнати: {0}': 'Recognition failed: {0}',
   'Заповнити з фото етикетки': 'Fill in from a label photo',
   'Додати з фото етикетки': 'Add from a label photo',
+  'Що нового': 'What\'s new',
+  'Зрозуміло': 'Got it',
 };

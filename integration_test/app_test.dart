@@ -366,6 +366,13 @@ void main() {
       await home();
     });
 
+    await step('whats_new', () async {
+      await menu('Що нового');
+      await waitFor(find.text('Зрозуміло'));
+      await shot('36a_whats_new');
+      await tap(find.text('Зрозуміло'));
+    });
+
     await step('autobackup', () async {
       await menu('Автокопія (Google Диск)');
       await shot('36_autobackup');

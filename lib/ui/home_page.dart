@@ -37,6 +37,7 @@ import 'quote_page.dart';
 import 'settings_sheet.dart';
 import 'spools_page.dart';
 import 'stats_page.dart';
+import 'whats_new.dart';
 import 'widgets.dart';
 import '../i18n/i18n.dart';
 
@@ -111,6 +112,8 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       if (await _afterIntro(adv)) return; // app restarts in the chosen language
     }
+    await _whatsNew(show: s.seenIntro);
+    if (!mounted) return;
     final f = await PlatformFiles.initialFile();
     if (f != null && mounted) {
       await _open(f);
@@ -452,6 +455,8 @@ class _HomePageState extends State<HomePage> {
         if (g != null) sendGcodeToPrinter(context, g.name, g.bytes);
       case 'autobackup':
         _autoBackupMenu();
+      case 'whatsnew':
+        _showAllChanges();
       case 'intro':
         Navigator.of(context)
             .push<bool>(MaterialPageRoute(fullscreenDialog: true, builder: (_) => const IntroPage()))
@@ -629,6 +634,22 @@ class _HomePageState extends State<HomePage> {
       final o = Order.create(_settings)..items.add(item);
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => QuotePage(order: o)));
     }
+  }
+
+  /// After an update: shows what changed since the last seen release.
+  /// On a fresh install the current release is just marked as seen.
+  Future<void> _whatsNew({required bool show}) async {
+    final all = await loadChangelog();
+    if (all.isEmpty || !mounted) return;
+    final fresh = unseenChanges(all, _settings.seenChangelog);
+    if (fresh.isEmpty) return;
+    if (show) await showWhatsNew(context, fresh);
+    if (mounted) _updateSettings(_settings.copyWith(seenChangelog: all.first.id));
+  }
+
+  Future<void> _showAllChanges() async {
+    final all = await loadChangelog();
+    if (mounted && all.isNotEmpty) await showWhatsNew(context, all.take(5).toList());
   }
 
   /// Applies the intro's choices; true when the app is rebuilt for a new language.
@@ -1076,6 +1097,9 @@ class _HomePageState extends State<HomePage> {
               PopupMenuItem(
                   value: 'autobackup',
                   child: ListTile(leading: Icon(Icons.cloud_sync_outlined), title: Text(tr('Автокопія (Google Диск)')))),
+              PopupMenuItem(
+                  value: 'whatsnew',
+                  child: ListTile(leading: const Icon(Icons.auto_awesome_outlined), title: Text(tr('Що нового')))),
               PopupMenuItem(
                   value: 'intro', child: ListTile(leading: Icon(Icons.help_outline), title: Text(tr('Як користуватися')))),
               const PopupMenuDivider(),

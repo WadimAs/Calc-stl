@@ -287,6 +287,9 @@ class SliceSettings {
   /// The intro was shown.
   final bool seenIntro;
 
+  /// Newest "What's new" entry the user has seen.
+  final String seenChangelog;
+
   /// Interface language: 'auto', 'uk' or 'en'.
   final String language;
 
@@ -339,6 +342,7 @@ class SliceSettings {
     this.flushMm3 = 300,
     this.primeTower = true,
     this.seenIntro = false,
+    this.seenChangelog = '',
     this.language = 'auto',
   });
 
@@ -464,6 +468,7 @@ class SliceSettings {
     double? flushMm3,
     bool? primeTower,
     bool? seenIntro,
+    String? seenChangelog,
     String? language,
   }) {
     return SliceSettings(
@@ -515,6 +520,7 @@ class SliceSettings {
       flushMm3: flushMm3 ?? this.flushMm3,
       primeTower: primeTower ?? this.primeTower,
       seenIntro: seenIntro ?? this.seenIntro,
+      seenChangelog: seenChangelog ?? this.seenChangelog,
       language: language ?? this.language,
     );
   }
@@ -573,6 +579,7 @@ class SliceSettings {
         'flushMm3': flushMm3,
         'primeTower': primeTower,
         'seenIntro': seenIntro,
+        'seenChangelog': seenChangelog,
         'language': language,
         'v': 2,
       };
@@ -648,6 +655,7 @@ class SliceSettings {
       primeTower: flag('primeTower', d.primeTower),
       // Users of earlier versions have seen the app already.
       seenIntro: flag('seenIntro', j.isNotEmpty),
+      seenChangelog: j['seenChangelog'] is String ? j['seenChangelog'] as String : '',
       // Earlier versions were Ukrainian only.
       language: j['language'] is String ? j['language'] as String : (j.isNotEmpty ? 'uk' : 'auto'),
     );
@@ -842,7 +850,8 @@ extension SliceSettingsDefaults on SliceSettings {
 
   /// Everything back to defaults; prices and calibration kept unless [prices].
   SliceSettings resetAll({bool prices = false}) {
-    final d = moneyDefaults.copyWith(advancedUi: advancedUi, seenIntro: seenIntro, language: language);
+    final d = moneyDefaults.copyWith(
+        advancedUi: advancedUi, seenIntro: seenIntro, seenChangelog: seenChangelog, language: language);
     return prices
         ? d
         : d.copyWith(

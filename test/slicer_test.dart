@@ -12,6 +12,7 @@ import 'package:stl_weight/platform/pdf.dart';
 import 'package:stl_weight/printers/mqtt.dart';
 import 'package:stl_weight/spools/label_parser.dart';
 import 'package:stl_weight/ui/widgets.dart' show fmtMoney;
+import 'package:stl_weight/ui/whats_new.dart';
 import 'package:stl_weight/printers/printers.dart';
 import 'package:stl_weight/mesh/holes.dart';
 import 'package:stl_weight/mesh/loader.dart';
@@ -1044,6 +1045,18 @@ void main() {
       expect(fmtMoney(12.5, code: 'UAH'), '12,50 грн');
       final o = Order.create(e);
       expect(Order.fromJson(jsonDecode(jsonEncode(o.toJson())))!.currency, 'EUR');
+    });
+
+    test('whats new', () {
+      const all = [
+        ChangeEntry('c', '1.4', ['c'], []),
+        ChangeEntry('b', '1.3', ['b'], []),
+        ChangeEntry('a', '1.2', ['a'], []),
+      ];
+      expect(unseenChanges(all, 'c'), isEmpty);
+      expect(unseenChanges(all, 'a').map((e) => e.id), ['c', 'b']);
+      expect(unseenChanges(all, '').map((e) => e.id), ['c']);
+      expect(unseenChanges(all, 'zzz').map((e) => e.id), ['c', 'b', 'a']);
     });
 
     test('spool label parsing', () {
