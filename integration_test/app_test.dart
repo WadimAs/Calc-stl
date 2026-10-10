@@ -361,9 +361,29 @@ void main() {
     await step('printer', () async {
       await menu('Принтери');
       await tap(find.text('Принтер'));
+      await shot('33a_printer_kinds');
+      await tap(find.text('Bambu Lab у локальній мережі'));
       await shot('33_printer_dialog');
       await tap(find.text('Klipper'));
       await shot('34_printer_klipper');
+      await home();
+    });
+
+    await step('bambu_cloud_login', () async {
+      await menu('Принтери');
+      await tap(find.text('Принтер'));
+      await tap(find.text('Bambu Lab через інтернет'));
+      await waitFor(find.text('Увійти'));
+      final fields = inDialog(find.byType(TextField));
+      await tester.enterText(fields.at(0), 'stl-vaga-probe@example.com');
+      await tester.enterText(fields.at(1), 'wrong-password');
+      await settle(300);
+      await shot('34a_bambu_login');
+      await tap(find.text('Увійти'));
+      // A wrong password must give a clear error from the real Bambu server.
+      await waitFor(find.textContaining('пароль'), seconds: 30);
+      await settle(500);
+      await shot('34b_bambu_login_error');
       await home();
     });
 
