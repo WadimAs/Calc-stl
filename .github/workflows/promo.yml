@@ -1,0 +1,44 @@
+name: Promo video
+
+on:
+  workflow_dispatch:
+    inputs:
+      voice:
+        description: "Edge TTS voice"
+        default: "uk-UA-OstapNeural"
+
+permissions:
+  contents: write
+
+jobs:
+  video:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-inter fonts-dejavu-core >/dev/null || sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          pip install -q edge-tts pillow
+      - name: Screenshots
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download ui-results -p ui-results.zip -R ${{ github.repository }}
+          mkdir shots && cd shots && unzip -q ../ui-results.zip
+          ls | head -80
+      - name: Render
+        env:
+          PROMO_VOICE: ${{ inputs.voice }}
+        run: |
+          d=shots; [ -f shots/04_model.png ] || d=$(dirname "$(find shots -name 04_model.png | head -1)")
+          python3 tool/promo/make_video.py "$d" promo.mp4
+          ls -la promo.mp4
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: promo-video
+          name: Промо-відео
+          prerelease: true
+          make_latest: false
+          files: promo.mp4
+          body: Промо-відео застосунку (згенеровано автоматично).
