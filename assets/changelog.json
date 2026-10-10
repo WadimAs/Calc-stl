@@ -1,5 +1,19 @@
 [
   {
+    "id": "2026-10-10f",
+    "version": "1.3.5",
+    "uk": [
+      "Витрати можна змінити або видалити через меню ⋮ біля суми (або дотиком).",
+      "Списання в журналі можна редагувати: котушку, вагу й для чого був друк.",
+      "При виборі котушки для списання видно, скільки на ній залишилось; якщо не вистачає — червоним."
+    ],
+    "en": [
+      "Expenses can be edited or deleted from the ⋮ menu next to the amount (or by tapping).",
+      "Write-offs in the log can be edited: spool, weight and what the print was for.",
+      "When choosing a spool to write off, you see how much is left on it; red if it is not enough."
+    ]
+  },
+  {
     "id": "2026-10-10e",
     "version": "1.3.4",
     "uk": [
