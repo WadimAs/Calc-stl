@@ -22,6 +22,7 @@ const materials = <FilamentMaterial>[
   FilamentMaterial('TPU', 'TPU', 1.21, 950, 3.6),
   FilamentMaterial('PA', 'Nylon (PA)', 1.14, 1500, 10),
   FilamentMaterial('PC', 'PC', 1.20, 1300, 12),
+  FilamentMaterial('PLA-SILK', 'PLA Silk', 1.24, 750, 15),
   FilamentMaterial('PLA-CF', 'PLA-CF', 1.29, 1100, 15),
   FilamentMaterial('PETG-CF', 'PETG-CF', 1.30, 1200, 12),
   FilamentMaterial('HIPS', 'HIPS', 1.04, 650, 15),

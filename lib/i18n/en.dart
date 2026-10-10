@@ -763,4 +763,8 @@ const Map<String, String> en = {
   'за датчиком AMS, приблизно': 'from the AMS gauge, approximate',
   'дані слайсера з принтера': 'slicer data from the printer',
   'за довжиною філаменту': 'from the filament length',
+  '1 колір': '1 color',
+  '2 кольори': '2 colors',
+  '3 кольори': '3 colors',
+  'Колір:': 'Color:',
 };

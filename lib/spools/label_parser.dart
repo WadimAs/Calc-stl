@@ -12,6 +12,9 @@ class SpoolLabel {
   /// Sold without a spool ("Refill").
   final bool refill;
 
+  /// Second / third colour of a dual / tri-colour filament.
+  final List<int> extraColors;
+
   const SpoolLabel({
     this.brand,
     this.materialId,
@@ -20,6 +23,7 @@ class SpoolLabel {
     this.colorArgb,
     this.weightGrams,
     this.refill = false,
+    this.extraColors = const [],
   });
 
   bool get isEmpty => brand == null && materialId == null && colorArgb == null && weightGrams == null && !refill;
@@ -90,19 +94,37 @@ const _brands = <String, List<String>>{
 /// Colour words (English and Ukrainian) → app palette colour.
 const _colors = <String, int>{
   'black': 0xFF202020, 'charcoal': 0xFF202020, 'чорний': 0xFF202020, 'чорна': 0xFF202020,
-  'white': 0xFFFFFFFF, 'ivory': 0xFFFFFFFF, 'білий': 0xFFFFFFFF, 'біла': 0xFFFFFFFF,
-  'natural': 0xFFFFFFFF, 'transparent': 0xFFFFFFFF, 'clear': 0xFFFFFFFF, 'прозорий': 0xFFFFFFFF,
-  'grey': 0xFF9E9E9E, 'gray': 0xFF9E9E9E, 'silver': 0xFF9E9E9E, 'сірий': 0xFF9E9E9E, 'срібний': 0xFF9E9E9E,
+  'white': 0xFFFFFFFF, 'білий': 0xFFFFFFFF, 'біла': 0xFFFFFFFF,
+  'ivory': 0xFFF5E6C8, 'beige': 0xFFF5E6C8, 'cream': 0xFFF5E6C8, 'бежевий': 0xFFF5E6C8,
+  'natural': 0xFFE3F2FD, 'transparent': 0xFFE3F2FD, 'clear': 0xFFE3F2FD, 'прозорий': 0xFFE3F2FD,
+  'grey': 0xFF9E9E9E, 'gray': 0xFF9E9E9E, 'сірий': 0xFF9E9E9E,
+  'silver': 0xFFC0C0C0, 'срібний': 0xFFC0C0C0,
   'red': 0xFFE53935, 'scarlet': 0xFFE53935, 'червоний': 0xFFE53935,
+  'burgundy': 0xFF8E1B1B, 'wine': 0xFF8E1B1B, 'maroon': 0xFF8E1B1B,
   'orange': 0xFFFF8A3D, 'помаранчевий': 0xFFFF8A3D, 'оранжевий': 0xFFFF8A3D,
-  'yellow': 0xFFFDD835, 'gold': 0xFFFDD835, 'lemon': 0xFFFDD835, 'жовтий': 0xFFFDD835, 'золотий': 0xFFFDD835,
-  'green': 0xFF43A047, 'olive': 0xFF43A047, 'lime': 0xFF43A047, 'зелений': 0xFF43A047,
-  'blue': 0xFF1E88E5, 'navy': 0xFF1E88E5, 'синій': 0xFF1E88E5, 'блакитний': 0xFF1E88E5,
-  'purple': 0xFF8E24AA, 'violet': 0xFF8E24AA, 'lilac': 0xFF8E24AA, 'фіолетовий': 0xFF8E24AA,
-  'pink': 0xFFEC407A, 'magenta': 0xFFEC407A, 'рожевий': 0xFFEC407A,
-  'brown': 0xFF795548, 'beige': 0xFF795548, 'wood': 0xFF795548, 'bronze': 0xFF795548, 'коричневий': 0xFF795548,
+  'peach': 0xFFFFB38A,
+  'yellow': 0xFFFDD835, 'lemon': 0xFFFDD835, 'жовтий': 0xFFFDD835,
+  'gold': 0xFFD4AF37, 'golden': 0xFFD4AF37, 'золотий': 0xFFD4AF37,
+  'lime': 0xFFC0CA33,
+  'green': 0xFF43A047, 'olive': 0xFF1B5E20, 'зелений': 0xFF43A047,
+  'mint': 0xFF80CBC4,
   'cyan': 0xFF00ACC1, 'teal': 0xFF00ACC1, 'turquoise': 0xFF00ACC1, 'бірюзовий': 0xFF00ACC1,
+  'sky': 0xFF64B5F6, 'блакитний': 0xFF64B5F6,
+  'blue': 0xFF1E88E5, 'синій': 0xFF1E88E5,
+  'navy': 0xFF1A237E,
+  'purple': 0xFF8E24AA, 'violet': 0xFF8E24AA, 'фіолетовий': 0xFF8E24AA,
+  'lilac': 0xFFB39DDB, 'lavender': 0xFFB39DDB,
+  'pink': 0xFFEC407A, 'рожевий': 0xFFEC407A,
+  'magenta': 0xFFD81B60,
+  'brown': 0xFF795548, 'коричневий': 0xFF795548,
+  'wood': 0xFFA1887F,
+  'copper': 0xFFB87333, 'мідний': 0xFFB87333,
+  'bronze': 0xFFCD7F32,
 };
+
+/// "Dual Color", "Tri-Color", "Rainbow"…: several colours in one filament.
+final _multi = RegExp(r'dual|tri[\s-]*colou?r|two[\s-]*colou?r|three[\s-]*colou?r|bi[\s-]*colou?r|multi[\s-]*colou?r|rainbow|двоколір|триколір',
+    caseSensitive: false);
 
 /// Words that may precede a colour word and belong to its name ("Jade White").
 final _colorAdj = RegExp(r'^[A-Za-zА-Яа-яІіЇїЄєҐґ]{3,12}$');
@@ -145,6 +167,7 @@ SpoolLabel parseSpoolLabel(String text) {
     final sub = mm.group(2);
     materialText = sub == null ? base : '$base ${sub[0].toUpperCase()}${sub.substring(1).toLowerCase()}';
     materialId = materialIdForType(base.replaceAll(RegExp(r'[\s\-+]+(?=CF)'), '-').replaceAll('+', ''));
+    if (materialId == 'PLA' && RegExp(r'\bsilk', caseSensitive: false).hasMatch(text)) materialId = 'PLA-SILK';
     if (base.startsWith('NYLON')) materialId = 'PA';
   }
 
@@ -180,31 +203,43 @@ SpoolLabel parseSpoolLabel(String text) {
 
   // Colour: a line mentioning "colour" first, then any line.
   String? colorName;
-  int? color;
+  final colors = <int>[];
+  final multi = _multi.hasMatch(text);
   final ordered = [
     ...lines.where((l) => l.toLowerCase().contains('colo')),
     ...lines.where((l) => !l.toLowerCase().contains('colo')),
   ];
-  outer:
   for (final l in ordered) {
-    final words = l.split(RegExp(r'[\s,:;/()]+')).where((w) => w.isNotEmpty).toList();
-    for (int i = 0; i < words.length; i++) {
+    final words = l.split(RegExp(r'[\s,:;/()&+-]+')).where((w) => w.isNotEmpty).toList();
+    final names = <String>[];
+    for (int i = 0; i < words.length && colors.length < 3; i++) {
       if (_colors[words[i].toLowerCase()] == null) continue;
-      // "Charcoal Black", "Navy Blue": the last colour word is the colour.
-      while (i + 1 < words.length && _colors[words[i + 1].toLowerCase()] != null) {
-        i++;
+      // "Charcoal Black", "Navy Blue": in a one-colour filament the last colour
+      // word is the colour; in a dual / tri-colour one every word counts.
+      if (!multi) {
+        while (i + 1 < words.length && _colors[words[i + 1].toLowerCase()] != null) {
+          i++;
+        }
       }
       final c = _colors[words[i].toLowerCase()]!;
-      color = c;
       final parts = <String>[];
-      if (i > 0 && _colorAdj.hasMatch(words[i - 1]) && !_notColorAdj.contains(words[i - 1].toLowerCase())) {
+      if (i > 0 &&
+          _colorAdj.hasMatch(words[i - 1]) &&
+          !_notColorAdj.contains(words[i - 1].toLowerCase()) &&
+          (!multi || _colors[words[i - 1].toLowerCase()] == null)) {
         parts.add(_cap(words[i - 1]));
       }
       parts.add(_cap(words[i]));
-      colorName = parts.join(' ');
-      break outer;
+      if (!colors.contains(c)) colors.add(c);
+      names.add(parts.join(' '));
+      if (!multi) break;
+    }
+    if (colors.isNotEmpty) {
+      colorName = names.join(multi ? ' / ' : ' ');
+      break;
     }
   }
+  final color = colors.isEmpty ? null : colors.first;
 
   return SpoolLabel(
     refill: _refill.hasMatch(text),
@@ -213,6 +248,7 @@ SpoolLabel parseSpoolLabel(String text) {
     materialText: materialText,
     colorName: colorName,
     colorArgb: color,
+    extraColors: colors.length > 1 ? colors.sublist(1) : const [],
     weightGrams: weight,
   );
 }

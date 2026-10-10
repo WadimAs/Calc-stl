@@ -12,6 +12,11 @@ class Spool {
 
   /// …and already mounted on a reusable spool.
   final bool onSpool;
+
+  /// Second / third colour of a dual / tri-colour filament (e.g. silk PLA).
+  final List<int> extraColors;
+
+  List<int> get colors => [colorArgb, ...extraColors];
   final int colorArgb;
   final double totalGrams;
   final double remainingGrams;
@@ -32,6 +37,7 @@ class Spool {
     this.brand = '',
     this.refill = false,
     this.onSpool = false,
+    this.extraColors = const [],
   });
 
   /// "Bambu Lab · Jade White"
@@ -54,6 +60,7 @@ class Spool {
     String? brand,
     bool? refill,
     bool? onSpool,
+    List<int>? extraColors,
   }) =>
       Spool(
         id: id,
@@ -67,6 +74,7 @@ class Spool {
         brand: brand ?? this.brand,
         refill: refill ?? this.refill,
         onSpool: onSpool ?? this.onSpool,
+        extraColors: extraColors ?? this.extraColors,
       );
 
   Map<String, dynamic> toJson() => {
@@ -81,6 +89,7 @@ class Spool {
         'brand': brand,
         'refill': refill,
         'onSpool': onSpool,
+        'colors2': extraColors,
       };
 
   static Spool? fromJson(Object? raw) {
@@ -98,6 +107,11 @@ class Spool {
       brand: raw['brand'] is String ? raw['brand'] as String : '',
       refill: raw['refill'] == true,
       onSpool: raw['onSpool'] == true,
+      extraColors: [
+        if (raw['colors2'] is List)
+          for (final c in raw['colors2'] as List)
+            if (c is num) c.toInt(),
+      ],
     );
   }
 }

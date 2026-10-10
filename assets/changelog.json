@@ -1,5 +1,17 @@
 [
   {
+    "id": "2026-10-10e",
+    "version": "1.3.4",
+    "uk": [
+      "Двоколірні й триколірні пластики (наприклад, Silk PLA Dual Color): до трьох кольорів на котушці, вони ж розпізнаються з етикетки.",
+      "Новий пластик «PLA Silk» і втричі більше кольорів: золото, срібло, мідь, бронза, бежевий, прозорий, м'ятний, лавандовий та інші."
+    ],
+    "en": [
+      "Dual- and tri-colour filaments (e.g. Silk PLA Dual Color): up to three colours per spool, also recognised from the label.",
+      "New “PLA Silk” material and almost three times more colours: gold, silver, copper, bronze, beige, clear, mint, lavender and more."
+    ]
+  },
+  {
     "id": "2026-10-10d",
     "version": "1.3.3",
     "uk": [

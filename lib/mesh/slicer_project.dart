@@ -588,6 +588,7 @@ String? materialIdForType(String? type) {
     if (m.id == t) return m.id;
   }
   if (t.startsWith('PLA-CF') || t == 'PLA CF') return 'PLA-CF';
+  if (t.contains('SILK') && (t.contains('PLA') || t == 'SILK')) return 'PLA-SILK';
   if (t.startsWith('PETG-CF') || t.startsWith('PET-CF')) return 'PETG-CF';
   if (t.startsWith('PLA')) return 'PLA';
   if (t.startsWith('PETG') || t == 'PET' || t == 'PCTG') return 'PETG';

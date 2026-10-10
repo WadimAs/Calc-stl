@@ -218,7 +218,8 @@ void main() {
       if (open == null) throw StateError('debugOpen не встановлено');
       open(PickedFile('bracket.stl', bracketStl()));
       await waitFor(find.text('До замовлення'), seconds: 60);
-      await settle(15000); // slicing
+      await waitFor(find.text('Підігнати під слайсер'), seconds: 60); // slicing done
+      await settle(800);
       await shot('04_model');
       await scrollTo(find.text('До замовлення'));
       await shot('05_result');
@@ -304,7 +305,7 @@ void main() {
     }
 
     await step('snack_hidden', () async {
-      await settle(6000);
+      await settle(5000);
       if (find.byType(SnackBar).evaluate().isNotEmpty) throw StateError('SnackBar не зникає');
     });
 
@@ -471,7 +472,7 @@ void main() {
       await settle(1000);
       await tap(find.text('€ EUR'));
       await waitFor(find.text('Перерахувати'));
-      await settle(5000); // NBU rate
+      await settle(3000); // NBU rate
       await shot('37b_rate_dialog');
       await tester.enterText(inDialog(find.byType(TextField)), '48');
       await settle(300);
@@ -516,7 +517,8 @@ void main() {
     await step('en_model', () async {
       HomePage.debugOpen!(PickedFile('bracket.stl', bracketStl()));
       await waitFor(find.text('To order'), seconds: 60);
-      await settle(12000);
+      await waitFor(find.text('Match the slicer'), seconds: 60);
+      await settle(800);
       await shot('42_en_model');
       await scrollTo(find.text('To order'));
       await shot('43_en_result');
@@ -572,6 +574,6 @@ void main() {
 
     note('UI_ERRORS ${errors.length}: ${errors.join(' | ')}');
     note('DONE');
-    await settle(25000); // let the CI script copy the last screenshots
+    await settle(7000); // let the CI script copy the last screenshots
   });
 }

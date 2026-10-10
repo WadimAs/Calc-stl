@@ -15,6 +15,11 @@ on:
 permissions:
   contents: write
 
+# A newer push cancels an older check build (releases are never cancelled).
+concurrency:
+  group: build-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -25,6 +30,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-release-${{ hashFiles('pubspec.yaml', '.github/scripts/add_deps.py') }}
+          restore-keys: gradle-
 
       - uses: subosito/flutter-action@v2
         with:
@@ -84,8 +97,11 @@ jobs:
       - name: Build release APKs
         run: |
           V="--build-number=${{ github.run_number }} --build-name=1.3.${{ github.run_number }}"
-          flutter build apk --release --target-platform android-arm $V
-          cp build/app/outputs/flutter-apk/app-release.apk stl-weight-arm32.apk
+          # Check builds (every push) only need one; releases get both.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            flutter build apk --release --target-platform android-arm $V
+            cp build/app/outputs/flutter-apk/app-release.apk stl-weight-arm32.apk
+          fi
           flutter build apk --release --target-platform android-arm64 $V
           cp build/app/outputs/flutter-apk/app-release.apk stl-weight.apk
           ls -la *.apk
@@ -94,7 +110,7 @@ jobs:
         if: env.STL_KEYSTORE != ''
         run: |
           APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          for f in stl-weight.apk stl-weight-arm32.apk; do
+          for f in stl-weight*.apk; do
             "$APKSIGNER" verify --print-certs "$f" | tee certs.txt
             grep -q "CN=STL Vaga" certs.txt || { echo "::error::$f is not signed with the persistent key"; exit 1; }
           done

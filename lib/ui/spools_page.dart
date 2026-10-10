@@ -14,8 +14,11 @@ import 'widgets.dart';
 import '../i18n/i18n.dart';
 
 const spoolColors = <int>[
-  0xFFFFFFFF, 0xFF202020, 0xFF9E9E9E, 0xFFE53935, 0xFFFF8A3D, 0xFFFDD835, //
-  0xFF43A047, 0xFF1E88E5, 0xFF8E24AA, 0xFFEC407A, 0xFF795548, 0xFF00ACC1,
+  0xFFFFFFFF, 0xFFF5E6C8, 0xFFE3F2FD, 0xFFC0C0C0, 0xFF9E9E9E, 0xFF616161, 0xFF202020, //
+  0xFFE53935, 0xFF8E1B1B, 0xFFFF8A3D, 0xFFFFB38A, 0xFFFDD835, 0xFFD4AF37, 0xFFC0CA33,
+  0xFF43A047, 0xFF1B5E20, 0xFF80CBC4, 0xFF00ACC1, 0xFF64B5F6, 0xFF1E88E5, 0xFF1A237E,
+  0xFF8E24AA, 0xFFB39DDB, 0xFFEC407A, 0xFFF8BBD0, 0xFFD81B60, 0xFF795548, 0xFFA1887F,
+  0xFFB87333, 0xFFCD7F32,
 ];
 
 class SpoolsPage extends StatefulWidget {
@@ -247,7 +250,28 @@ class _SpoolDialog extends StatefulWidget {
 
 class _SpoolDialogState extends State<_SpoolDialog> {
   late String _material = widget.spool?.materialId ?? 'PLA';
-  late int _color = widget.spool?.colorArgb ?? spoolColors[4];
+  late int _color = widget.spool?.colorArgb ?? spoolColors[9];
+  late List<int> _extra = List.of(widget.spool?.extraColors ?? const <int>[]);
+  int _slot = 0; // which colour of a multi-colour filament the palette sets
+
+  List<int> get _colors => [_color, ..._extra];
+
+  void _setCount(int n) => setState(() {
+        while (_extra.length < n - 1) {
+          _extra.add(spoolColors[(spoolColors.indexOf(_colors.last) + 5) % spoolColors.length]);
+        }
+        _extra = _extra.sublist(0, n - 1);
+        _slot = _slot.clamp(0, n - 1).toInt();
+      });
+
+  void _pick(int c) => setState(() {
+        if (_slot == 0) {
+          _color = c;
+        } else {
+          _extra[_slot - 1] = c;
+        }
+        if (_colors.length > 1) _slot = (_slot + 1) % _colors.length;
+      });
   late final _name = TextEditingController(text: widget.spool?.name ?? '');
   late final _brand = TextEditingController(text: widget.spool?.brand ?? '');
   late bool _refill = widget.spool?.refill ?? false;
@@ -310,6 +334,8 @@ class _SpoolDialogState extends State<_SpoolDialog> {
       setState(() {
         if (l.materialId != null && materials.any((m) => m.id == l.materialId)) _material = l.materialId!;
         if (l.colorArgb != null) _color = l.colorArgb!;
+        if (l.colorArgb != null) _extra = List.of(l.extraColors);
+        _slot = 0;
         if (l.brand != null) _brand.text = l.brand!;
         if (l.colorName != null) _name.text = l.colorName!;
         if (l.refill) {
@@ -417,19 +443,70 @@ class _SpoolDialogState extends State<_SpoolDialog> {
               onChanged: (v) => setState(() => _onSpool = v ?? false),
             ),
           const SizedBox(height: 12),
-          Wrap(spacing: 8, runSpacing: 8, children: [
+          const SizedBox(height: 12),
+          Row(children: [
+            SpoolIcon(color: _color, extra: _extra, look: _refill ? (_onSpool ? SpoolLook.refillMounted : SpoolLook.refill) : SpoolLook.spool, size: 44),
+            const SizedBox(width: 12),
+            Expanded(
+              child: SegmentedButton<int>(
+                showSelectedIcon: false,
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                segments: [
+                  ButtonSegment(value: 1, label: Text(tr('1 колір'))),
+                  ButtonSegment(value: 2, label: Text(tr('2 кольори'))),
+                  ButtonSegment(value: 3, label: Text(tr('3 кольори'))),
+                ],
+                selected: {_colors.length},
+                onSelectionChanged: (v) => _setCount(v.first),
+              ),
+            ),
+          ]),
+          if (_colors.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(children: [
+                Text(tr('Колір:'), style: Theme.of(context).textTheme.bodySmall),
+                for (int i = 0; i < _colors.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _slot = i),
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Color(_colors[i]),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: _slot == i ? Theme.of(context).colorScheme.primary : Colors.black26,
+                            width: _slot == i ? 3 : 1,
+                          ),
+                        ),
+                        child: Text('${i + 1}',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Color(_colors[i]).computeLuminance() > 0.5 ? Colors.black87 : Colors.white)),
+                      ),
+                    ),
+                  ),
+              ]),
+            ),
+          const SizedBox(height: 10),
+          Wrap(spacing: 6, runSpacing: 6, children: [
             for (final c in spoolColors)
               GestureDetector(
-                onTap: () => setState(() => _color = c),
+                onTap: () => _pick(c),
                 child: Container(
-                  width: 30,
-                  height: 30,
+                  width: 28,
+                  height: 28,
                   decoration: BoxDecoration(
                     color: Color(c),
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: _color == c ? Theme.of(context).colorScheme.primary : Colors.black26,
-                      width: _color == c ? 3 : 1,
+                      color: _colors[_slot] == c ? Theme.of(context).colorScheme.primary : Colors.black26,
+                      width: _colors[_slot] == c ? 3 : 1,
                     ),
                   ),
                 ),
@@ -484,6 +561,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
                       materialId: _material,
                       name: _name.text.trim(),
                       colorArgb: _color,
+                      extraColors: _extra,
                       totalGrams: total,
                       remainingGrams: left,
                       createdAt: DateTime.now(),
@@ -496,6 +574,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
                       materialId: _material,
                       name: _name.text.trim(),
                       colorArgb: _color,
+                      extraColors: _extra,
                       totalGrams: total,
                       remainingGrams: left,
                       price: price,

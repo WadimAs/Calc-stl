@@ -1158,6 +1158,19 @@ void main() {
       expect(sb.refill && sb.onSpool, isTrue);
       expect(sb.brand, 'Bambu Lab');
 
+      l = parseSpoolLabel('SUNLU Silk PLA+ Dual Color\nGold Silver\n1kg');
+      expect(l.materialId, 'PLA-SILK');
+      expect(l.colorArgb, 0xFFD4AF37);
+      expect(l.extraColors, [0xFFC0C0C0]);
+      expect(l.colorName, 'Gold / Silver');
+      l = parseSpoolLabel('eryone Tri-Color Silk PLA\nRed/Blue/Green 1kg');
+      expect(l.extraColors, [0xFF1E88E5, 0xFF43A047]);
+      expect(parseSpoolLabel('Polymaker PLA Charcoal Black').extraColors, isEmpty);
+      final dual = Spool(
+          id: 'd', materialId: 'PLA-SILK', name: '', colorArgb: 1, totalGrams: 1, remainingGrams: 1,
+          createdAt: _epoch, extraColors: [2, 3]);
+      expect(Spool.fromJson(jsonDecode(jsonEncode(dual.toJson())))!.colors, [1, 2, 3]);
+
       expect(parseSpoolLabel('hello world').isEmpty, isTrue);
     });
   });

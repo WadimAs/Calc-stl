@@ -13,14 +13,22 @@ SpoolLook spoolLookOf(Spool s) => !s.refill ? SpoolLook.spool : (s.onSpool ? Spo
 /// a reusable spool with open spokes.
 class SpoolIcon extends StatelessWidget {
   final int color;
+  final List<int> extra; // dual / tri-colour filament
   final double fraction;
   final SpoolLook look;
   final double size;
 
-  const SpoolIcon({super.key, required this.color, this.fraction = 1, this.look = SpoolLook.spool, this.size = 40});
+  const SpoolIcon({
+    super.key,
+    required this.color,
+    this.extra = const [],
+    this.fraction = 1,
+    this.look = SpoolLook.spool,
+    this.size = 40,
+  });
 
-  factory SpoolIcon.of(Spool s, {double size = 40}) =>
-      SpoolIcon(color: s.colorArgb, fraction: s.fraction, look: spoolLookOf(s), size: size);
+  factory SpoolIcon.of(Spool s, {double size = 40}) => SpoolIcon(
+      color: s.colorArgb, extra: s.extraColors, fraction: s.fraction, look: spoolLookOf(s), size: size);
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +37,16 @@ class SpoolIcon extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(painter: _SpoolPainter(Color(color), fraction, look, dark, theme.colorScheme.surfaceContainerLow)),
+      child: CustomPaint(
+        painter: _SpoolPainter(
+          Color(color),
+          fraction,
+          look,
+          dark,
+          theme.colorScheme.surfaceContainerLow,
+          [for (final c in extra) Color(c)],
+        ),
+      ),
     );
   }
 }
@@ -40,8 +57,9 @@ class _SpoolPainter extends CustomPainter {
   final SpoolLook look;
   final bool dark;
   final Color hole;
+  final List<Color> extra;
 
-  _SpoolPainter(this.color, this.fraction, this.look, this.dark, this.hole);
+  _SpoolPainter(this.color, this.fraction, this.look, this.dark, this.hole, this.extra);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -67,8 +85,17 @@ class _SpoolPainter extends CustomPainter {
       canvas.drawCircle(c, rimInner, Paint()..color = hole);
     }
 
-    // Wound filament.
+    // Wound filament; a multi-colour one as alternating sectors.
     canvas.drawCircle(c, fill, Paint()..color = color);
+    if (extra.isNotEmpty) {
+      final all = [color, ...extra];
+      final n = all.length * (all.length == 2 ? 4 : 3);
+      final rect = Rect.fromCircle(center: c, radius: fill);
+      for (int i = 0; i < n; i++) {
+        canvas.drawArc(rect, -math.pi / 2 + i * 2 * math.pi / n, 2 * math.pi / n, true,
+            Paint()..color = all[i % all.length]);
+      }
+    }
     canvas.drawCircle(
         c,
         fill,
@@ -131,5 +158,6 @@ class _SpoolPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SpoolPainter old) =>
-      old.color != color || old.fraction != fraction || old.look != look || old.dark != dark || old.hole != hole;
+      old.color != color || old.fraction != fraction || old.look != look || old.dark != dark || old.hole != hole || old.extra.length != extra.length ||
+      [for (int i = 0; i < extra.length; i++) old.extra[i] != extra[i]].any((x) => x);
 }

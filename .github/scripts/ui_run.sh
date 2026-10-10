@@ -18,14 +18,13 @@ pull() {
   done
 }
 
-( sleep 60; { echo "--- debug: run-as listing"; adb shell run-as $PKG ls -la files files/screens; } >> pull_debug.txt 2>&1
-  while true; do sleep 15; pull; done ) &
+( while true; do sleep 4; pull; done ) &
 PULLER=$!
 
 # Let the freshly booted emulator settle (late config changes recreate the activity).
 adb wait-for-device
 until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ]; do sleep 2; done
-sleep 40
+sleep 8
 adb shell input keyevent 82 || true
 adb shell settings put global window_animation_scale 0 || true
 
@@ -56,6 +55,5 @@ if [ -f release-x64.apk ]; then
   adb logcat -d -s STLVAGA:* | grep OCR_SELFTEST | sed 's/^/RELEASE /' >> drive.txt || echo "RELEASE OCR_SELFTEST_NO_RESULT" >> drive.txt
 fi
 adb logcat -d > logcat.txt 2>/dev/null || true
-cp pull_debug.txt screenshots/ 2>/dev/null || true
 ls -la screenshots
 exit 0
