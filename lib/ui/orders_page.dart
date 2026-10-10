@@ -791,7 +791,7 @@ class _DeductDialogState extends State<_DeductDialog> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '${s.name.isEmpty ? materialById(s.materialId).name : s.name} · ${fmtGrams(s.remainingGrams)}',
+                          '${s.title.isEmpty ? materialById(s.materialId).name : s.title} · ${fmtGrams(s.remainingGrams)}',
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: s.remainingGrams < _need[m]! ? theme.colorScheme.error : null),
                         ),

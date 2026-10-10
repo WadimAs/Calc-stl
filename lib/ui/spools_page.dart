@@ -47,7 +47,7 @@ class _SpoolsPageState extends State<SpoolsPage> {
         date: DateTime.now(),
         category: 'Пластик', // no-tr
         amount: result.price,
-        note: '${materialById(result.materialId).name}${result.name.isEmpty ? '' : ' ${result.name}'}, '
+        note: '${materialById(result.materialId).name}${result.title.isEmpty ? '' : ' ${result.title}'}, '
             '${fmtGrams(result.totalGrams)}',
       ));
     }
@@ -80,6 +80,11 @@ class _SpoolsPageState extends State<SpoolsPage> {
 
   Future<void> _delete(Spool s) async {
     final list = await SpoolStore.remove(s.id);
+    if (mounted) setState(() => _spools = list);
+  }
+
+  Future<void> _setOnSpool(Spool s, bool v) async {
+    final list = await SpoolStore.upsert(s.copyWith(onSpool: v));
     if (mounted) setState(() => _spools = list);
   }
 
@@ -172,9 +177,14 @@ class _SpoolsPageState extends State<SpoolsPage> {
                               Expanded(
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   Text(
-                                    s.name.isEmpty ? materialById(s.materialId).name : '${materialById(s.materialId).name} · ${s.name}',
+                                    s.title.isEmpty ? materialById(s.materialId).name : '${materialById(s.materialId).name} · ${s.title}',
                                     style: theme.textTheme.titleSmall,
                                   ),
+                                  if (s.refill)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: _RefillChip(onSpool: s.onSpool),
+                                    ),
                                   const SizedBox(height: 6),
                                   LinearProgressIndicator(
                                     value: s.fraction,
@@ -194,10 +204,16 @@ class _SpoolsPageState extends State<SpoolsPage> {
                                 onSelected: (v) {
                                   if (v == 'off') _writeOff(s);
                                   if (v == 'price') _usePrice(s);
+                                  if (v == 'mount') _setOnSpool(s, !s.onSpool);
                                   if (v == 'del') _delete(s);
                                 },
                                 itemBuilder: (_) => [
                                   PopupMenuItem(value: 'off', child: Text(tr('Списати вручну'))),
+                                  if (s.refill)
+                                    PopupMenuItem(
+                                      value: 'mount',
+                                      child: Text(s.onSpool ? tr('Зняти з котушки') : tr('Встановлено на котушку')),
+                                    ),
                                   if (s.pricePerKg != null && widget.onUsePrice != null)
                                     PopupMenuItem(value: 'price', child: Text(tr('Рахувати за ціною котушки'))),
                                   PopupMenuItem(value: 'del', child: Text(tr('Видалити'))),
@@ -229,6 +245,19 @@ class _SpoolDialogState extends State<_SpoolDialog> {
   late String _material = widget.spool?.materialId ?? 'PLA';
   late int _color = widget.spool?.colorArgb ?? spoolColors[4];
   late final _name = TextEditingController(text: widget.spool?.name ?? '');
+  late final _brand = TextEditingController(text: widget.spool?.brand ?? '');
+  late bool _refill = widget.spool?.refill ?? false;
+  late bool _onSpool = widget.spool?.onSpool ?? false;
+
+  Future<void> _pickBrand() async {
+    final b = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => const _BrandPicker(),
+    );
+    if (b != null) setState(() => _brand.text = b);
+  }
   late final _total = TextEditingController(text: _fmt(widget.spool?.totalGrams ?? 1000));
   late final _left = TextEditingController(text: _fmt(widget.spool?.remainingGrams ?? 1000));
   late final _price =
@@ -277,7 +306,12 @@ class _SpoolDialogState extends State<_SpoolDialog> {
       setState(() {
         if (l.materialId != null && materials.any((m) => m.id == l.materialId)) _material = l.materialId!;
         if (l.colorArgb != null) _color = l.colorArgb!;
-        if (l.name.isNotEmpty) _name.text = l.name;
+        if (l.brand != null) _brand.text = l.brand!;
+        if (l.colorName != null) _name.text = l.colorName!;
+        if (l.refill) {
+          _refill = true;
+          _onSpool = false;
+        }
         if (l.weightGrams != null) {
           _total.text = _fmt(l.weightGrams!);
           if (widget.spool == null) _left.text = _fmt(l.weightGrams!);
@@ -290,6 +324,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
                   l.materialText,
                   l.colorName,
                   if (l.weightGrams != null) fmtGrams(l.weightGrams!),
+                  if (l.refill) tr('Refill (без котушки)'),
                 ].whereType<String>().join(' · ')
               ]);
       });
@@ -306,6 +341,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
   @override
   void dispose() {
     _name.dispose();
+    _brand.dispose();
     _total.dispose();
     _left.dispose();
     _price.dispose();
@@ -341,10 +377,41 @@ class _SpoolDialogState extends State<_SpoolDialog> {
             onChanged: (v) => setState(() => _material = v ?? _material),
           ),
           TextField(
+            controller: _brand,
+            textCapitalization: TextCapitalization.words,
+            decoration: InputDecoration(
+              labelText: tr('Виробник'),
+              hintText: 'Bambu Lab, eSUN, Plexiwire…',
+              suffixIcon: IconButton(
+                tooltip: tr('Вибрати зі списку'),
+                icon: const Icon(Icons.arrow_drop_down_circle_outlined),
+                onPressed: _pickBrand,
+              ),
+            ),
+          ),
+          TextField(
             controller: _name,
             textCapitalization: TextCapitalization.sentences,
-            decoration: InputDecoration(labelText: tr('Виробник, колір'), hintText: tr('Bambu, жовтий')),
+            decoration: InputDecoration(labelText: tr('Колір / назва'), hintText: tr('Jade White, чорний…')),
           ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: Text(tr('Refill (без котушки)')),
+            value: _refill,
+            onChanged: (v) => setState(() {
+              _refill = v;
+              if (!v) _onSpool = false;
+            }),
+          ),
+          if (_refill)
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: Text(tr('Уже встановлено на котушку')),
+              value: _onSpool,
+              onChanged: (v) => setState(() => _onSpool = v ?? false),
+            ),
           const SizedBox(height: 12),
           Wrap(spacing: 8, runSpacing: 8, children: [
             for (final c in spoolColors)
@@ -417,6 +484,9 @@ class _SpoolDialogState extends State<_SpoolDialog> {
                       remainingGrams: left,
                       createdAt: DateTime.now(),
                       price: price,
+                      brand: _brand.text.trim(),
+                      refill: _refill,
+                      onSpool: _refill && _onSpool,
                     )
                   : old.copyWith(
                       materialId: _material,
@@ -425,6 +495,9 @@ class _SpoolDialogState extends State<_SpoolDialog> {
                       totalGrams: total,
                       remainingGrams: left,
                       price: price,
+                      brand: _brand.text.trim(),
+                      refill: _refill,
+                      onSpool: _refill && _onSpool,
                     ),
               old == null && _asExpense,
             ));
@@ -432,6 +505,71 @@ class _SpoolDialogState extends State<_SpoolDialog> {
           child: Text(tr('Зберегти')),
         ),
       ],
+    );
+  }
+}
+
+/// Searchable list of filament makers.
+class _BrandPicker extends StatefulWidget {
+  const _BrandPicker();
+
+  @override
+  State<_BrandPicker> createState() => _BrandPickerState();
+}
+
+class _BrandPickerState extends State<_BrandPicker> {
+  String _q = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final q = _q.toLowerCase();
+    final list = [for (final b in filamentBrands) if (q.isEmpty || b.toLowerCase().contains(q)) b];
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.7,
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: TextField(
+            autofocus: false,
+            decoration: InputDecoration(prefixIcon: const Icon(Icons.search), hintText: tr('Пошук виробника')),
+            onChanged: (v) => setState(() => _q = v.trim()),
+          ),
+        ),
+        Expanded(
+          child: ListView(children: [
+            for (final b in list) ListTile(title: Text(b), onTap: () => Navigator.pop(context, b)),
+            if (_q.isNotEmpty && !list.any((b) => b.toLowerCase() == q))
+              ListTile(
+                leading: const Icon(Icons.add),
+                title: Text(trf('Інший: «{0}»', [_q])),
+                onTap: () => Navigator.pop(context, _q),
+              ),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+/// "Refill" badge: without a spool, or already mounted on one.
+class _RefillChip extends StatelessWidget {
+  final bool onSpool;
+
+  const _RefillChip({required this.onSpool});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final c = onSpool ? scheme.primary : scheme.tertiary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(color: c.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(20)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(onSpool ? Icons.album : Icons.all_inclusive, size: 13, color: c),
+        const SizedBox(width: 4),
+        Text(onSpool ? tr('Refill на котушці') : tr('Refill, без котушки'),
+            style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.w600)),
+      ]),
     );
   }
 }

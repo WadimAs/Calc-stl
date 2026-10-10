@@ -270,7 +270,7 @@ class _PrinterPageState extends State<PrinterPage> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    '${materialById(s.materialId).name}${s.name.isEmpty ? '' : ' · ${s.name}'} — '
+                    '${materialById(s.materialId).name}${s.title.isEmpty ? '' : ' · ${s.title}'} — '
                     '${fmtGrams(j.gramsFor(materialById(s.materialId).density))}',
                   ),
                 ),

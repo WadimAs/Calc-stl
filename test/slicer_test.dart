@@ -1099,6 +1099,28 @@ void main() {
       expect(l.weightGrams, 1000);
       expect(l.name, 'Black');
 
+      l = parseSpoolLabel('Bambu Lab\nPLA Matte Refill\nCharcoal\n1 kg');
+      expect(l.refill, isTrue);
+      expect(l.materialText, 'PLA Matte');
+      expect(parseSpoolLabel('SUNLU PETG spoolless 1kg').refill, isTrue);
+      expect(parseSpoolLabel('eSUN PLA+ 1kg Black').refill, isFalse);
+      expect(filamentBrands.first, 'Bambu Lab');
+      final sp = Spool(
+        id: 'r',
+        materialId: 'PLA',
+        name: 'Jade White',
+        brand: 'Bambu Lab',
+        colorArgb: 0,
+        totalGrams: 1000,
+        remainingGrams: 1000,
+        createdAt: _epoch,
+        refill: true,
+      );
+      expect(sp.title, 'Bambu Lab · Jade White');
+      final sb = Spool.fromJson(jsonDecode(jsonEncode(sp.copyWith(onSpool: true).toJson())))!;
+      expect(sb.refill && sb.onSpool, isTrue);
+      expect(sb.brand, 'Bambu Lab');
+
       expect(parseSpoolLabel('hello world').isEmpty, isTrue);
     });
   });

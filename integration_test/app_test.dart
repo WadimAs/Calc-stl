@@ -63,7 +63,7 @@ Future<Uint8List> labelPng() async {
   c.drawRect(const Rect.fromLTWH(0, 0, 1000, 640), Paint()..color = Colors.white);
   final tp = TextPainter(
     text: const TextSpan(
-      text: 'Bambu Lab\nPLA Basic\nJade White\nNet Weight: 1kg',
+      text: 'Bambu Lab\nPLA Basic Refill\nJade White\nNet Weight: 1kg',
       style: TextStyle(color: Colors.black, fontSize: 80, fontWeight: FontWeight.bold, height: 1.3),
     ),
     textDirection: TextDirection.ltr,
@@ -347,7 +347,14 @@ void main() {
       final t = (find.textContaining('Розпізнано').evaluate().first.widget as Text).data ?? '';
       note('OCR result: $t');
       PlatformFiles.debugImage = null;
-      if (!t.contains('PLA') || !t.contains('Bambu')) throw StateError('OCR: $t');
+      if (!t.contains('PLA') || !t.contains('Bambu') || !t.contains('Refill')) throw StateError('OCR: $t');
+      await tap(find.text('Зберегти'));
+      await waitFor(find.text('Refill, без котушки'));
+      await shot('32c_refill_in_list');
+      await tap(find.byType(PopupMenuButton<String>).last);
+      await tap(find.text('Встановлено на котушку'));
+      await waitFor(find.text('Refill на котушці'));
+      await shot('32d_refill_mounted');
       await home();
     });
 

@@ -4,7 +4,14 @@ import '../data/json_store.dart';
 class Spool {
   final String id;
   final String materialId;
-  final String name; // brand / colour as the user writes it
+  final String name; // colour / description as the user writes it
+  final String brand; // manufacturer (older spools have it inside [name])
+
+  /// Bought as a refill (filament without its own spool)…
+  final bool refill;
+
+  /// …and already mounted on a reusable spool.
+  final bool onSpool;
   final int colorArgb;
   final double totalGrams;
   final double remainingGrams;
@@ -22,7 +29,13 @@ class Spool {
     required this.remainingGrams,
     required this.createdAt,
     this.price = 0,
+    this.brand = '',
+    this.refill = false,
+    this.onSpool = false,
   });
+
+  /// "Bambu Lab · Jade White"
+  String get title => [brand, name].where((x) => x.trim().isNotEmpty).join(' · ');
 
   /// Price per kilogram from the purchase, or null.
   double? get pricePerKg => price > 0 && totalGrams > 0 ? price / totalGrams * 1000 : null;
@@ -31,8 +44,17 @@ class Spool {
 
   bool get isLow => remainingGrams < 150;
 
-  Spool copyWith(
-          {String? materialId, String? name, int? colorArgb, double? totalGrams, double? remainingGrams, double? price}) =>
+  Spool copyWith({
+    String? materialId,
+    String? name,
+    int? colorArgb,
+    double? totalGrams,
+    double? remainingGrams,
+    double? price,
+    String? brand,
+    bool? refill,
+    bool? onSpool,
+  }) =>
       Spool(
         id: id,
         materialId: materialId ?? this.materialId,
@@ -42,6 +64,9 @@ class Spool {
         remainingGrams: remainingGrams ?? this.remainingGrams,
         createdAt: createdAt,
         price: price ?? this.price,
+        brand: brand ?? this.brand,
+        refill: refill ?? this.refill,
+        onSpool: onSpool ?? this.onSpool,
       );
 
   Map<String, dynamic> toJson() => {
@@ -53,6 +78,9 @@ class Spool {
         'remaining': remainingGrams,
         'createdAt': createdAt.millisecondsSinceEpoch,
         'price': price,
+        'brand': brand,
+        'refill': refill,
+        'onSpool': onSpool,
       };
 
   static Spool? fromJson(Object? raw) {
@@ -67,6 +95,9 @@ class Spool {
       remainingGrams: d('remaining', 1000),
       createdAt: DateTime.fromMillisecondsSinceEpoch(raw['createdAt'] is num ? (raw['createdAt'] as num).toInt() : 0),
       price: d('price', 0),
+      brand: raw['brand'] is String ? raw['brand'] as String : '',
+      refill: raw['refill'] == true,
+      onSpool: raw['onSpool'] == true,
     );
   }
 }

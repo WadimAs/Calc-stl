@@ -9,13 +9,32 @@ class SpoolLabel {
   final int? colorArgb;
   final double? weightGrams;
 
-  const SpoolLabel({this.brand, this.materialId, this.materialText, this.colorName, this.colorArgb, this.weightGrams});
+  /// Sold without a spool ("Refill").
+  final bool refill;
 
-  bool get isEmpty => brand == null && materialId == null && colorArgb == null && weightGrams == null;
+  const SpoolLabel({
+    this.brand,
+    this.materialId,
+    this.materialText,
+    this.colorName,
+    this.colorArgb,
+    this.weightGrams,
+    this.refill = false,
+  });
+
+  bool get isEmpty => brand == null && materialId == null && colorArgb == null && weightGrams == null && !refill;
 
   /// "Bambu Lab, Jade White" for the spool name field.
   String get name => [brand, colorName].whereType<String>().join(', ');
 }
+
+/// Filament makers for the manual picker, most popular first.
+List<String> get filamentBrands => _brands.keys.toList();
+
+final _refill = RegExp(
+  r'\bre-?fill?\b|\brefil\b|spool[\s-]*(?:less|free)|without\s+spool|no\s+spool|eco[\s-]*spool|masterspool|без\s+котушки',
+  caseSensitive: false,
+);
 
 const _brands = <String, List<String>>{
   'Bambu Lab': ['bambu lab', 'bambulab', 'bambu'],
@@ -25,6 +44,9 @@ const _brands = <String, List<String>>{
   'Elegoo': ['elegoo'],
   'Creality': ['creality', 'hyper pla', 'ender pla'],
   'Anycubic': ['anycubic'],
+  'Plexiwire': ['plexiwire'],
+  'Monofilament': ['monofilament'],
+  'FDplast': ['fdplast', 'fd plast'],
   'Prusament': ['prusament', 'prusa'],
   'Overture': ['overture'],
   'JAYO': ['jayo'],
@@ -35,9 +57,6 @@ const _brands = <String, List<String>>{
   'Fiberlogy': ['fiberlogy'],
   'Spectrum': ['spectrum filaments', 'spectrum'],
   'Devil Design': ['devil design', 'devildesign'],
-  'Plexiwire': ['plexiwire'],
-  'Monofilament': ['monofilament'],
-  'FDplast': ['fdplast', 'fd plast'],
   'Fillamentum': ['fillamentum'],
   'colorFabb': ['colorfabb'],
   '3DJake': ['3djake'],
@@ -188,6 +207,7 @@ SpoolLabel parseSpoolLabel(String text) {
   }
 
   return SpoolLabel(
+    refill: _refill.hasMatch(text),
     brand: brand,
     materialId: materialId,
     materialText: materialText,
