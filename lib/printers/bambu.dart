@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import '../i18n/i18n.dart';
+import 'bambu_cloud.dart';
 import 'mqtt.dart';
 import 'printers.dart';
 
@@ -22,9 +24,23 @@ class BambuClient {
   Stream<PrinterStatus> get status => _out.stream;
 
   Future<void> connect() async {
-    final m = MqttClient(printer.host, user: 'bblp', password: printer.accessCode);
+    final MqttClient m;
+    if (printer.cloud) {
+      final acc = await BambuAccount.load();
+      if (acc == null) throw BambuCloudException(tr('Увійдіть в акаунт Bambu: Принтери → значок акаунта вгорі'));
+      m = MqttClient(BambuCloud.mqttHost, user: acc.username, password: acc.token);
+    } else {
+      m = MqttClient(printer.host, user: 'bblp', password: printer.accessCode);
+    }
     _mqtt = m;
-    await m.connect();
+    try {
+      await m.connect();
+    } on MqttException catch (e) {
+      if (printer.cloud && e.message == tr('Принтер не прийняв код доступу')) {
+        throw BambuCloudException(tr('Вхід в акаунт Bambu застарів — увійдіть знову'));
+      }
+      rethrow;
+    }
     _sub = m.messages.listen(_onMessage, onError: (Object e) {
       if (!_out.isClosed) _out.addError(e);
     });

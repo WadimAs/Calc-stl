@@ -15,6 +15,9 @@ class PrinterConn {
   final int port; // Moonraker HTTP port
   final List<String> writtenOff; // Moonraker job ids already written off spools
 
+  /// Bambu through the Bambu cloud (account login) instead of the LAN.
+  final bool cloud;
+
   const PrinterConn({
     required this.id,
     required this.name,
@@ -25,6 +28,7 @@ class PrinterConn {
     this.apiKey = '',
     this.port = 7125,
     this.writtenOff = const [],
+    this.cloud = false,
   });
 
   PrinterConn copyWith({List<String>? writtenOff}) => PrinterConn(
@@ -37,9 +41,12 @@ class PrinterConn {
         apiKey: apiKey,
         port: port,
         writtenOff: writtenOff ?? this.writtenOff,
+        cloud: cloud,
       );
 
-  String get kindLabel => kind == PrinterKind.bambu ? 'Bambu Lab' : 'Klipper (Moonraker)';
+  String get kindLabel => kind == PrinterKind.bambu
+      ? (cloud ? tr('Bambu Lab · через інтернет') : 'Bambu Lab')
+      : 'Klipper (Moonraker)';
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -51,6 +58,7 @@ class PrinterConn {
         'apiKey': apiKey,
         'port': port,
         'writtenOff': writtenOff,
+        'cloud': cloud,
       };
 
   static PrinterConn? fromJson(Object? raw) {
@@ -65,6 +73,7 @@ class PrinterConn {
       accessCode: s('accessCode'),
       apiKey: s('apiKey'),
       port: raw['port'] is num ? (raw['port'] as num).toInt() : 7125,
+      cloud: raw['cloud'] == true,
       writtenOff: [
         if (raw['writtenOff'] is List)
           for (final e in raw['writtenOff'] as List)

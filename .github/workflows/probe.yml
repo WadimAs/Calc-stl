@@ -1,0 +1,15 @@
+name: Bambu cloud probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dart-lang/setup-dart@v1
+      - name: Probe
+        run: |
+          dart run tool/bambu_probe.dart | tee probe.txt
+          grep PROBE probe.txt | while read -r l; do echo "::warning::$l"; done

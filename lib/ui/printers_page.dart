@@ -7,6 +7,7 @@ import '../data/records.dart';
 import '../history/history.dart';
 import '../mesh/slicer_project.dart';
 import '../printers/bambu.dart';
+import '../printers/bambu_cloud.dart';
 import '../printers/moonraker.dart';
 import '../printers/printers.dart';
 import '../slicer/settings.dart';
@@ -50,8 +51,8 @@ Future<int> syncAmsSpools(PrinterConn p, List<FilamentSlot> slots) async {
   return n;
 }
 
-Future<PrinterConn?> editPrinter(BuildContext context, [PrinterConn? p]) =>
-    showDialog<PrinterConn>(context: context, builder: (_) => _PrinterDialog(printer: p));
+Future<PrinterConn?> editPrinter(BuildContext context, [PrinterConn? p, PrinterKind? kind]) =>
+    showDialog<PrinterConn>(context: context, builder: (_) => _PrinterDialog(printer: p, kind: kind));
 
 class PrintersPage extends StatefulWidget {
   const PrintersPage({super.key});
@@ -75,10 +76,114 @@ class _PrintersPageState extends State<PrintersPage> {
   }
 
   Future<void> _add() async {
-    final p = await editPrinter(context);
+    final how = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.cloud_outlined),
+            title: Text(tr('Bambu Lab через інтернет')),
+            subtitle: Text(tr('Вхід в акаунт Bambu — працює будь-де, як Bambu Handy')),
+            onTap: () => Navigator.pop(ctx, 'cloud'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.wifi),
+            title: Text(tr('Bambu Lab у локальній мережі')),
+            subtitle: Text(tr('IP, серійний номер і код доступу')),
+            onTap: () => Navigator.pop(ctx, 'lan'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.memory_outlined),
+            title: const Text('Klipper (Moonraker)'),
+            subtitle: Text(tr('Creality K1, Elegoo, Voron…')),
+            onTap: () => Navigator.pop(ctx, 'klipper'),
+          ),
+        ]),
+      ),
+    );
+    if (how == null || !mounted) return;
+    if (how == 'cloud') {
+      await _addFromCloud();
+      return;
+    }
+    final p = await editPrinter(context, null, how == 'klipper' ? PrinterKind.moonraker : PrinterKind.bambu);
     if (p == null) return;
     await printerStore.upsert(p, atStart: false);
     _reload();
+  }
+
+  /// Logs in if needed and adds printers bound to the Bambu account.
+  Future<void> _addFromCloud() async {
+    var acc = await BambuAccount.load();
+    if (!mounted) return;
+    if (acc == null || acc.probablyExpired) {
+      acc = await showDialog<BambuAccount>(context: context, builder: (_) => const BambuLoginDialog());
+      if (acc == null || !mounted) return;
+    }
+    List<CloudPrinter> found;
+    try {
+      found = await BambuCloud.printers(acc);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      if (e is BambuCloudException) {
+        acc = await showDialog<BambuAccount>(context: context, builder: (_) => const BambuLoginDialog());
+        if (acc != null) _addFromCloud();
+      }
+      return;
+    }
+    if (!mounted) return;
+    if (found.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(tr('До акаунта не прив\'язано жодного принтера'))));
+      return;
+    }
+    final existing = {for (final p in _list ?? const <PrinterConn>[]) if (p.cloud) p.serial};
+    final chosen = await showDialog<List<CloudPrinter>>(
+      context: context,
+      builder: (_) => _CloudPickDialog(printers: found, existing: existing),
+    );
+    if (chosen == null || chosen.isEmpty) return;
+    for (final c in chosen) {
+      await printerStore.upsert(
+        PrinterConn(
+          id: newId(),
+          name: c.name,
+          kind: PrinterKind.bambu,
+          host: '',
+          serial: c.serial,
+          accessCode: c.accessCode,
+          cloud: true,
+        ),
+        atStart: false,
+      );
+    }
+    _reload();
+  }
+
+  Future<void> _account() async {
+    final acc = await BambuAccount.load();
+    if (!mounted) return;
+    if (acc == null) {
+      final a = await showDialog<BambuAccount>(context: context, builder: (_) => const BambuLoginDialog());
+      if (a != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(trf('Вхід виконано: {0}', [a.email]))));
+      }
+      return;
+    }
+    final out = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(tr('Акаунт Bambu')),
+        content: Text(trf('Увійшли як {0}.', [acc.email])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('Вийти'))),
+          FilledButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('Закрити'))),
+        ],
+      ),
+    );
+    if (out == true) await BambuAccount.logout();
   }
 
   @override
@@ -86,7 +191,12 @@ class _PrintersPageState extends State<PrintersPage> {
     final theme = Theme.of(context);
     final list = _list;
     return Scaffold(
-      appBar: AppBar(title: Text(tr('Принтери'))),
+      appBar: AppBar(
+        title: Text(tr('Принтери')),
+        actions: [
+          IconButton(tooltip: tr('Акаунт Bambu'), onPressed: _account, icon: const Icon(Icons.account_circle_outlined)),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _add,
         icon: const Icon(Icons.add),
@@ -101,7 +211,7 @@ class _PrintersPageState extends State<PrintersPage> {
                   Padding(
                     padding: const EdgeInsets.all(32),
                     child: Text(
-                      tr('Підключіть принтер у тій самій Wi-Fi мережі, щоб бачити друк наживо, залишок пластику в AMS і списувати витрачене на котушки.\n\nBambu Lab — за IP, серійним номером і кодом доступу LAN.\nKlipper (Creality K1, Elegoo, Voron…) — за IP через Moonraker.'),
+                      tr('Підключіть принтер, щоб бачити друк наживо, залишок пластику в AMS і списувати витрачене на котушки.\n\nBambu Lab — через акаунт Bambu (будь-де) або в локальній мережі.\nKlipper (Creality K1, Elegoo, Voron…) — за IP через Moonraker.'),
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
@@ -110,9 +220,11 @@ class _PrintersPageState extends State<PrintersPage> {
                   Card(
                     margin: const EdgeInsets.symmetric(vertical: 4),
                     child: ListTile(
-                      leading: Icon(p.kind == PrinterKind.bambu ? Icons.print_outlined : Icons.memory_outlined),
-                      title: Text(p.name.isEmpty ? p.host : p.name),
-                      subtitle: Text('${p.kindLabel} · ${p.host}'),
+                      leading: Icon(p.cloud
+                          ? Icons.cloud_outlined
+                          : (p.kind == PrinterKind.bambu ? Icons.print_outlined : Icons.memory_outlined)),
+                      title: Text(p.name.isEmpty ? (p.host.isEmpty ? p.serial : p.host) : p.name),
+                      subtitle: Text(p.cloud ? p.kindLabel : '${p.kindLabel} · ${p.host}'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () async {
                         await Navigator.of(context)
@@ -302,16 +414,22 @@ class _PrinterPageState extends State<PrinterPage> {
     final p = _p;
     return Scaffold(
       appBar: AppBar(
-        title: Text(p.name.isEmpty ? p.host : p.name),
+        title: Text(p.name.isEmpty ? (p.host.isEmpty ? p.serial : p.host) : p.name),
         actions: [
           IconButton(tooltip: tr('Оновити'), onPressed: _connecting ? null : _connect, icon: const Icon(Icons.refresh)),
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'edit') _edit();
+              if (v == 'login') {
+                showDialog<BambuAccount>(context: context, builder: (_) => const BambuLoginDialog()).then((a) {
+                  if (a != null) _connect();
+                });
+              }
               if (v == 'del') _delete();
             },
             itemBuilder: (_) => [
-              PopupMenuItem(value: 'edit', child: Text(tr('Змінити'))),
+              if (!p.cloud) PopupMenuItem(value: 'edit', child: Text(tr('Змінити'))),
+              if (p.cloud) PopupMenuItem(value: 'login', child: Text(tr('Увійти в акаунт знову'))),
               PopupMenuItem(value: 'del', child: Text(tr('Видалити'))),
             ],
           ),
@@ -338,7 +456,9 @@ class _PrinterPageState extends State<PrinterPage> {
                     Text(_error!, style: TextStyle(color: theme.colorScheme.onErrorContainer)),
                     const SizedBox(height: 8),
                     Text(
-                      p.kind == PrinterKind.bambu
+                      p.cloud
+                          ? tr('Перевірте інтернет і чи принтер увімкнений. Якщо вхід застарів — меню ⋮ → «Увійти в акаунт знову».')
+                          : p.kind == PrinterKind.bambu
                           ? tr('Перевірте: телефон і принтер в одній мережі, правильні IP, серійний номер і код доступу (на принтері: Налаштування → WLAN). На новій прошивці може знадобитися увімкнути «LAN only» та «Developer mode».')
                           : tr('Перевірте IP і порт (зазвичай 7125, як у Mainsail / Fluidd).'),
                       style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onErrorContainer),
@@ -498,15 +618,16 @@ Future<void> sendGcodeToPrinter(BuildContext context, String name, Uint8List byt
 
 class _PrinterDialog extends StatefulWidget {
   final PrinterConn? printer;
+  final PrinterKind? kind;
 
-  const _PrinterDialog({this.printer});
+  const _PrinterDialog({this.printer, this.kind});
 
   @override
   State<_PrinterDialog> createState() => _PrinterDialogState();
 }
 
 class _PrinterDialogState extends State<_PrinterDialog> {
-  late PrinterKind _kind = widget.printer?.kind ?? PrinterKind.bambu;
+  late PrinterKind _kind = widget.printer?.kind ?? widget.kind ?? PrinterKind.bambu;
   late final _name = TextEditingController(text: widget.printer?.name ?? '');
   late final _host = TextEditingController(text: widget.printer?.host ?? '');
   late final _serial = TextEditingController(text: widget.printer?.serial ?? '');
@@ -597,6 +718,184 @@ class _PrinterDialogState extends State<_PrinterDialog> {
             );
           },
           child: Text(tr('Зберегти')),
+        ),
+      ],
+    );
+  }
+}
+
+/// Bambu account login: e-mail + password, then the e-mail / 2FA code.
+class BambuLoginDialog extends StatefulWidget {
+  const BambuLoginDialog({super.key});
+
+  @override
+  State<BambuLoginDialog> createState() => _BambuLoginDialogState();
+}
+
+class _BambuLoginDialogState extends State<BambuLoginDialog> {
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  final _code = TextEditingController();
+  LoginStep? _step;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    BambuAccount.load().then((a) {
+      if (a != null && mounted && _email.text.isEmpty) _email.text = a.email;
+    });
+  }
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _go() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final email = _email.text.trim();
+      final step = _step;
+      BambuAccount? acc;
+      if (step is LoginNeedsEmailCode) {
+        acc = await BambuCloud.loginWithCode(email, _code.text);
+      } else if (step is LoginNeedsTfa) {
+        acc = await BambuCloud.loginWithTfa(email, step.tfaKey, _code.text);
+      } else {
+        final r = await BambuCloud.login(email, _password.text);
+        if (r is LoginDone) {
+          acc = r.account;
+        } else {
+          if (mounted) setState(() => _step = r);
+        }
+      }
+      if (acc != null && mounted) Navigator.pop(context, acc);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final step = _step;
+    final needCode = step is LoginNeedsEmailCode || step is LoginNeedsTfa;
+    return AlertDialog(
+      title: Text(tr('Акаунт Bambu')),
+      content: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (!needCode) ...[
+            Text(tr('Той самий акаунт, що в Bambu Handy і Bambu Studio. Пароль не зберігається.'),
+                style: theme.textTheme.bodySmall),
+            TextField(
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              autofillHints: const [AutofillHints.email],
+              decoration: InputDecoration(labelText: tr('Пошта')),
+            ),
+            TextField(
+              controller: _password,
+              obscureText: true,
+              autofillHints: const [AutofillHints.password],
+              decoration: InputDecoration(labelText: tr('Пароль')),
+              onSubmitted: (_) => _busy ? null : _go(),
+            ),
+          ] else ...[
+            Text(
+              step is LoginNeedsTfa
+                  ? tr('Введіть код із застосунку двофакторної автентифікації.')
+                  : trf('На {0} надіслано код підтвердження.', [_email.text.trim()]),
+              style: theme.textTheme.bodyMedium,
+            ),
+            TextField(
+              controller: _code,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(labelText: tr('Код')),
+              onSubmitted: (_) => _busy ? null : _go(),
+            ),
+          ],
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+            ),
+          const SizedBox(height: 8),
+          Text(
+            tr('Неофіційний спосіб (як у Home Assistant): лише перегляд статусу; вхід діє близько 3 місяців.'),
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Скасувати'))),
+        FilledButton(
+          onPressed: _busy ? null : _go,
+          child: _busy
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : Text(needCode ? tr('Підтвердити') : tr('Увійти')),
+        ),
+      ],
+    );
+  }
+}
+
+class _CloudPickDialog extends StatefulWidget {
+  final List<CloudPrinter> printers;
+  final Set<String> existing;
+
+  const _CloudPickDialog({required this.printers, required this.existing});
+
+  @override
+  State<_CloudPickDialog> createState() => _CloudPickDialogState();
+}
+
+class _CloudPickDialogState extends State<_CloudPickDialog> {
+  late final Set<String> _sel = {
+    for (final p in widget.printers)
+      if (!widget.existing.contains(p.serial)) p.serial,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(tr('Принтери в акаунті')),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: ListView(shrinkWrap: true, children: [
+          for (final p in widget.printers)
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _sel.contains(p.serial),
+              onChanged: widget.existing.contains(p.serial)
+                  ? null
+                  : (v) => setState(() => v == true ? _sel.add(p.serial) : _sel.remove(p.serial)),
+              title: Text(p.name),
+              subtitle: Text([
+                if (p.model.isNotEmpty) p.model,
+                p.online ? tr('онлайн') : tr('офлайн'),
+                if (widget.existing.contains(p.serial)) tr('уже додано'),
+              ].join(' · ')),
+            ),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Скасувати'))),
+        FilledButton(
+          onPressed: _sel.isEmpty
+              ? null
+              : () => Navigator.pop(context, [for (final p in widget.printers) if (_sel.contains(p.serial)) p]),
+          child: Text(tr('Додати')),
         ),
       ],
     );

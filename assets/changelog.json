@@ -1,5 +1,15 @@
 [
   {
+    "id": "2026-10-10c",
+    "version": "1.3.2",
+    "uk": [
+      "Принтери Bambu Lab через інтернет: увійдіть в акаунт Bambu (Принтери → «Принтер» → «Bambu Lab через інтернет») — статус друку й AMS видно будь-де, не лише вдома."
+    ],
+    "en": [
+      "Bambu Lab printers over the internet: sign in to your Bambu account (Printers → “Printer” → “Bambu Lab over the internet”) to see print status and the AMS anywhere, not only at home."
+    ]
+  },
+  {
     "id": "2026-10-10b",
     "version": "1.3.1",
     "uk": [

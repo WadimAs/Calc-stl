@@ -1020,6 +1020,16 @@ void main() {
         writtenOff: ['1'],
       ).toJson())))!;
       expect(p.kind, PrinterKind.moonraker);
+      final cl = PrinterConn.fromJson(jsonDecode(jsonEncode(const PrinterConn(
+        id: 'c',
+        name: 'A1 mini',
+        kind: PrinterKind.bambu,
+        host: '',
+        serial: '0309DA',
+        cloud: true,
+      ).toJson())))!;
+      expect(cl.cloud, isTrue);
+      expect(cl.copyWith(writtenOff: ['x']).cloud, isTrue);
       expect(p.writtenOff, ['1']);
     });
   });
