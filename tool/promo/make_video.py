@@ -228,7 +228,8 @@ def touch_marks(view, touches, t_ms):
     if not view:
         return []
     pw, ph, dpr = view
-    sx, sy = SCREEN_W * dpr / pw, SCREEN_H * dpr / (ph * 0.974)
+    # The Flutter view ends above the navigation bar, i.e. where the frame is cropped.
+    sx, sy = SCREEN_W * dpr / pw, SCREEN_H * dpr / ph
     out = []
     for evs in touches.values():
         down = evs[0][0]

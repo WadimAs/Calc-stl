@@ -62,10 +62,13 @@ void main() {
     Future<void> swipe(Offset from, Offset by, int ms) async {
       final g = await press(from);
       await tester.pump(const Duration(milliseconds: 60));
-      final steps = (ms / 16).ceil().clamp(4, 400);
+      // Each frame on the emulator takes real time, so moves are coarser
+      // than 60 fps; the pump interval keeps the gesture velocity right.
+      final steps = (ms / 45).ceil().clamp(4, 50);
+      final dt = Duration(milliseconds: (ms / steps).round());
       for (int i = 0; i < steps; i++) {
         await g.moveBy(by / steps.toDouble());
-        await tester.pump(const Duration(milliseconds: 16));
+        await tester.pump(dt);
       }
       await tester.pump(const Duration(milliseconds: 60));
       await g.up();
