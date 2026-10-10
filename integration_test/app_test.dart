@@ -140,7 +140,7 @@ void main() {
       await tester.ensureVisible(f.first);
       await tester.pump(const Duration(milliseconds: 200));
       await tester.tap(f.first, warnIfMissed: false);
-      await settle();
+      await settle(600);
     }
 
     Future<void> home() async {
@@ -382,6 +382,18 @@ void main() {
                         ),
                     ]),
                   ),
+              Row(children: [
+                for (final (look, extra) in [
+                  (SpoolLook.spool, [0xFFC0C0C0]),
+                  (SpoolLook.spool, [0xFF1E88E5, 0xFF43A047]),
+                  (SpoolLook.refill, [0xFFD81B60]),
+                  (SpoolLook.refillMounted, [0xFF1A237E, 0xFFD4AF37]),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: SpoolIcon(color: 0xFFD4AF37, extra: extra, look: look, size: 48),
+                  ),
+              ]),
             ]),
           ),
         ),
