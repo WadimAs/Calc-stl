@@ -5,12 +5,14 @@
     "uk": [
       "Витрати можна змінити або видалити через меню ⋮ біля суми (або дотиком).",
       "Списання в журналі можна редагувати: котушку, вагу й для чого був друк.",
-      "При виборі котушки для списання видно, скільки на ній залишилось; якщо не вистачає — червоним."
+      "При виборі котушки для списання видно, скільки на ній залишилось; якщо не вистачає — червоним.",
+      "У списку котушок при списанні видно тип пластику (PLA, PETG, PLA Silk…) окремою позначкою."
     ],
     "en": [
       "Expenses can be edited or deleted from the ⋮ menu next to the amount (or by tapping).",
       "Write-offs in the log can be edited: spool, weight and what the print was for.",
-      "When choosing a spool to write off, you see how much is left on it; red if it is not enough."
+      "When choosing a spool to write off, you see how much is left on it; red if it is not enough.",
+      "The spool list for write-offs shows the filament type (PLA, PETG, PLA Silk…) as a separate tag."
     ]
   },
   {

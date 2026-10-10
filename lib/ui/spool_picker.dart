@@ -25,7 +25,22 @@ class SpoolDropdown extends StatelessWidget {
     this.noneLabel,
   });
 
-  String _name(Spool s) => '${materialById(s.materialId).name}${s.title.isEmpty ? '' : ' · ${s.title}'}';
+  /// Brand and colour, or the material when the spool has no name.
+  String _name(Spool s) => s.title.isEmpty ? materialById(s.materialId).name : s.title;
+
+  /// Material type as a small tag ("PETG", "PLA Silk").
+  Widget _material(BuildContext context, Spool s) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(right: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(4)),
+      child: Text(
+        materialById(s.materialId).name,
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: scheme.onSecondaryContainer),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +58,10 @@ class SpoolDropdown extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(_name(s), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Row(children: [
+                  _material(context, s),
+                  Expanded(child: Text(_name(s), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                ]),
                 Text(
                   trf('залишилось {0}', [fmtGrams(s.remainingGrams)]),
                   style: theme.textTheme.bodySmall?.copyWith(color: short(s)),
@@ -62,7 +80,10 @@ class SpoolDropdown extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(_name(s), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Row(children: [
+                    _material(context, s),
+                    Expanded(child: Text(_name(s), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  ]),
                   Text(
                     trf('{0} з {1}', [fmtGrams(s.remainingGrams), fmtGrams(s.totalGrams)]),
                     style: theme.textTheme.bodySmall?.copyWith(color: short(s)),

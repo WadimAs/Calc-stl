@@ -15,7 +15,7 @@ import '../spools/spools.dart';
 import 'clients_page.dart';
 import 'photos_ui.dart';
 import 'quote_page.dart';
-import 'spool_icon.dart';
+import 'spool_picker.dart';
 import 'widgets.dart';
 import '../i18n/i18n.dart';
 
@@ -779,27 +779,10 @@ class _DeductDialogState extends State<_DeductDialog> {
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           for (final m in _need.keys) ...[
             Text('${materialById(m).name}: ${fmtGrams(_need[m]!)}', style: theme.textTheme.titleSmall),
-            DropdownButton<String?>(
-              isExpanded: true,
+            SpoolDropdown(
+              spools: widget.spools,
               value: _choice[m],
-              items: [
-                DropdownMenuItem<String?>(value: null, child: Text(tr('Не списувати'))),
-                for (final s in widget.spools)
-                  DropdownMenuItem<String?>(
-                    value: s.id,
-                    child: Row(children: [
-                      SpoolIcon.of(s, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '${s.title.isEmpty ? materialById(s.materialId).name : s.title} · ${fmtGrams(s.remainingGrams)}',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: s.remainingGrams < _need[m]! ? theme.colorScheme.error : null),
-                        ),
-                      ),
-                    ]),
-                  ),
-              ],
+              need: _need[m],
               onChanged: (v) => setState(() => _choice[m] = v),
             ),
             const SizedBox(height: 8),
