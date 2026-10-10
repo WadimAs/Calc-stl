@@ -71,7 +71,7 @@ SCENES = [
     {
         "title": "Котушки з фото",
         "kicker": "розпізнавання етикетки",
-        "media": ["clip:ocr"],
+        "media": ["clip:ocr", "clip:ocr2"],
         "say": "Котушку додаєте по фото етикетки: виробник, пластик, колір і навіть рефіл розпізнаються самі.",
     },
     {
@@ -105,7 +105,7 @@ SCENES = [
 FALLBACK_SHOT = {
     "open": "04_model", "rotate": "04_model", "holes": "04_model", "infill": "05_result",
     "supports": "06_layers", "layers": "06_layers", "order": "13_order", "pdf": "17_invoice",
-    "ocr": "32b_label_ocr", "printers": "33a_printer_kinds", "print": "32e_print_finished", "lang": "42_en_model",
+    "ocr": "32_spool_dialog", "ocr2": "32b_label_ocr", "printers": "33a_printer_kinds", "print": "32e_print_finished", "lang": "42_en_model",
     "cost": "09_settings_cost", "business": "37_stats_after",
 }
 
@@ -228,6 +228,8 @@ def load_marks(clips_dir):
     return marks
 
 
+MAX_SPEED = 2.5  # fastest playback of a screen recording
+MAX_SCENE = 11.0  # longest scene stretched for a recording, seconds
 REC_LATENCY = float(os.environ.get("PROMO_REC_LATENCY", "0.6"))
 
 
@@ -243,25 +245,32 @@ def extract_clip(clips_dir, marks, name, tmp):
                 recs.append((int(f[4:-4]), f))
             except ValueError:
                 pass
-    recs = [r for r in sorted(recs) if r[0] <= m["start"]]
-    if not recs:
-        print(f"clip {name}: no recording", flush=True)
-        return None
-    # Prefer a recording that holds the whole clip (recordings overlap).
-    whole = [r for r in recs
-             if r[0] + duration(os.path.join(clips_dir, r[1])) * 1000 >= m["end"] + 300]
-    t0, f = (whole or recs)[-1]
-    off = max(0.0, (m["start"] - t0) / 1000.0 - REC_LATENCY)
-    length = (m["end"] - m["start"]) / 1000.0 + 0.2
+    recs = sorted((t, f, duration(os.path.join(clips_dir, f))) for t, f in recs)
     folder = os.path.join(tmp, "clip_" + name)
     os.makedirs(folder, exist_ok=True)
-    # Crop the navigation bar at the bottom (screenshots do not have it either).
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{off:.2f}", "-t", f"{length:.2f}",
-                    "-i", os.path.join(clips_dir, f),
-                    "-vf", f"fps={FPS},crop=iw:ih*0.974:0:0,scale={SCREEN_W}:{SCREEN_H}",
-                    "-q:v", "3", os.path.join(folder, "%05d.jpg")], check=True)
+    # Recordings overlap; a long clip is stitched from consecutive ones.
+    cursor, end, used = m["start"], m["end"] + 200, []
+    while cursor < end - 100:
+        cand = [r for r in recs if r[0] + REC_LATENCY * 1000 <= cursor and r[0] + r[2] * 1000 > cursor + 300]
+        if not cand:
+            break
+        t0, f, d = cand[0]  # the earliest one that still runs: longest stretch from one file
+        seg_end = min(end, t0 + d * 1000 - 100)
+        off = max(0.0, (cursor - t0) / 1000.0 - REC_LATENCY)
+        length = (seg_end - cursor) / 1000.0
+        first = len([x for x in os.listdir(folder) if x.endswith(".jpg")]) + 1
+        # Crop the navigation bar at the bottom (screenshots do not have it either).
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{off:.2f}", "-t", f"{length:.2f}",
+                        "-i", os.path.join(clips_dir, f),
+                        "-vf", f"fps={FPS},crop=iw:ih*0.974:0:0,scale={SCREEN_W}:{SCREEN_H}",
+                        "-start_number", str(first), "-q:v", "3", os.path.join(folder, "%05d.jpg")], check=True)
+        used.append(f"{f}+{off:.1f}s/{length:.1f}s")
+        cursor = seg_end
+    if not used:
+        print(f"clip {name}: no recording", flush=True)
+        return None
     n = len([x for x in os.listdir(folder) if x.endswith(".jpg")])
-    print(f"clip {name}: {f} +{off:.1f}s, {length:.1f}s, {n} frames", flush=True)
+    print(f"clip {name}: {' '.join(used)}, {n} frames", flush=True)
     return Clip(folder, n) if n else None
 
 
@@ -465,6 +474,19 @@ def main():
     tmp = tempfile.mkdtemp()
     audio_parts, timeline = [], []
     scenes = [SCENES[int(only)]] if only else SCENES
+    clips_dir = os.environ.get("PROMO_CLIPS", "")
+    marks = load_marks(clips_dir) if clips_dir else {}
+
+    def clip_need(sc):
+        """Seconds of screen recording the scene should show (sped up to MAX_SPEED)."""
+        need = 0.0
+        for item in sc["media"]:
+            kind, name = item.split(":", 1)
+            m = marks.get(name, {})
+            if kind == "clip" and "start" in m and "end" in m:
+                need += (m["end"] - m["start"]) / 1000.0 / MAX_SPEED
+        return min(need, MAX_SCENE)
+
     for i, sc in enumerate(scenes):
         wav = os.path.join(tmp, f"s{i}.wav")
         if silent:
@@ -487,6 +509,8 @@ def main():
             words = words or estimate_words(sc["say"], speech)
         lead = 0.2
         tail = 2.6 if sc.get("question") else 0.35
+        # Let the recording play out a bit after the voice when it needs more time.
+        tail = max(tail, clip_need(sc) - speech - lead)
         padded = os.path.join(tmp, f"p{i}.wav")
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", wav, "-af",
                         f"adelay={int(lead * 1000)},apad=pad_dur={tail}", "-ar", "24000", "-ac", "1", padded],
@@ -503,8 +527,6 @@ def main():
                              "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "19",
                              "-pix_fmt", "yuv420p", video], stdin=subprocess.PIPE)
     gt = 0.0
-    clips_dir = os.environ.get("PROMO_CLIPS", "")
-    marks = load_marks(clips_dir) if clips_dir else {}
     for sc, dur, caps in timeline:
         players = []
         slot = dur / len(sc["media"])
@@ -513,7 +535,7 @@ def main():
             clip = extract_clip(clips_dir, marks, name, tmp) if kind == "clip" and clips_dir else None
             if clip is not None:
                 clip_len = clip.n / FPS
-                speed = min(2.2, max(1.0, clip_len / max(slot, 0.5)))
+                speed = min(MAX_SPEED, max(1.0, clip_len / max(slot, 0.5)))
                 players.append(lambda tt, _i, c=clip, sp=speed: c.get(int(tt * sp * FPS)))
                 continue
             if kind == "clip":

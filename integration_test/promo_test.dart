@@ -266,9 +266,14 @@ void main() {
       PlatformFiles.debugImage = await labelPng();
       await menu('Котушки');
       await tap(find.byTooltip('Додати з фото етикетки'));
-      await tap(find.text('Сфотографувати етикетку'));
-      await waitFor(find.textContaining('Розпізнано'), seconds: 40);
-      await settle(2200);
+      await tap(find.text('Сфотографувати етикетку'), after: 300);
+    });
+    // Waiting for the recognizer is not recorded.
+    try {
+      await waitFor(find.textContaining('Розпізнано'), seconds: 60);
+    } catch (_) {}
+    await clip('ocr2', () async {
+      await settle(2500);
       PlatformFiles.debugImage = null;
       await tap(find.text('Зберегти'), after: 1800);
     });
@@ -312,7 +317,10 @@ void main() {
       await settle(800);
       debugForceLang = 'en';
       applyLang('en');
-      await settle(2500);
+      await settle(2000);
+      HomePage.debugOpen?.call(PickedFile('gear.stl', gearStl()));
+      await waitFor(find.byType(ModelViewer), seconds: 30);
+      await settle(4000);
       await tap(find.byIcon(Icons.more_vert), after: 1500);
     });
     await home();
