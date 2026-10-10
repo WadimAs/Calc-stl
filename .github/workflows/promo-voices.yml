@@ -1,0 +1,33 @@
+name: Promo voice samples
+
+on:
+  workflow_dispatch:
+    inputs:
+      eleven_model:
+        description: "ElevenLabs model"
+        default: "eleven_multilingual_v2"
+
+permissions:
+  contents: write
+
+jobs:
+  voices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Samples
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVEN_MODEL: ${{ inputs.eleven_model }}
+        run: |
+          python3 tool/promo/voices.py voices | tee voices.log
+          cp voices.log voices/
+          cd voices && zip -q ../voice-samples.zip * && cd .. && ls -la voices
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: promo-voices
+          name: Промо — зразки голосів
+          prerelease: true
+          make_latest: false
+          files: voice-samples.zip
+          body: Зразки голосів ElevenLabs для промо-відео.
