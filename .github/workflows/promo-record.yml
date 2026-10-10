@@ -73,7 +73,11 @@ jobs:
 
       # Build the test APK while nothing else runs; the run below reuses it.
       - name: Build debug APK
-        run: flutter build apk --debug
+        run: |
+          mkdir -p promo-clips
+          timeout 900 flutter build apk --debug -v > promo-clips/build.log 2>&1; code=$?
+          tail -60 promo-clips/build.log
+          exit $code
 
       - name: Run on emulator
         uses: reactivecircus/android-emulator-runner@v2
@@ -92,7 +96,7 @@ jobs:
         if: always()
         run: |
           grep -E "PROMO_FAILED|EXCEPTION|flutter test exit" promo-clips/drive.txt | head -30 | while read -r l; do echo "::warning::$l"; done || true
-          cd promo-clips && zip -q -r ../promo-clips.zip . && cd .. && ls -la promo-clips.zip
+          mkdir -p promo-clips && cd promo-clips && zip -q -r ../promo-clips.zip . && cd .. && ls -la promo-clips.zip
 
       - name: Publish clips
         if: always()
