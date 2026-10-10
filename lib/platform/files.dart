@@ -93,6 +93,13 @@ class PlatformFiles {
     } catch (_) {}
   }
 
+  /// Shows a notification right away (e.g. a print finished).
+  static Future<void> notifyNow(int id, String title, String text) async {
+    try {
+      await _channel.invokeMethod<bool>('notifyNow', {'id': id, 'title': title, 'text': text});
+    } catch (_) {}
+  }
+
   static Future<void> cancelReminder(int id) async {
     try {
       await _channel.invokeMethod<bool>('cancelReminder', {'id': id});

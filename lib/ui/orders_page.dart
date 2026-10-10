@@ -15,6 +15,7 @@ import '../spools/spools.dart';
 import 'clients_page.dart';
 import 'photos_ui.dart';
 import 'quote_page.dart';
+import 'spool_icon.dart';
 import 'widgets.dart';
 import '../i18n/i18n.dart';
 
@@ -787,7 +788,7 @@ class _DeductDialogState extends State<_DeductDialog> {
                   DropdownMenuItem<String?>(
                     value: s.id,
                     child: Row(children: [
-                      CircleAvatar(radius: 7, backgroundColor: Color(s.colorArgb)),
+                      SpoolIcon.of(s, size: 20),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(

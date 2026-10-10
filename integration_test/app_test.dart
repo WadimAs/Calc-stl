@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:stl_weight/i18n/i18n.dart';
 import 'package:stl_weight/main.dart' as app;
+import 'package:stl_weight/printers/print_hub.dart';
+import 'package:stl_weight/printers/printers.dart';
 import 'package:stl_weight/platform/files.dart';
 import 'package:stl_weight/ui/home_page.dart';
 
@@ -355,6 +357,28 @@ void main() {
       await tap(find.text('Встановлено на котушку'));
       await waitFor(find.text('Refill на котушці'));
       await shot('32d_refill_mounted');
+      await home();
+    });
+
+    await step('print_finished', () async {
+      PrinterHub.instance.debugEmit(const FinishedPrint(
+        printer: PrinterConn(id: 'test', name: 'A1 mini', kind: PrinterKind.bambu, host: '', serial: 'TEST'),
+        key: 'test:1',
+        job: 'bracket',
+        failed: false,
+        lines: [UsageLine(slotKey: '0-0', type: 'PLA', color: 0xFFFFFFFF, grams: 12.5)],
+        source: 'test',
+      ));
+      await waitFor(find.text('Друк завершено'));
+      await settle(800);
+      await shot('32e_print_finished');
+      await tap(find.text('Списати'));
+      await waitFor(find.textContaining('Списано'));
+      await menu('Котушки');
+      await settle(800);
+      await shot('32f_spools_after_print');
+      await tap(find.byTooltip('Журнал списань'));
+      await shot('32g_writeoffs');
       await home();
     });
 

@@ -130,7 +130,22 @@ class PrinterStatus {
   final List<FilamentSlot> slots;
   final String? error;
 
+  /// Printer's own state code (Bambu "FINISH", Moonraker "complete"…).
+  final String? rawState;
+
+  /// Identifies the current / last job (Bambu task id + start time).
+  final String? jobKey;
+
+  /// When the current / last job started.
+  final DateTime? jobStart;
+
+  bool get finished => rawState == 'FINISH' || rawState == 'complete';
+  bool get failed => rawState == 'FAILED' || rawState == 'cancelled' || rawState == 'error';
+
   const PrinterStatus({
+    this.rawState,
+    this.jobKey,
+    this.jobStart,
     required this.state,
     this.printing = false,
     this.job = '',
@@ -228,7 +243,12 @@ PrinterStatus bambuStatus(Map<String, dynamic> st) {
   final rem = _i(st['mc_remaining_time']);
   final err = _i(st['print_error']);
   final job = st['subtask_name'] is String ? st['subtask_name'] as String : '';
+  final start = _i(st['gcode_start_time']);
+  final task = '${st['task_id'] ?? ''}/${st['subtask_id'] ?? ''}';
   return PrinterStatus(
+    rawState: gs,
+    jobKey: start == null && task == '/' ? null : '$task@${start ?? job}',
+    jobStart: start == null || start <= 0 ? null : DateTime.fromMillisecondsSinceEpoch(start * 1000),
     state: bambuStateLabel(gs),
     printing: printing,
     job: job,
@@ -274,6 +294,7 @@ PrinterStatus moonrakerStatus(Map<String, dynamic> status) {
   }
   final info = ps['info'] is Map ? ps['info'] as Map : const {};
   return PrinterStatus(
+    rawState: state,
     state: moonrakerStateLabel(state),
     printing: printing,
     job: ps['filename'] is String ? ps['filename'] as String : '',

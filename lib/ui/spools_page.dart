@@ -5,8 +5,11 @@ import '../data/records.dart';
 import '../expenses/expenses.dart';
 import '../slicer/settings.dart';
 import '../spools/spools.dart';
+import '../history/history.dart';
+import '../spools/writeoffs.dart';
 import '../spools/label_parser.dart';
 import '../platform/files.dart';
+import 'spool_icon.dart';
 import 'widgets.dart';
 import '../i18n/i18n.dart';
 
@@ -124,6 +127,15 @@ class _SpoolsPageState extends State<SpoolsPage> {
         title: Text(tr('Котушки')),
         actions: [
           IconButton(
+            tooltip: tr('Журнал списань'),
+            onPressed: () async {
+              await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const WriteOffsPage()));
+              final l = await SpoolStore.load();
+              if (mounted) setState(() => _spools = l);
+            },
+            icon: const Icon(Icons.receipt_long_outlined),
+          ),
+          IconButton(
             tooltip: tr('Додати з фото етикетки'),
             onPressed: () => _edit(null, true),
             icon: const Icon(Icons.document_scanner_outlined),
@@ -164,15 +176,7 @@ class _SpoolsPageState extends State<SpoolsPage> {
                           child: Padding(
                             padding: const EdgeInsets.all(12),
                             child: Row(children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: Color(s.colorArgb),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: theme.colorScheme.outlineVariant, width: 2),
-                                ),
-                              ),
+                              SpoolIcon.of(s, size: 46),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -570,6 +574,108 @@ class _RefillChip extends StatelessWidget {
         Text(onSpool ? tr('Refill на котушці') : tr('Refill, без котушки'),
             style: TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.w600)),
       ]),
+    );
+  }
+}
+
+/// Filament written off after prints, with undo.
+class WriteOffsPage extends StatefulWidget {
+  const WriteOffsPage({super.key});
+
+  @override
+  State<WriteOffsPage> createState() => _WriteOffsPageState();
+}
+
+class _WriteOffsPageState extends State<WriteOffsPage> {
+  List<WriteOff>? _list;
+  Map<String, Spool> _spools = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  Future<void> _reload() async {
+    final l = await writeOffStore.load();
+    l.sort((a, b) => b.date.compareTo(a.date));
+    final sp = await SpoolStore.load();
+    if (mounted) {
+      setState(() {
+        _list = l;
+        _spools = {for (final s in sp) s.id: s};
+      });
+    }
+  }
+
+  String _purpose(WriteOff w) => switch (w.purpose) {
+        'order' => trf('Замовлення: {0}', [w.orderTitle]),
+        'failed' => tr('Невдалий друк (брак)'),
+        _ => tr('Для себе'),
+      };
+
+  Future<void> _undo(WriteOff w) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(tr('Повернути пластик на котушки?')),
+        content: Text('${w.job} · ${fmtGrams(w.total)}'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(tr('Скасувати'))),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(tr('Повернути'))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await undoWriteOff(w);
+    _reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final list = _list;
+    return Scaffold(
+      appBar: AppBar(title: Text(tr('Журнал списань'))),
+      body: list == null
+          ? const Center(child: CircularProgressIndicator())
+          : list.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Text(
+                      tr('Тут з\'являться списання після друку, коли підключений принтер закінчить роботу.'),
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 32),
+                  children: [
+                    for (final w in list)
+                      Card(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        child: ListTile(
+                          leading: Builder(builder: (_) {
+                            final s = w.grams.keys.map((k) => _spools[k]).whereType<Spool>();
+                            return s.isEmpty ? const Icon(Icons.print_outlined) : SpoolIcon.of(s.first, size: 36);
+                          }),
+                          title: Text(w.job.isEmpty ? tr('Без назви') : w.job, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text('${formatDate(w.date)} · ${w.printer}\n${_purpose(w)}'),
+                          isThreeLine: true,
+                          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Text(fmtGrams(w.total), style: theme.textTheme.titleSmall),
+                            IconButton(
+                              tooltip: tr('Повернути'),
+                              icon: const Icon(Icons.undo),
+                              onPressed: () => _undo(w),
+                            ),
+                          ]),
+                        ),
+                      ),
+                  ],
+                ),
     );
   }
 }

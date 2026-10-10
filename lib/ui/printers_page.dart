@@ -6,12 +6,13 @@ import 'package:flutter/material.dart';
 import '../data/records.dart';
 import '../history/history.dart';
 import '../mesh/slicer_project.dart';
-import '../printers/bambu.dart';
+import '../printers/print_hub.dart';
 import '../printers/bambu_cloud.dart';
 import '../printers/moonraker.dart';
 import '../printers/printers.dart';
 import '../slicer/settings.dart';
 import '../spools/spools.dart';
+import 'spool_icon.dart';
 import 'widgets.dart';
 import '../i18n/i18n.dart';
 
@@ -73,6 +74,7 @@ class _PrintersPageState extends State<PrintersPage> {
   Future<void> _reload() async {
     final l = await printerStore.load();
     if (mounted) setState(() => _list = l);
+    PrinterHub.instance.start();
   }
 
   Future<void> _add() async {
@@ -216,6 +218,18 @@ class _PrintersPageState extends State<PrintersPage> {
                       style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
                   ),
+                if (list.isNotEmpty)
+                  SwitchListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                    secondary: const Icon(Icons.auto_delete_outlined),
+                    title: Text(tr('Пропонувати списання після друку')),
+                    subtitle: Text(tr('Коли принтер закінчить друк, застосунок спитає, з якої котушки й для чого списати пластик')),
+                    value: PrinterHub.instance.enabled,
+                    onChanged: (v) async {
+                      await PrinterHub.instance.setEnabled(v);
+                      if (mounted) setState(() {});
+                    },
+                  ),
                 for (final p in list)
                   Card(
                     margin: const EdgeInsets.symmetric(vertical: 4),
@@ -253,7 +267,6 @@ class _PrinterPageState extends State<PrinterPage> {
   PrinterStatus? _status;
   String? _error;
   bool _connecting = false;
-  BambuClient? _bambu;
   StreamSubscription<PrinterStatus>? _sub;
   Timer? _poll;
   List<PrintJob>? _jobs;
@@ -275,8 +288,6 @@ class _PrinterPageState extends State<PrinterPage> {
     _poll = null;
     _sub?.cancel();
     _sub = null;
-    _bambu?.close();
-    _bambu = null;
   }
 
   Future<void> _connect() async {
@@ -287,23 +298,24 @@ class _PrinterPageState extends State<PrinterPage> {
     });
     try {
       if (_p.kind == PrinterKind.bambu) {
-        final c = BambuClient(_p);
-        await c.connect();
-        if (!mounted) {
-          c.close();
-          return;
-        }
-        _bambu = c;
-        _sub = c.status.listen(
+        // Shared connection (also used to notice finished prints).
+        final sub = PrinterHub.instance.bambuStatus(_p).listen(
           (s) {
-            if (mounted) setState(() => _status = s);
+            if (mounted) {
+              setState(() {
+                _status = s;
+                _error = null;
+              });
+            }
           },
           onError: (Object e) {
             if (mounted) setState(() => _error = '$e');
           },
         );
-        Timer(const Duration(seconds: 12), () {
-          if (mounted && identical(_bambu, c) && _status == null && _error == null) {
+        _sub = sub;
+        PrinterHub.instance.pushAll(_p);
+        Timer(const Duration(seconds: 15), () {
+          if (mounted && identical(_sub, sub) && _status == null && _error == null) {
             setState(() => _error = tr('Принтер підключився, але не надсилає дані. Перевірте серійний номер.'));
           }
         });
@@ -344,11 +356,14 @@ class _PrinterPageState extends State<PrinterPage> {
       _p = p;
       _status = null;
     });
+    PrinterHub.instance.reconnect(p);
+    await PrinterHub.instance.refresh();
     _connect();
   }
 
   Future<void> _delete() async {
     await printerStore.remove(_p.id);
+    await PrinterHub.instance.refresh();
     if (mounted) Navigator.pop(context);
   }
 
@@ -378,7 +393,7 @@ class _PrinterPageState extends State<PrinterPage> {
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, s),
               child: Row(children: [
-                CircleAvatar(radius: 8, backgroundColor: Color(s.colorArgb)),
+                SpoolIcon.of(s, size: 22),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -416,13 +431,25 @@ class _PrinterPageState extends State<PrinterPage> {
       appBar: AppBar(
         title: Text(p.name.isEmpty ? (p.host.isEmpty ? p.serial : p.host) : p.name),
         actions: [
-          IconButton(tooltip: tr('Оновити'), onPressed: _connecting ? null : _connect, icon: const Icon(Icons.refresh)),
+          IconButton(
+            tooltip: tr('Оновити'),
+            onPressed: _connecting
+                ? null
+                : () {
+                    if (_p.kind == PrinterKind.bambu) PrinterHub.instance.reconnect(_p);
+                    _connect();
+                  },
+            icon: const Icon(Icons.refresh),
+          ),
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'edit') _edit();
               if (v == 'login') {
                 showDialog<BambuAccount>(context: context, builder: (_) => const BambuLoginDialog()).then((a) {
-                  if (a != null) _connect();
+                  if (a != null) {
+                    PrinterHub.instance.reconnect(_p);
+                    _connect();
+                  }
                 });
               }
               if (v == 'del') _delete();
@@ -438,7 +465,7 @@ class _PrinterPageState extends State<PrinterPage> {
       body: RefreshIndicator(
         onRefresh: () async {
           if (p.kind == PrinterKind.bambu) {
-            _bambu?.pushAll();
+            PrinterHub.instance.pushAll(p);
           } else {
             await _loadJobs();
           }
@@ -529,9 +556,14 @@ class _PrinterPageState extends State<PrinterPage> {
                   Card(
                     margin: const EdgeInsets.symmetric(vertical: 3),
                     child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Color(slot.colorArgb),
-                        child: slot.active ? const Icon(Icons.play_arrow, color: Colors.white, size: 18) : null,
+                      leading: Badge(
+                        isLabelVisible: slot.active,
+                        label: const Icon(Icons.play_arrow, size: 10, color: Colors.white),
+                        child: SpoolIcon(
+                          color: slot.colorArgb,
+                          fraction: (slot.remainPercent ?? 100) / 100,
+                          size: 40,
+                        ),
                       ),
                       title: Text('${slot.type}${slot.brand.isEmpty ? '' : ' · ${slot.brand}'}'),
                       subtitle: Text(slot.label),

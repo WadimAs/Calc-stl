@@ -13,6 +13,8 @@ import 'package:stl_weight/printers/mqtt.dart';
 import 'package:stl_weight/spools/label_parser.dart';
 import 'package:stl_weight/ui/widgets.dart' show fmtMoney;
 import 'package:stl_weight/ui/whats_new.dart';
+import 'package:stl_weight/ui/finished_print_dialog.dart';
+import 'package:stl_weight/printers/print_hub.dart';
 import 'package:stl_weight/printers/printers.dart';
 import 'package:stl_weight/mesh/holes.dart';
 import 'package:stl_weight/mesh/loader.dart';
@@ -1055,6 +1057,31 @@ void main() {
       expect(fmtMoney(12.5, code: 'UAH'), '12,50 грн');
       final o = Order.create(e);
       expect(Order.fromJson(jsonDecode(jsonEncode(o.toJson())))!.currency, 'EUR');
+    });
+
+    test('finished print matching', () {
+      final o = Order(id: 'o1', createdAt: _epoch, client: 'Оля', items: [
+        const OrderItem(
+          id: 'i',
+          name: 'Bracket_v2.stl',
+          material: 'PLA',
+          materialId: 'PLA',
+          qty: 2,
+          gramsEach: 10,
+          hoursEach: 1,
+          costEach: 1,
+          priceEach: 2,
+        ),
+      ]);
+      expect(matchOrder('bracket v2.gcode.3mf', [o])?.id, 'o1');
+      expect(matchOrder('vase', [o]), isNull);
+      Spool sp(String id, String mat, int c) => Spool(
+          id: id, materialId: mat, name: '', colorArgb: c, totalGrams: 1000, remainingGrams: 1000, createdAt: _epoch);
+      const p = PrinterConn(id: 'p', name: 'A1', kind: PrinterKind.bambu, host: '');
+      final spools = [sp('w', 'PLA', 0xFFFFFFFF), sp('k', 'PLA', 0xFF202020), sp('g', 'PETG', 0xFF202020), sp('ams:p:0-1', 'PLA', 0)];
+      expect(guessSpool(p, const UsageLine(slotKey: '0-1', type: 'PLA'), spools), 'ams:p:0-1');
+      expect(guessSpool(p, const UsageLine(type: 'PLA Basic', color: 0xFF111111), spools), 'k');
+      expect(guessSpool(p, const UsageLine(type: 'PETG HF', color: 0xFFEEEEEE), spools), 'g');
     });
 
     test('whats new', () {

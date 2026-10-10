@@ -1,5 +1,19 @@
 [
   {
+    "id": "2026-10-10d",
+    "version": "1.3.3",
+    "uk": [
+      "Автосписання після друку: коли підключений принтер закінчить друк, застосунок спитає, з якої котушки списати пластик і для чого був друк — для замовлення, для себе чи брак. Вага береться з Bambu Cloud, датчика AMS або Klipper.",
+      "Журнал списань у «Котушках» з можливістю повернути пластик.",
+      "Котушки в списку тепер показані кольоровими іконками; звичайна котушка, Refill і Refill на котушці виглядають по-різному, а намотка зменшується разом із залишком."
+    ],
+    "en": [
+      "Automatic write-off after printing: when a connected printer finishes, the app asks which spool to write the filament off and what the print was for — an order, yourself or a failed print. The weight comes from Bambu Cloud, the AMS gauge or Klipper.",
+      "Write-off log in “Spools” with undo.",
+      "Spools are shown as coloured spool icons; a regular spool, a refill and a refill on a spool look different, and the winding shrinks as the filament runs out."
+    ]
+  },
+  {
     "id": "2026-10-10c",
     "version": "1.3.2",
     "uk": [

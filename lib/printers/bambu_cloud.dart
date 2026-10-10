@@ -230,6 +230,14 @@ class BambuCloud {
     return acc;
   }
 
+  /// Recent print jobs of a printer with the slicer's filament weights.
+  static Future<List<CloudTask>> tasks(BambuAccount acc, String serial, {int limit = 10}) async {
+    final (st, j, _) =
+        await _req('GET', '$_api/v1/user-service/my/tasks?deviceId=$serial&limit=$limit', token: acc.token);
+    if (j is! Map || j['hits'] is! List) throw BambuCloudException(_message(j, st));
+    return (j['hits'] as List).map(CloudTask.fromJson).whereType<CloudTask>().toList();
+  }
+
   /// Printers bound to the account.
   static Future<List<CloudPrinter>> printers(BambuAccount acc) async {
     final (st, j, _) = await _req('GET', '$_api/v1/iot-service/api/user/bind', token: acc.token);
@@ -246,5 +254,44 @@ class BambuCloud {
             d['dev_access_code'] is String ? d['dev_access_code'] as String : '',
           ),
     ];
+  }
+}
+
+/// One print job from the Bambu cloud.
+class CloudTask {
+  final String id;
+  final String title;
+  final double weight; // grams, whole job
+  final DateTime? start, end;
+  final int status;
+
+  /// Per filament: AMS tray index (ams*4+tray, 254 = external) → grams.
+  final Map<int, double> perTray;
+
+  const CloudTask(this.id, this.title, this.weight, this.start, this.end, this.status, this.perTray);
+
+  static CloudTask? fromJson(Object? raw) {
+    if (raw is! Map || raw['id'] == null) return null;
+    double d(Object? v) => v is num ? v.toDouble() : (v is String ? double.tryParse(v) ?? 0 : 0);
+    DateTime? t(Object? v) => v is String ? DateTime.tryParse(v) : null;
+    final per = <int, double>{};
+    final m = raw['amsDetailMapping'];
+    if (m is List) {
+      for (final e in m) {
+        if (e is Map && e['ams'] is num) {
+          final k = (e['ams'] as num).toInt();
+          per[k] = (per[k] ?? 0) + d(e['weight']);
+        }
+      }
+    }
+    return CloudTask(
+      '${raw['id']}',
+      '${raw['title'] ?? raw['designTitle'] ?? ''}',
+      d(raw['weight']),
+      t(raw['startTime']),
+      t(raw['endTime']),
+      raw['status'] is num ? (raw['status'] as num).toInt() : 0,
+      per,
+    );
   }
 }

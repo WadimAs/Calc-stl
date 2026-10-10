@@ -214,6 +214,14 @@ class MainActivity : FlutterActivity() {
                     )
                     result.success(true)
                 }
+                "notifyNow" -> {
+                    val i = Intent(this, ReminderReceiver::class.java)
+                        .putExtra("id", call.argument<Int>("id") ?: 1)
+                        .putExtra("title", call.argument<String>("title") ?: "")
+                        .putExtra("text", call.argument<String>("text") ?: "")
+                    ReminderReceiver().onReceive(this, i)
+                    result.success(true)
+                }
                 "cancelReminder" -> {
                     ReminderReceiver.cancel(this, call.argument<Int>("id") ?: 0)
                     result.success(true)

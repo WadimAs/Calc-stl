@@ -19,6 +19,8 @@ import '../mesh/transform.dart';
 import '../orders/orders.dart';
 import '../orders/reminders.dart';
 import '../platform/downloader.dart';
+import '../printers/printers.dart';
+import '../printers/print_hub.dart';
 import '../platform/files.dart';
 import '../platform/updates.dart';
 import '../slicer/settings.dart';
@@ -29,6 +31,7 @@ import '../viewer/model_viewer.dart';
 import 'catalog_page.dart';
 import 'clients_page.dart';
 import 'expenses_page.dart';
+import 'finished_print_dialog.dart';
 import 'history_page.dart';
 import 'intro_page.dart';
 import 'orders_page.dart';
@@ -114,6 +117,7 @@ class _HomePageState extends State<HomePage> {
     }
     await _whatsNew(show: s.seenIntro);
     if (!mounted) return;
+    _watchPrinters();
     final f = await PlatformFiles.initialFile();
     if (f != null && mounted) {
       await _open(f);
@@ -202,6 +206,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    _printsSub?.cancel();
     _debounce?.cancel();
     _job?.cancel();
     _measure.dispose();
@@ -633,6 +638,46 @@ class _HomePageState extends State<HomePage> {
       if (item == null || !mounted) return;
       final o = Order.create(_settings)..items.add(item);
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => QuotePage(order: o)));
+    }
+  }
+
+  // ---- Finished prints → write the filament off ----
+
+  StreamSubscription<FinishedPrint>? _printsSub;
+  bool _askingPrint = false;
+
+  Future<void> _watchPrinters() async {
+    _printsSub ??= PrinterHub.instance.finished.listen((f) {
+      if (PrinterHub.instance.inForeground) {
+        _askFinishedPrints();
+      } else {
+        PlatformFiles.notifyNow(
+          f.key.hashCode & 0x3fffffff,
+          f.failed ? tr('Друк перервано') : tr('Друк завершено'),
+          trf('{0} — списати пластик з котушки?', [
+            [f.job, if (f.grams != null) fmtGrams(f.grams!)].join(' · ')
+          ]),
+        );
+      }
+    });
+    if ((await printerStore.load()).isNotEmpty) await PrinterHub.instance.start();
+  }
+
+  /// Shows the queued prints one after another.
+  Future<void> _askFinishedPrints() async {
+    if (_askingPrint) return;
+    _askingPrint = true;
+    try {
+      while (mounted) {
+        final q = PrinterHub.instance.takeQueue();
+        if (q.isEmpty) break;
+        for (final f in q) {
+          if (!mounted) break;
+          await showFinishedPrint(context, f);
+        }
+      }
+    } finally {
+      _askingPrint = false;
     }
   }
 
