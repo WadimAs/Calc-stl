@@ -62,21 +62,9 @@ class _SpoolPainter extends CustomPainter {
       canvas.drawCircle(c, r, Paint()..color = dark ? const Color(0xFF3A3A3F) : const Color(0xFF4A4A50));
       canvas.drawCircle(c, rimInner, Paint()..color = dark ? const Color(0xFF26262A) : const Color(0xFF6E6E75));
     } else if (look == SpoolLook.refillMounted) {
-      // Reusable spool: light ring with open spokes.
-      final ring = Paint()
-        ..color = dark ? const Color(0xFF9EA3AA) : const Color(0xFFB7BCC3)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = r * 0.14;
-      canvas.drawCircle(c, r - r * 0.07, ring);
-      final spoke = Paint()
-        ..color = ring.color
-        ..strokeWidth = r * 0.12
-        ..strokeCap = StrokeCap.round;
-      for (int i = 0; i < 3; i++) {
-        final a = -math.pi / 2 + i * 2 * math.pi / 3;
-        canvas.drawLine(c + Offset(math.cos(a), math.sin(a)) * hub,
-            c + Offset(math.cos(a), math.sin(a)) * (r * 0.9), spoke);
-      }
+      // Reusable spool behind the coil: light outer ring.
+      canvas.drawCircle(c, r, Paint()..color = dark ? const Color(0xFF8F949B) : const Color(0xFFC3C8CF));
+      canvas.drawCircle(c, rimInner, Paint()..color = hole);
     }
 
     // Wound filament.
@@ -95,6 +83,19 @@ class _SpoolPainter extends CustomPainter {
       ..strokeWidth = math.max(0.6, r * 0.03);
     for (double rr = hub + (fill - hub) * 0.33; rr < fill - 1; rr += (fill - hub) * 0.33) {
       canvas.drawCircle(c, rr, lines);
+    }
+
+    if (look == SpoolLook.refillMounted) {
+      // Its spokes lie over the filament (open sides of a reusable spool).
+      final spoke = Paint()
+        ..color = dark ? const Color(0xFF8F949B) : const Color(0xFFC3C8CF)
+        ..strokeWidth = r * 0.16
+        ..strokeCap = StrokeCap.round;
+      for (int i = 0; i < 3; i++) {
+        final a = -math.pi / 2 + i * 2 * math.pi / 3;
+        final d = Offset(math.cos(a), math.sin(a));
+        canvas.drawLine(c + d * hub, c + d * rimInner, spoke);
+      }
     }
 
     if (look == SpoolLook.refill) {

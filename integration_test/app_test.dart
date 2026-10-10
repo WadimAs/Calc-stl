@@ -12,6 +12,7 @@ import 'package:stl_weight/printers/print_hub.dart';
 import 'package:stl_weight/printers/printers.dart';
 import 'package:stl_weight/platform/files.dart';
 import 'package:stl_weight/ui/home_page.dart';
+import 'package:stl_weight/ui/spool_icon.dart';
 
 /// Triangles of an axis-aligned box (outward normals).
 List<double> _box(double x0, double y0, double z0, double x1, double y1, double z1) {
@@ -357,6 +358,35 @@ void main() {
       await tap(find.text('Встановлено на котушку'));
       await waitFor(find.text('Refill на котушці'));
       await shot('32d_refill_mounted');
+      await home();
+    });
+
+    await step('spool_icons', () async {
+      final nav = tester.state<NavigatorState>(find.byType(Navigator).first);
+      nav.push(MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: const Text('icons')),
+          body: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(children: [
+              for (final look in SpoolLook.values)
+                for (final f in [1.0, 0.4])
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(children: [
+                      for (final c in [0xFFFFFFFF, 0xFF202020, 0xFFE53935, 0xFF1E88E5, 0xFFFDD835, 0xFF43A047])
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: SpoolIcon(color: c, fraction: f, look: look, size: 48),
+                        ),
+                    ]),
+                  ),
+            ]),
+          ),
+        ),
+      ));
+      await settle(800);
+      await shot('32h_spool_icons');
       await home();
     });
 
