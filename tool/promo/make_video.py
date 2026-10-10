@@ -24,58 +24,89 @@ RATE = os.environ.get("PROMO_RATE", "+8%")
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOGO = os.path.join(HERE, "..", "..", "assets", "logo.png")
 
+# media: "shot:<png name from the UI test>" or "clip:<screen recording mark>".
 SCENES = [
     {
         "title": "Скільки коштує\nваш 3D-друк?",
         "kicker": "STL Вага — рахує телефон",
-        "shots": ["04_model"],
+        "media": ["clip:open"],
         "say": "Скільки насправді коштує ваш 3D-друк? Я зробив застосунок, який рахує це прямо в телефоні.",
-        "logo": True,
     },
     {
-        "title": "Модель → шари",
+        "title": "3D-перегляд",
         "kicker": "STL · 3MF · G-code",
-        "shots": ["04_model", "06_layers"],
-        "say": "Відкриваєте модель з файлів чи з Телеграму — і застосунок нарізає її, як слайсер: шари, стінки, підтримки.",
+        "media": ["clip:rotate"],
+        "say": "Відкриваєте модель з файлів, Телеграму чи за посиланням — і крутите її, як у слайсері.",
     },
     {
-        "title": "Вага, час і ціна",
-        "kicker": "за кілька секунд",
-        "shots": ["05_result", "09_settings_cost"],
-        "say": "За секунди бачите вагу пластику, час друку й ціну: пластик, світло, знос принтера і ваш заробіток.",
+        "title": "Вимірювання",
+        "kicker": "відстані · кола · кути · отвори",
+        "media": ["clip:holes"],
+        "say": "Є вимірювання: відстані, кола й кути, а отвори застосунок знаходить сам.",
+    },
+    {
+        "title": "Вага наживо",
+        "kicker": "змінюєте — перераховує",
+        "media": ["clip:infill"],
+        "say": "Рухаєте заповнення — і вага з ціною перераховуються одразу.",
+    },
+    {
+        "title": "Справжнє нарізання",
+        "kicker": "шари · підтримки · дерева",
+        "media": ["clip:supports", "clip:layers"],
+        "say": "Застосунок справді нарізає модель на шари й рахує підтримки — навіть деревоподібні.",
+    },
+    {
+        "title": "Чесна ціна",
+        "kicker": "пластик · світло · знос · заробіток",
+        "media": ["shot:05_result", "shot:09_settings_cost"],
+        "say": "У ціні — пластик, світло, знос принтера і ваш заробіток. А файли з Bambu Studio чи Orca дають точні цифри слайсера.",
     },
     {
         "title": "Замовлення і PDF",
         "kicker": "клієнти · терміни · рахунки",
-        "shots": ["13_order", "17_invoice"],
-        "say": "Далі — замовлення з клієнтом і терміном, а рахунок у PDF відправляєте в один дотик.",
+        "media": ["clip:order", "clip:pdf"],
+        "say": "Розрахунок одразу йде в замовлення: клієнт, термін із нагадуванням, і рахунок у PDF в один дотик.",
     },
     {
         "title": "Котушки з фото",
         "kicker": "розпізнавання етикетки",
-        "shots": ["32b_label_ocr", "32h_spool_icons"],
-        "say": "Котушку додаєте по фото етикетки — виробник, пластик і колір розпізнаються самі.",
+        "media": ["clip:ocr"],
+        "say": "Котушку додаєте по фото етикетки: виробник, пластик, колір і навіть рефіл розпізнаються самі.",
     },
     {
         "title": "Bambu Lab і Klipper",
         "kicker": "автосписання пластику",
-        "shots": ["33a_printer_kinds", "32e_print_finished"],
-        "say": "Підключіть Bambu Lab чи Klipper — і після друку застосунок сам запропонує списати пластик з котушки.",
+        "media": ["clip:printers", "clip:print"],
+        "say": "Підключіть Bambu Lab — вдома чи через інтернет — або Klipper. Після друку застосунок сам запропонує списати пластик.",
     },
     {
-        "title": "Прибуток видно",
-        "kicker": "статистика · витрати",
-        "shots": ["37_stats_after"],
-        "say": "А статистика покаже виручку, витрати й чистий прибуток за кожен місяць.",
+        "title": "Ваша справа",
+        "kicker": "статистика · прайс · автокопія",
+        "media": ["shot:37_stats_after", "shot:22_catalog"],
+        "say": "Статистика покаже виручку, витрати й прибуток. А ще прайс-лист, клієнти й автокопія на Google Диск.",
+    },
+    {
+        "title": "UA / EN · ₴ € $",
+        "kicker": "мова й валюта",
+        "media": ["clip:lang", "shot:37c_settings_eur"],
+        "say": "Українська чи англійська, гривні, євро чи долари — як вам зручно.",
     },
     {
         "title": "Випускати\nдля всіх?",
         "kicker": "",
-        "shots": ["05_result"],
+        "media": ["shot:05_result"],
         "say": "Поки що застосунок не в загальному доступі. Чи варто випустити його для всіх? Пишіть у коментарях!",
         "question": True,
     },
 ]
+
+# Screenshot used when a recording is missing.
+FALLBACK_SHOT = {
+    "open": "04_model", "rotate": "04_model", "holes": "04_model", "infill": "05_result",
+    "supports": "06_layers", "layers": "06_layers", "order": "13_order", "pdf": "17_invoice",
+    "ocr": "32b_label_ocr", "printers": "33a_printer_kinds", "print": "32e_print_finished", "lang": "42_en_model",
+}
 
 INTER = "/usr/share/fonts/opentype/inter/"
 
@@ -109,18 +140,25 @@ def background():
 
 
 BG = None
-SCREEN_W = 600
+SCREEN_W, SCREEN_H = 600, 1300
+
+
+def fit_screen(img):
+    from PIL import ImageOps
+
+    return ImageOps.fit(img.convert("RGB"), (SCREEN_W, SCREEN_H), Image.LANCZOS, centering=(0.5, 0.0))
 
 
 def phone(shot):
-    sw = SCREEN_W
-    sh = int(sw * shot.height / shot.width)
+    sw, sh = SCREEN_W, SCREEN_H
+    if shot.size != (sw, sh):
+        shot = fit_screen(shot)
     pad = 18
     img = Image.new("RGBA", (sw + 2 * pad, sh + 2 * pad), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     d.rounded_rectangle([0, 0, img.width - 1, img.height - 1], radius=66, fill=(10, 10, 12, 255))
     d.rounded_rectangle([1, 1, img.width - 2, img.height - 2], radius=66, outline=(70, 70, 78, 255), width=2)
-    scr = shot.resize((sw, sh), Image.LANCZOS)
+    scr = shot
     mask = Image.new("L", (sw, sh), 0)
     ImageDraw.Draw(mask).rounded_rectangle([0, 0, sw - 1, sh - 1], radius=50, fill=255)
     img.paste(scr, (pad, pad), mask)
@@ -161,6 +199,68 @@ LOGO_IMG = None
 PHONE_TOP = 430
 
 
+class Clip:
+    """Frames of a screen recording between two PROMO_MARKs (decoded on demand)."""
+
+    def __init__(self, folder, idx):
+        self.folder, self.n = folder, idx
+        self.cache = {}
+
+    def get(self, i):
+        i = max(0, min(self.n - 1, i))
+        if i not in self.cache:
+            if len(self.cache) > 4:
+                self.cache.clear()
+            self.cache[i] = phone(Image.open(os.path.join(self.folder, f"{i + 1:05d}.jpg")))
+        return self.cache[i]
+
+
+def load_marks(clips_dir):
+    marks = {}
+    p = os.path.join(clips_dir, "marks.txt")
+    if not os.path.exists(p):
+        return marks
+    for line in open(p, encoding="utf-8", errors="replace"):
+        parts = line.split()
+        if len(parts) >= 4 and parts[0] == "PROMO_MARK" and parts[2] in ("start", "end"):
+            marks.setdefault(parts[1], {})[parts[2]] = int(parts[3])
+    return marks
+
+
+REC_LATENCY = float(os.environ.get("PROMO_REC_LATENCY", "0.6"))
+
+
+def extract_clip(clips_dir, marks, name, tmp):
+    m = marks.get(name)
+    if not m or "start" not in m or "end" not in m:
+        print(f"clip {name}: no marks", flush=True)
+        return None
+    recs = []
+    for f in os.listdir(clips_dir):
+        if f.startswith("rec_") and f.endswith(".mp4"):
+            try:
+                recs.append((int(f[4:-4]), f))
+            except ValueError:
+                pass
+    recs = [r for r in sorted(recs) if r[0] <= m["start"]]
+    if not recs:
+        print(f"clip {name}: no recording", flush=True)
+        return None
+    t0, f = recs[-1]
+    off = max(0.0, (m["start"] - t0) / 1000.0 - REC_LATENCY)
+    length = (m["end"] - m["start"]) / 1000.0 + 0.2
+    folder = os.path.join(tmp, "clip_" + name)
+    os.makedirs(folder, exist_ok=True)
+    # Crop the navigation bar at the bottom (screenshots do not have it either).
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{off:.2f}", "-t", f"{length:.2f}",
+                    "-i", os.path.join(clips_dir, f),
+                    "-vf", f"fps={FPS},crop=iw:ih*0.974:0:0,scale={SCREEN_W}:{SCREEN_H}",
+                    "-q:v", "3", os.path.join(folder, "%05d.jpg")], check=True)
+    n = len([x for x in os.listdir(folder) if x.endswith(".jpg")])
+    print(f"clip {name}: {f} +{off:.1f}s, {length:.1f}s, {n} frames", flush=True)
+    return Clip(folder, n) if n else None
+
+
 def frame(scene, phones, shadow, t, dur, caption, global_t, total):
     img = BG.copy()
     appear = ease(t / 0.5)
@@ -168,11 +268,17 @@ def frame(scene, phones, shadow, t, dur, caption, global_t, total):
 
     # Phone with slow zoom and a cross-fade to the second screenshot.
     if len(phones) == 1:
-        base = phones[0]
+        base = phones[0](t, 0)
     else:
-        k = ease((t - dur * 0.5 + 0.3) / 0.6)
-        base = phones[0] if k <= 0 else (phones[1] if k >= 1 else Image.blend(phones[0], phones[1], k))
-    zoom = 1.0 + 0.04 * (t / max(dur, 0.1))
+        half = dur / len(phones)
+        k = (t - half + 0.2) / 0.4
+        if k <= 0:
+            base = phones[0](t, 0)
+        elif k >= 1:
+            base = phones[1](t - half, 1)
+        else:
+            base = Image.blend(phones[0](t, 0), phones[1](t - half, 1), ease(k))
+    zoom = 1.0 + (0.04 if scene.get("static") else 0.012) * (t / max(dur, 0.1))
     ph = base.resize((int(base.width * zoom), int(base.height * zoom)), Image.BILINEAR)
     slide = (1 - appear) * 160
     cx = W / 2
@@ -393,13 +499,28 @@ def main():
                              "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "19",
                              "-pix_fmt", "yuv420p", video], stdin=subprocess.PIPE)
     gt = 0.0
+    clips_dir = os.environ.get("PROMO_CLIPS", "")
+    marks = load_marks(clips_dir) if clips_dir else {}
     for sc, dur, caps in timeline:
-        phones = []
-        for name in sc["shots"]:
+        players = []
+        slot = dur / len(sc["media"])
+        for item in sc["media"]:
+            kind, name = item.split(":", 1)
+            clip = extract_clip(clips_dir, marks, name, tmp) if kind == "clip" and clips_dir else None
+            if clip is not None:
+                clip_len = clip.n / FPS
+                speed = min(2.2, max(1.0, clip_len / max(slot, 0.5)))
+                players.append(lambda tt, _i, c=clip, sp=speed: c.get(int(tt * sp * FPS)))
+                continue
+            if kind == "clip":
+                name = FALLBACK_SHOT.get(name, "05_result")
             p = os.path.join(shots_dir, name + ".png")
             shot = Image.open(p).convert("RGB") if os.path.exists(p) else Image.new("RGB", (540, 1169), (40, 40, 40))
-            phones.append(phone(shot))
-        shadow = make_shadow(phones[0])
+            img = phone(shot)
+            players.append(lambda tt, _i, im=img: im)
+        sc["static"] = all(m.startswith("shot:") for m in sc["media"])
+        shadow = make_shadow(players[0](0, 0))
+        phones = players
         n = int(round(dur * FPS))
         for f in range(n):
             t = f / FPS

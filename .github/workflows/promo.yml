@@ -33,6 +33,10 @@ jobs:
           gh release download ui-results -p ui-results.zip -R ${{ github.repository }}
           mkdir shots && cd shots && unzip -q ../ui-results.zip
           ls | head -80
+          cd ..
+          if gh release download promo-clips -p promo-clips.zip -R ${{ github.repository }}; then
+            mkdir clips && cd clips && unzip -q ../promo-clips.zip && ls -la && cat marks.txt
+          fi
       - name: Render
         env:
           PROMO_VOICE: ${{ inputs.voice }}
@@ -41,6 +45,7 @@ jobs:
           ELEVEN_MODEL: ${{ inputs.eleven_model }}
         run: |
           d=shots; [ -f shots/04_model.png ] || d=$(dirname "$(find shots -name 04_model.png | head -1)")
+          [ -d clips ] && export PROMO_CLIPS=$PWD/clips
           python3 tool/promo/make_video.py "$d" promo.mp4
           ls -la promo.mp4
       - uses: softprops/action-gh-release@v2
