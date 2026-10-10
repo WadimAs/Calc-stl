@@ -37,10 +37,13 @@ now_ms() {
 }
 
 touch rec.on
+# screenrecord stops after 3 minutes, so recordings overlap by ~25 s:
+# a new one starts every 150 s and every clip fits whole into one of them.
 (
   while [ -f rec.on ]; do
     t=$(now_ms)
-    adb shell screenrecord --size 720x1600 --bit-rate 8000000 --time-limit 170 /sdcard/rec_$t.mp4 >> rec.log 2>&1
+    adb shell screenrecord --size 720x1600 --bit-rate 8000000 --time-limit 175 /sdcard/rec_$t.mp4 >> rec.log 2>&1 &
+    for i in $(seq 1 150); do [ -f rec.on ] || break; sleep 1; done
   done
 ) &
 REC=$!

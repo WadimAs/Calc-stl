@@ -247,7 +247,10 @@ def extract_clip(clips_dir, marks, name, tmp):
     if not recs:
         print(f"clip {name}: no recording", flush=True)
         return None
-    t0, f = recs[-1]
+    # Prefer a recording that holds the whole clip (recordings overlap).
+    whole = [r for r in recs
+             if r[0] + duration(os.path.join(clips_dir, r[1])) * 1000 >= m["end"] + 300]
+    t0, f = (whole or recs)[-1]
     off = max(0.0, (m["start"] - t0) / 1000.0 - REC_LATENCY)
     length = (m["end"] - m["start"]) / 1000.0 + 0.2
     folder = os.path.join(tmp, "clip_" + name)
