@@ -49,7 +49,7 @@ class _SpoolPainter extends CustomPainter {
     final r = size.shortestSide / 2;
     final hub = r * 0.30;
     final rimInner = r * 0.86;
-    final fill = look == SpoolLook.refill ? rimInner : hub + (rimInner - hub) * fraction.clamp(0.06, 1.0);
+    final fill = hub + (rimInner - hub) * fraction.clamp(0.06, 1.0);
 
     // Filament colour with a slightly darker edge so white stays visible.
     final hsl = HSLColor.fromColor(color);
@@ -101,7 +101,7 @@ class _SpoolPainter extends CustomPainter {
     if (look == SpoolLook.refill) {
       // Cable ties holding the bare coil.
       final tie = Paint()
-        ..color = dark ? Colors.white70 : Colors.black87
+        ..color = color.computeLuminance() < 0.25 ? Colors.white : Colors.black87
         ..strokeWidth = r * 0.12
         ..strokeCap = StrokeCap.butt;
       for (int i = 0; i < 3; i++) {
