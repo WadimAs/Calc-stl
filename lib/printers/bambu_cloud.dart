@@ -191,13 +191,19 @@ class BambuCloud {
 
   /// Step 2b: two-factor code (authenticator app).
   static Future<BambuAccount> loginWithTfa(String email, String tfaKey, String code) async {
-    final (_, __, cookies) = await _req('GET', 'https://bambulab.com/api/sign-in/csrf');
-    final csrf = cookies.where((c) => c.name == 'bbl_csrf_token').map((c) => c.value);
-    if (csrf.isEmpty) throw BambuCloudException(tr('Не вдалося почати вхід із двофакторним кодом'));
+    // The site may or may not hand out a CSRF cookie; try with it, then without.
+    String? csrf;
+    try {
+      final (_, __, cookies) = await _req('GET', 'https://bambulab.com/api/sign-in/csrf');
+      final c = cookies.where((c) => c.name == 'bbl_csrf_token').map((c) => c.value);
+      if (c.isNotEmpty) csrf = c.first;
+    } catch (_) {}
     final (st, j, cookies2) = await _req('POST', 'https://bambulab.com/api/sign-in/tfa',
         body: {'tfaKey': tfaKey, 'tfaCode': code.trim()},
-        extra: {'x-bbl-csrf-token': csrf.first, 'Cookie': 'bbl_csrf_token=${csrf.first}'});
-    final token = cookies2.where((c) => c.name == 'token').map((c) => c.value);
+        extra: csrf == null ? null : {'x-bbl-csrf-token': csrf, 'Cookie': 'bbl_csrf_token=$csrf'});
+    var token = cookies2.where((c) => c.name == 'token').map((c) => c.value);
+    if (token.isEmpty && j is Map && j['accessToken'] is String) token = [j['accessToken'] as String];
+    if (token.isEmpty && st != 400) throw BambuCloudException(tr('Не вдалося почати вхід із двофакторним кодом'));
     if (token.isEmpty) {
       throw BambuCloudException(st == 400 ? tr('Неправильний код') : _message(j, st));
     }
