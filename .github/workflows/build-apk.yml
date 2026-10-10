@@ -73,23 +73,32 @@ jobs:
             echo "::warning::Secret SIGNING_KEYSTORE_B64 is not set: this APK uses a temporary key and will not update an installed copy."
           fi
 
-      - name: Build release APK
-        run: flutter build apk --release --build-number=${{ github.run_number }} --build-name=1.2.${{ github.run_number }}
+      # One APK per CPU type keeps the download small: 64-bit ARM (almost all
+      # phones) is the main one, 32-bit ARM for old phones.
+      - name: Build release APKs
+        run: |
+          V="--build-number=${{ github.run_number }} --build-name=1.2.${{ github.run_number }}"
+          flutter build apk --release --target-platform android-arm $V
+          cp build/app/outputs/flutter-apk/app-release.apk stl-weight-arm32.apk
+          flutter build apk --release --target-platform android-arm64 $V
+          cp build/app/outputs/flutter-apk/app-release.apk stl-weight.apk
+          ls -la *.apk
 
       - name: Verify signature
         if: env.STL_KEYSTORE != ''
         run: |
           APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk | tee certs.txt
-          grep -q "CN=STL Vaga" certs.txt || { echo "::error::APK is not signed with the persistent key"; exit 1; }
-
-      - name: Rename APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk stl-weight.apk
+          for f in stl-weight.apk stl-weight-arm32.apk; do
+            "$APKSIGNER" verify --print-certs "$f" | tee certs.txt
+            grep -q "CN=STL Vaga" certs.txt || { echo "::error::$f is not signed with the persistent key"; exit 1; }
+          done
 
       - uses: actions/upload-artifact@v4
         with:
           name: stl-weight-apk
-          path: stl-weight.apk
+          path: |
+            stl-weight.apk
+            stl-weight-arm32.apk
 
       # Every build on main becomes a release, so the APK can be downloaded
       # straight from the Releases page on a phone.
@@ -101,4 +110,6 @@ jobs:
           name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('Збірка {0}', github.run_number) }}
           target_commitish: ${{ github.sha }}
           make_latest: true
-          files: stl-weight.apk
+          files: |
+            stl-weight.apk
+            stl-weight-arm32.apk

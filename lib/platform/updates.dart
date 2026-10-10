@@ -26,6 +26,15 @@ class Updates {
     }
   }
 
+  static Future<bool> _is64() async {
+    try {
+      final info = await _channel.invokeMethod<Map<Object?, Object?>>('appInfo');
+      return info?['is64'] != false;
+    } catch (_) {
+      return true;
+    }
+  }
+
   static Future<String> installedName() async {
     try {
       final info = await _channel.invokeMethod<Map<Object?, Object?>>('appInfo');
@@ -53,16 +62,20 @@ class Updates {
       final m = RegExp(r'(\d+)$').firstMatch(tag);
       final build = m == null ? null : int.tryParse(m.group(1)!);
       if (build == null || build <= current) return null;
-      String? apk;
+      // 64-bit phones get stl-weight.apk, old 32-bit ones stl-weight-arm32.apk.
+      final want = await _is64() ? 'stl-weight.apk' : 'stl-weight-arm32.apk';
+      String? apk, anyApk;
       final assets = body['assets'];
       if (assets is List) {
         for (final a in assets) {
-          if (a is Map && a['name'] is String && (a['name'] as String).endsWith('.apk')) {
-            apk = a['browser_download_url'] as String?;
-            break;
-          }
+          if (a is! Map || a['name'] is! String) continue;
+          final n = a['name'] as String;
+          if (!n.endsWith('.apk')) continue;
+          anyApk ??= a['browser_download_url'] as String?;
+          if (n == want) apk = a['browser_download_url'] as String?;
         }
       }
+      apk ??= anyApk;
       final page = body['html_url'] is String ? body['html_url'] as String : 'https://github.com/$_repo/releases/latest';
       return UpdateInfo(build, apk ?? page, page);
     } catch (_) {

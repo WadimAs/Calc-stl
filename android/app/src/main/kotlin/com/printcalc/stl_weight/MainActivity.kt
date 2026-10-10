@@ -132,7 +132,11 @@ class MainActivity : FlutterActivity() {
                             @Suppress("DEPRECATION")
                             info.versionCode.toLong()
                         }
-                        result.success(hashMapOf<String, Any>("versionCode" to code, "versionName" to (info.versionName ?: "")))
+                        result.success(hashMapOf<String, Any>(
+                            "versionCode" to code,
+                            "versionName" to (info.versionName ?: ""),
+                            "is64" to Build.SUPPORTED_64_BIT_ABIS.isNotEmpty()
+                        ))
                     } catch (e: Exception) {
                         result.error("info", e.message, null)
                     }
