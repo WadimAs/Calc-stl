@@ -28,6 +28,16 @@ sleep 8
 adb shell input keyevent 82 || true
 adb shell settings put global window_animation_scale 0 || true
 
+# Warm-up launch: the very first app start after boot sometimes never gets a
+# window; let that happen to a throw-away launch instead of the test.
+if [ -f build/app/outputs/flutter-apk/app-debug.apk ]; then
+  adb install -r build/app/outputs/flutter-apk/app-debug.apk >/dev/null 2>&1 || true
+  adb shell monkey -p $PKG -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
+  sleep 12
+  adb shell am force-stop $PKG || true
+  adb shell input keyevent KEYCODE_HOME || true
+fi
+
 : > drive.txt
 for attempt in 1 2 3; do
   echo "=== attempt $attempt" >> drive.txt
@@ -41,9 +51,13 @@ for attempt in 1 2 3; do
   # Watchdog: if the walk-through has not started within 3 minutes the app is
   # stuck (rare first-launch hang) — stop and try again instead of waiting.
   started=0
-  for i in $(seq 1 90); do
+  built=0
+  for i in $(seq 1 120); do
     if ! kill -0 $TEST 2>/dev/null; then break; fi
     if tail -n +$((start + 1)) drive.txt | grep -q "UI_LOG step"; then started=1; break; fi
+    # After the APK is installed the first step must appear within ~70 s.
+    if [ $built = 0 ] && tail -n +$((start + 1)) drive.txt | grep -q "Built build"; then built=$i; fi
+    if [ $built != 0 ] && [ $((i - built)) -gt 35 ]; then break; fi
     sleep 2
   done
   if [ $started = 0 ] && kill -0 $TEST 2>/dev/null; then
