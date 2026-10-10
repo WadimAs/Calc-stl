@@ -56,6 +56,25 @@ Uint8List bracketStl() {
   return bd.buffer.asUint8List();
 }
 
+/// A printed spool label rendered as a PNG (for the on-device OCR check).
+Future<Uint8List> labelPng() async {
+  final rec = ui.PictureRecorder();
+  final c = Canvas(rec);
+  c.drawRect(const Rect.fromLTWH(0, 0, 1000, 640), Paint()..color = Colors.white);
+  final tp = TextPainter(
+    text: const TextSpan(
+      text: 'Bambu Lab\nPLA Basic\nJade White\nNet Weight: 1kg',
+      style: TextStyle(color: Colors.black, fontSize: 80, fontWeight: FontWeight.bold, height: 1.3),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout(maxWidth: 940);
+  tp.paint(c, const Offset(30, 40));
+  final img = await rec.endRecording().toImage(1000, 640);
+  final bd = await img.toByteData(format: ui.ImageByteFormat.png);
+  img.dispose();
+  return bd!.buffer.asUint8List();
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final errors = <String>[];
@@ -317,6 +336,21 @@ void main() {
       await home();
     });
 
+    await step('label_ocr', () async {
+      PlatformFiles.debugImage = await labelPng();
+      await menu('Котушки');
+      await tap(find.byTooltip('Додати з фото етикетки'));
+      await tap(find.text('Сфотографувати етикетку'));
+      await waitFor(find.textContaining('Розпізнано'), seconds: 40);
+      await settle(800);
+      await shot('32b_label_ocr');
+      final t = (find.textContaining('Розпізнано').evaluate().first.widget as Text).data ?? '';
+      note('OCR result: $t');
+      PlatformFiles.debugImage = null;
+      if (!t.contains('PLA') || !t.contains('Bambu')) throw StateError('OCR: $t');
+      await home();
+    });
+
     await step('printer', () async {
       await menu('Принтери');
       await tap(find.text('Принтер'));
@@ -341,6 +375,31 @@ void main() {
     await step('stats_after', () async {
       await menu('Статистика');
       await shot('37_stats_after');
+      await home();
+    });
+
+    await step('currency', () async {
+      await tap(find.byTooltip('Налаштування'));
+      await settle(1000);
+      await tap(find.text('€ EUR'));
+      await waitFor(find.text('Перерахувати'));
+      await settle(5000); // NBU rate
+      await shot('37b_rate_dialog');
+      await tester.enterText(inDialog(find.byType(TextField)), '48');
+      await settle(300);
+      await tap(inDialog(find.text('Перерахувати')));
+      await settle(1500);
+      await shot('37c_settings_eur');
+      await home();
+      await scrollTo(find.text('До замовлення'));
+      await shot('37d_home_eur');
+      await menu('Замовлення');
+      await shot('37e_orders_still_uah');
+      await home();
+      await tap(find.byTooltip('Налаштування'));
+      await settle(1000);
+      await tap(find.textContaining('UAH'));
+      await settle(1000);
       await home();
     });
 

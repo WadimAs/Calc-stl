@@ -10,6 +10,8 @@ import 'package:stl_weight/orders/reminders.dart';
 import 'package:stl_weight/platform/downloader.dart';
 import 'package:stl_weight/platform/pdf.dart';
 import 'package:stl_weight/printers/mqtt.dart';
+import 'package:stl_weight/spools/label_parser.dart';
+import 'package:stl_weight/ui/widgets.dart' show fmtMoney;
 import 'package:stl_weight/printers/printers.dart';
 import 'package:stl_weight/mesh/holes.dart';
 import 'package:stl_weight/mesh/loader.dart';
@@ -1018,6 +1020,64 @@ void main() {
       ).toJson())))!;
       expect(p.kind, PrinterKind.moonraker);
       expect(p.writtenOff, ['1']);
+    });
+  });
+
+  group('currency and labels', () {
+    test('currency conversion', () {
+      const s = SliceSettings(pricesPerKg: {'PETG': 700}, tariff: 4.8, amortizationPerHour: 8, roundTo: 10);
+      final e = s.withCurrency('EUR', 48);
+      expect(e.currency, 'EUR');
+      expect(e.pricesPerKg['PETG'], closeTo(700 / 48, 1e-9));
+      expect(e.copyWith(materialId: 'PLA').pricePerKg, closeTo(600 / 48, 1e-9)); // default converted
+      expect(e.tariff, closeTo(0.1, 1e-9));
+      expect(e.roundTo, 0.1);
+      final back = e.withCurrency('UAH', 1);
+      expect(back.pricesPerKg['PETG'], closeTo(700, 1e-6));
+      expect(back.tariff, closeTo(4.8, 1e-9));
+      expect(e.moneyDefaults.amortizationPerHour, closeTo(8 / 48, 1e-9));
+      final j = SliceSettings.fromJson(e.toJson());
+      expect(j.currency, 'EUR');
+      expect(j.currencyRate, 48);
+      expect(fmtMoney(12.5, code: 'EUR'), '12,50 €');
+      expect(fmtMoney(12.5, code: 'USD'), r'12,50 $');
+      expect(fmtMoney(12.5, code: 'UAH'), '12,50 грн');
+      final o = Order.create(e);
+      expect(Order.fromJson(jsonDecode(jsonEncode(o.toJson())))!.currency, 'EUR');
+    });
+
+    test('spool label parsing', () {
+      var l = parseSpoolLabel('Bambu Lab\nPLA Basic\nJade White\n10100\n1.75 mm ±0.02mm\nNet Weight: 1kg\n');
+      expect(l.brand, 'Bambu Lab');
+      expect(l.materialId, 'PLA');
+      expect(l.materialText, 'PLA Basic');
+      expect(l.colorName, 'Jade White');
+      expect(l.colorArgb, 0xFFFFFFFF);
+      expect(l.weightGrams, 1000);
+      expect(l.name, 'Bambu Lab, Jade White');
+
+      l = parseSpoolLabel('eSUN\nPETG\nDiameter 1.75mm\nColor: Black\nN.W. 1KG(2.2LBS)\nSpool weight 230g');
+      expect(l.brand, 'eSUN');
+      expect(l.materialId, 'PETG');
+      expect(l.colorName, 'Black');
+      expect(l.weightGrams, 1000);
+
+      l = parseSpoolLabel('PolyTerra™ PLA\nCharcoal Black\n1000g\nPolymaker');
+      expect(l.brand, 'Polymaker');
+      expect(l.colorName, 'Charcoal Black');
+      expect(l.weightGrams, 1000);
+
+      l = parseSpoolLabel('SUNLU PLA-CF 0.5kg Navy Blue');
+      expect(l.materialId, 'PLA-CF');
+      expect(l.weightGrams, 500);
+      expect(l.colorArgb, 0xFF1E88E5);
+
+      l = parseSpoolLabel('Creality Hyper Series ASA\nGrey 1kg');
+      expect(l.brand, 'Creality');
+      expect(l.materialId, 'ASA');
+      expect(l.colorArgb, 0xFF9E9E9E);
+
+      expect(parseSpoolLabel('hello world').isEmpty, isTrue);
     });
   });
 }

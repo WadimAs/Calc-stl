@@ -31,6 +31,7 @@ jobs:
         run: |
           flutter create --platforms=android --org com.printcalc --project-name stl_weight .
           rm -f test/widget_test.dart
+          python3 .github/scripts/add_deps.py
 
       - run: flutter pub get
 

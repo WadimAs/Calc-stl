@@ -177,7 +177,32 @@ PrinterProfile printerById(String id) => printers.firstWhere((p) => p.id == id, 
 FilamentMaterial materialById(String id) =>
     materials.firstWhere((m) => m.id == id, orElse: () => materials.first);
 
-String get currency => tr('грн'); // no-tr
+/// Supported money currencies. Built-in prices are in hryvnias; other
+/// currencies are converted with [SliceSettings.currencyRate].
+const currencyCodes = ['UAH', 'EUR', 'USD'];
+
+/// Currency used for formatting right now (follows the settings).
+String currencyCode = 'UAH';
+
+String currencySymbol(String code) => switch (code) {
+      'EUR' => '€',
+      'USD' => r'$',
+      _ => tr('грн'),
+    };
+
+String get currency => currencySymbol(currencyCode);
+
+/// Rounding steps offered for a currency.
+List<double> roundSteps(String code) => code == 'UAH' ? const [0, 1, 5, 10, 50] : const [0, 0.1, 0.5, 1, 5];
+
+double _nearestStep(double v, List<double> steps) {
+  if (v <= 0) return 0;
+  var best = steps.last;
+  for (final x in steps.skip(1)) {
+    if ((x - v).abs() < (best - v).abs()) best = x;
+  }
+  return best;
+}
 
 class SliceSettings {
   final double layerHeight;
@@ -210,6 +235,10 @@ class SliceSettings {
 
   // Cost.
   final Map<String, double> pricesPerKg; // overrides of defaultPricePerKg
+
+  /// Money currency ('UAH', 'EUR', 'USD') and hryvnias per one unit of it.
+  final String currency;
+  final double currencyRate;
   final double markupPercent; // profit on top of the cost price
   final double extraCost; // per order (work, modelling, packaging)
   final String printerId;
@@ -282,6 +311,8 @@ class SliceSettings {
     this.ensureVerticalShell = true,
     this.pricesPerKg = const {},
     this.markupPercent = 50,
+    this.currency = 'UAH',
+    this.currencyRate = 1,
     this.extraCost = 0,
     this.printerId = 'bambu',
     this.powerW = 140,
@@ -347,7 +378,36 @@ class SliceSettings {
 
   SliceSettings withoutCalibration() => copyWith(weightFactor: 1, weightSamples: 0, timeFactors: {}, timeSamples: {});
 
-  double get pricePerKg => pricesPerKg[materialId] ?? materialById(materialId).defaultPricePerKg;
+  double get pricePerKg => pricesPerKg[materialId] ?? materialById(materialId).defaultPricePerKg / currencyRate;
+
+  /// Switches the money currency; every amount in the settings is converted
+  /// (via hryvnias) with [rate] = hryvnias per one unit of [code].
+  SliceSettings withCurrency(String code, double rate) {
+    if (code == 'UAH') rate = 1;
+    final f = currencyRate / rate;
+    return copyWith(
+      currency: code,
+      currencyRate: rate,
+      pricesPerKg: {for (final e in pricesPerKg.entries) e.key: e.value * f},
+      tariff: tariff * f,
+      amortizationPerHour: amortizationPerHour * f,
+      extraCost: extraCost * f,
+      minOrderPrice: minOrderPrice * f,
+      roundTo: _nearestStep(roundTo * f, roundSteps(code)),
+    );
+  }
+
+  /// Factory defaults expressed in this settings' currency.
+  SliceSettings get moneyDefaults {
+    const d = SliceSettings();
+    if (currency == 'UAH') return d;
+    return d.copyWith(
+      currency: currency,
+      currencyRate: currencyRate,
+      tariff: d.tariff / currencyRate,
+      amortizationPerHour: d.amortizationPerHour / currencyRate,
+    );
+  }
 
   SliceSettings withPrice(double price) {
     final m = Map<String, double>.from(pricesPerKg);
@@ -375,6 +435,8 @@ class SliceSettings {
     double? supportDensity,
     bool? ensureVerticalShell,
     Map<String, double>? pricesPerKg,
+    String? currency,
+    double? currencyRate,
     double? markupPercent,
     double? extraCost,
     String? printerId,
@@ -424,6 +486,8 @@ class SliceSettings {
       supportDensity: supportDensity ?? this.supportDensity,
       ensureVerticalShell: ensureVerticalShell ?? this.ensureVerticalShell,
       pricesPerKg: pricesPerKg ?? this.pricesPerKg,
+      currency: currency ?? this.currency,
+      currencyRate: currencyRate ?? this.currencyRate,
       markupPercent: markupPercent ?? this.markupPercent,
       extraCost: extraCost ?? this.extraCost,
       printerId: printerId ?? this.printerId,
@@ -480,6 +544,8 @@ class SliceSettings {
         'supportDensity': supportDensity,
         'ensureVerticalShell': ensureVerticalShell,
         'pricesPerKg': pricesPerKg,
+        'currency': currency,
+        'currencyRate': currencyRate,
         'markupPercent': markupPercent,
         'extraCost': extraCost,
         'printerId': printerId,
@@ -547,6 +613,8 @@ class SliceSettings {
       supportDensity: dbl('supportDensity', d.supportDensity),
       ensureVerticalShell: flag('ensureVerticalShell', d.ensureVerticalShell),
       pricesPerKg: prices,
+      currency: currencyCodes.contains(j['currency']) ? j['currency'] as String : 'UAH',
+      currencyRate: j['currencyRate'] is num && (j['currencyRate'] as num) > 0 ? (j['currencyRate'] as num).toDouble() : 1,
       markupPercent: dbl('markupPercent', d.markupPercent),
       extraCost: dbl('extraCost', d.extraCost),
       printerId: j['printerId'] is String ? j['printerId'] as String : d.printerId,
@@ -765,7 +833,7 @@ extension SliceSettingsDefaults on SliceSettings {
   bool get isTreeSupport => supportType == 'tree';
 
   /// Price of the current material without the user's override.
-  double get defaultPricePerKg => materialById(materialId).defaultPricePerKg;
+  double get defaultPricePerKg => materialById(materialId).defaultPricePerKg / currencyRate;
 
   SliceSettings withoutPriceOverride() {
     final m = Map<String, double>.from(pricesPerKg)..remove(materialId);
@@ -774,7 +842,7 @@ extension SliceSettingsDefaults on SliceSettings {
 
   /// Everything back to defaults; prices and calibration kept unless [prices].
   SliceSettings resetAll({bool prices = false}) {
-    final d = const SliceSettings().copyWith(advancedUi: advancedUi, seenIntro: seenIntro, language: language);
+    final d = moneyDefaults.copyWith(advancedUi: advancedUi, seenIntro: seenIntro, language: language);
     return prices
         ? d
         : d.copyWith(

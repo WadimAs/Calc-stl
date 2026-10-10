@@ -48,7 +48,17 @@ class PlatformFiles {
   /// Photo from the camera app, downscaled to JPEG.
   static Future<Uint8List?> takePhoto() => _image('takePhoto');
 
+  /// Text on a photo (on-device ML Kit, Latin script), lines separated by \n.
+  static Future<String> recognizeText(Uint8List image) async {
+    final r = await _channel.invokeMethod<String>('recognizeText', {'bytes': image});
+    return r ?? '';
+  }
+
+  /// UI tests: returned instead of opening the camera / gallery.
+  static Uint8List? debugImage;
+
   static Future<Uint8List?> _image(String method) async {
+    if (debugImage != null) return debugImage;
     final r = await _channel.invokeMethod<Object?>(method);
     return r is Uint8List ? r : null;
   }

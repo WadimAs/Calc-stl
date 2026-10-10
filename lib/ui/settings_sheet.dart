@@ -4,6 +4,7 @@ import '../slicer/settings.dart';
 import '../platform/updates.dart';
 import 'widgets.dart';
 import '../i18n/i18n.dart';
+import '../platform/rates.dart';
 
 Future<void> showSettingsSheet(
   BuildContext context,
@@ -88,10 +89,22 @@ class _SettingsBodyState extends State<_SettingsBody> {
     _set(d);
   }
 
+  /// Asks for the exchange rate (NBU rate prefilled) and converts all amounts.
+  Future<void> _changeCurrency(String code) async {
+    if (code == _s.currency) return;
+    if (code == 'UAH') {
+      _set(_s.withCurrency('UAH', 1));
+      return;
+    }
+    final rate = await showDialog<double>(context: context, builder: (_) => _RateDialog(code: code));
+    if (rate == null || rate <= 0 || !mounted) return;
+    _set(_s.withCurrency(code, rate));
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = _s;
-    const d = SliceSettings();
+    final d = s.moneyDefaults;
     final theme = Theme.of(context);
     final currentPrinter = printerById(s.printerId);
     final adv = s.advancedUi;
@@ -134,6 +147,25 @@ class _SettingsBodyState extends State<_SettingsBody> {
                 ],
                 selected: {s.language},
                 onSelectionChanged: (v) => _set(_s.copyWith(language: v.first)),
+              ),
+            ),
+          ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(children: [
+            const Icon(Icons.payments_outlined, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: SegmentedButton<String>(
+                showSelectedIcon: false,
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                segments: [
+                  for (final c in currencyCodes)
+                    ButtonSegment(value: c, label: Text('${currencySymbol(c)} $c', maxLines: 1)),
+                ],
+                selected: {s.currency},
+                onSelectionChanged: (v) => _changeCurrency(v.first),
               ),
             ),
           ]),
@@ -492,14 +524,11 @@ class _SettingsBodyState extends State<_SettingsBody> {
         SegmentedButton<double>(
           showSelectedIcon: false,
           segments: [
-            ButtonSegment(value: 0, label: Text(tr('Ні'))),
-            ButtonSegment(value: 1, label: Text('1')),
-            ButtonSegment(value: 5, label: Text('5')),
-            ButtonSegment(value: 10, label: Text('10')),
-            ButtonSegment(value: 50, label: Text('50')),
+            for (final r in roundSteps(s.currency))
+              ButtonSegment(value: r, label: Text(r == 0 ? tr('Ні') : fmtNum(r, r < 1 ? 1 : 0))),
           ],
           selected: {
-            for (final r in const [0.0, 1.0, 5.0, 10.0, 50.0])
+            for (final r in roundSteps(s.currency))
               if (r == s.roundTo) r,
           },
           emptySelectionAllowed: true,
@@ -756,5 +785,79 @@ class _AboutRowState extends State<_AboutRow> {
         label: Text(tr('Перевірити оновлення')),
       ),
     ]);
+  }
+}
+
+/// Exchange rate for converting the settings into another currency.
+class _RateDialog extends StatefulWidget {
+  final String code;
+
+  const _RateDialog({required this.code});
+
+  @override
+  State<_RateDialog> createState() => _RateDialogState();
+}
+
+class _RateDialogState extends State<_RateDialog> {
+  final _c = TextEditingController();
+  bool _loading = true;
+  bool _fromNbu = false;
+
+  @override
+  void initState() {
+    super.initState();
+    nbuRate(widget.code).then((r) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        if (r != null && _c.text.isEmpty) {
+          _c.text = fmtNum(r, 2);
+          _fromNbu = true;
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  double? get _value => double.tryParse(_c.text.replaceAll(',', '.').replaceAll(' ', ''));
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: Text(trf('Рахувати в {0}', [currencySymbol(widget.code)])),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(tr('Ціни пластику, тариф, амортизацію й доплати буде перераховано за курсом.'),
+            style: theme.textTheme.bodyMedium),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _c,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (_) => setState(() => _fromNbu = false),
+          decoration: InputDecoration(
+            labelText: trf('Курс: грн за 1 {0}', [currencySymbol(widget.code)]),
+            helperText: _loading ? tr('Отримую курс НБУ…') : (_fromNbu ? tr('Курс НБУ на сьогодні') : null),
+            suffixIcon: _loading
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                  )
+                : null,
+          ),
+        ),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(tr('Скасувати'))),
+        FilledButton(
+          onPressed: _value == null || _value! <= 0 ? null : () => Navigator.pop(context, _value),
+          child: Text(tr('Перерахувати')),
+        ),
+      ],
+    );
   }
 }

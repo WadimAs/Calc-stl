@@ -124,6 +124,9 @@ class Order {
   /// Photos of the finished order (file paths).
   List<String> photos;
 
+  /// Currency of all amounts in this order (frozen when created).
+  String currency;
+
   Order({
     required this.id,
     required this.createdAt,
@@ -141,6 +144,7 @@ class Order {
     this.discounts = const [],
     Map<String, double>? deducted,
     List<String>? photos,
+    this.currency = 'UAH',
   })  : items = items ?? [],
         deducted = deducted ?? {},
         photos = photos ?? [];
@@ -153,6 +157,7 @@ class Order {
         minPrice: s.minOrderPrice,
         roundTo: s.roundTo,
         discounts: s.discounts,
+        currency: s.currency,
       );
 
   String get title => client.trim().isNotEmpty ? client.trim() : trf('Замовлення від {0}', [_date(createdAt)]);
@@ -221,6 +226,7 @@ class Order {
         'discounts': [for (final d in discounts) d.toJson()],
         'deducted': deducted,
         'photos': photos,
+        'currency': currency,
       };
 
   static Order? fromJson(Object? raw) {
@@ -255,6 +261,7 @@ class Order {
               QtyDiscount((e[0] as num).toInt(), (e[1] as num).toDouble()),
       ],
       deducted: deducted,
+      currency: raw['currency'] is String ? raw['currency'] as String : 'UAH',
       photos: [
         if (raw['photos'] is List)
           for (final p in raw['photos'] as List)

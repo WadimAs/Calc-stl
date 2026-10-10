@@ -4,6 +4,8 @@ import '../data/records.dart';
 import '../expenses/expenses.dart';
 import '../slicer/settings.dart';
 import '../spools/spools.dart';
+import '../spools/label_parser.dart';
+import '../platform/files.dart';
 import 'widgets.dart';
 import '../i18n/i18n.dart';
 
@@ -33,8 +35,8 @@ class _SpoolsPageState extends State<SpoolsPage> {
     });
   }
 
-  Future<void> _edit([Spool? s]) async {
-    final r = await showDialog<(Spool, bool)>(context: context, builder: (_) => _SpoolDialog(spool: s));
+  Future<void> _edit([Spool? s, bool scan = false]) async {
+    final r = await showDialog<(Spool, bool)>(context: context, builder: (_) => _SpoolDialog(spool: s, scan: scan));
     if (r == null) return;
     final (result, asExpense) = r;
     final list = await SpoolStore.upsert(result);
@@ -112,7 +114,16 @@ class _SpoolsPageState extends State<SpoolsPage> {
     final list = _spools;
     final total = list?.fold(0.0, (a, s) => a + s.remainingGrams) ?? 0;
     return Scaffold(
-      appBar: AppBar(title: Text(tr('Котушки'))),
+      appBar: AppBar(
+        title: Text(tr('Котушки')),
+        actions: [
+          IconButton(
+            tooltip: tr('Додати з фото етикетки'),
+            onPressed: () => _edit(null, true),
+            icon: const Icon(Icons.document_scanner_outlined),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _edit(),
         icon: const Icon(Icons.add),
@@ -204,7 +215,10 @@ class _SpoolsPageState extends State<SpoolsPage> {
 class _SpoolDialog extends StatefulWidget {
   final Spool? spool;
 
-  const _SpoolDialog({this.spool});
+  /// Start by photographing the spool label.
+  final bool scan;
+
+  const _SpoolDialog({this.spool, this.scan = false});
 
   @override
   State<_SpoolDialog> createState() => _SpoolDialogState();
@@ -219,6 +233,71 @@ class _SpoolDialogState extends State<_SpoolDialog> {
   late final _price =
       TextEditingController(text: (widget.spool?.price ?? 0) > 0 ? _fmt(widget.spool!.price) : '');
   bool _asExpense = true;
+  bool _scanning = false;
+  String? _scanNote;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.scan) WidgetsBinding.instance.addPostFrameCallback((_) => _scan());
+  }
+
+  /// Photo of the label → OCR → fields.
+  Future<void> _scan() async {
+    final how = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.photo_camera_outlined),
+            title: Text(tr('Сфотографувати етикетку')),
+            onTap: () => Navigator.pop(ctx, 'camera'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: Text(tr('З галереї')),
+            onTap: () => Navigator.pop(ctx, 'gallery'),
+          ),
+        ]),
+      ),
+    );
+    if (how == null || !mounted) return;
+    setState(() {
+      _scanning = true;
+      _scanNote = null;
+    });
+    try {
+      final img = how == 'camera' ? await PlatformFiles.takePhoto() : await PlatformFiles.pickImage();
+      if (img == null) return;
+      final text = await PlatformFiles.recognizeText(img);
+      final l = parseSpoolLabel(text);
+      if (!mounted) return;
+      setState(() {
+        if (l.materialId != null && materials.any((m) => m.id == l.materialId)) _material = l.materialId!;
+        if (l.colorArgb != null) _color = l.colorArgb!;
+        if (l.name.isNotEmpty) _name.text = l.name;
+        if (l.weightGrams != null) {
+          _total.text = _fmt(l.weightGrams!);
+          if (widget.spool == null) _left.text = _fmt(l.weightGrams!);
+        }
+        _scanNote = l.isEmpty
+            ? tr('Не вдалося нічого розпізнати. Сфотографуйте етикетку ближче, рівно й при гарному світлі.')
+            : trf('Розпізнано: {0}', [
+                [
+                  l.brand,
+                  l.materialText,
+                  l.colorName,
+                  if (l.weightGrams != null) fmtGrams(l.weightGrams!),
+                ].whereType<String>().join(' · ')
+              ]);
+      });
+    } catch (e) {
+      if (mounted) setState(() => _scanNote = trf('Не вдалося розпізнати: {0}', [e]));
+    } finally {
+      if (mounted) setState(() => _scanning = false);
+    }
+  }
 
   static String _fmt(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
 
@@ -236,8 +315,21 @@ class _SpoolDialogState extends State<_SpoolDialog> {
     return AlertDialog(
       title: Text(widget.spool == null ? tr('Нова котушка') : tr('Котушка')),
       content: SingleChildScrollView(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          OutlinedButton.icon(
+            onPressed: _scanning ? null : _scan,
+            icon: _scanning
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.document_scanner_outlined),
+            label: Text(tr('Заповнити з фото етикетки')),
+          ),
+          if (_scanNote != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(_scanNote!, style: Theme.of(context).textTheme.bodySmall),
+            ),
           DropdownButtonFormField<String>(
+            key: ValueKey(_material),
             // ignore: deprecated_member_use
             value: _material,
             decoration: InputDecoration(labelText: tr('Пластик')),

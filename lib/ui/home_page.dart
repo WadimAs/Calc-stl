@@ -98,6 +98,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _init() async {
     final s = await PlatformFiles.loadSettings();
     if (!mounted) return;
+    currencyCode = s.currency;
     setState(() => _settings = s);
     Updates.check().then((u) {
       if (u != null && mounted) setState(() => _update = u);
@@ -650,6 +651,7 @@ class _HomePageState extends State<HomePage> {
       return;
     }
     final geometryChanged = s.geometryKey != _settings.geometryKey;
+    currencyCode = s.currency;
     setState(() => _settings = s);
     PlatformFiles.saveSettings(s);
     if (geometryChanged && _model != null) {

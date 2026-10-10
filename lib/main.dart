@@ -3,12 +3,15 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'i18n/i18n.dart';
 import 'platform/files.dart';
+import 'slicer/settings.dart';
 import 'ui/home_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    applyLang((await PlatformFiles.loadSettings()).language);
+    final s = await PlatformFiles.loadSettings();
+    currencyCode = s.currency;
+    applyLang(s.language);
   } catch (_) {
     applyLang('auto');
   }

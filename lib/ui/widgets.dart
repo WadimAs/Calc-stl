@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../i18n/i18n.dart';
+import '../slicer/settings.dart';
 
 String fmtNum(double v, int decimals) {
   final t = v.toStringAsFixed(decimals);
@@ -14,19 +15,23 @@ String fmtGrams(double g) {
   return trf('{0} г', [fmtNum(g, 1)]);
 }
 
-String fmtMoney(double v) {
+/// Money with thousands separators and the currency ([code] or the current one).
+String fmtMoney(double v, {String? code}) {
+  final c = code ?? currencyCode;
   final whole = v.abs() >= 1000;
-  final txt = v.toStringAsFixed(whole ? 0 : 2);
+  final txt = v.abs().toStringAsFixed(whole ? 0 : 2);
   // Thousands separator (thin space) for readability.
   final parts = txt.split('.');
   final digits = parts[0];
-  final b = StringBuffer();
+  final b = StringBuffer(v < 0 && v.abs() >= 0.005 ? '−' : '');
   for (int i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 == 0 && digits[i - 1] != '-') b.write('\u202F');
+    if (i > 0 && (digits.length - i) % 3 == 0) b.write(lang == 'en' ? ',' : '\u202F');
     b.write(digits[i]);
   }
   if (parts.length > 1) b.write('${lang == 'en' ? '.' : ','}${parts[1]}');
-  return trf('{0} грн', [b]);
+  if (c == 'UAH') return trf('{0} грн', [b]);
+  final sym = currencySymbol(c);
+  return lang == 'en' ? '$sym$b' : '$b $sym';
 }
 
 /// Bambu-style "back to default" icon: shown only when the value differs.

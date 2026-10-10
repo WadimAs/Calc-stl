@@ -19,11 +19,11 @@ String quoteText(Order o) {
   if (o.client.trim().isNotEmpty) b.write(trf(' для {0}', [o.client.trim()]));
   b.writeln();
   for (final it in o.items) {
-    b.writeln(trf('• {0} — {1}, {2} шт × {3}: {4}', [it.name, it.material, it.qty, fmtGrams(it.gramsEach), fmtMoney(it.priceEach * it.qty)]));
+    b.writeln(trf('• {0} — {1}, {2} шт × {3}: {4}', [it.name, it.material, it.qty, fmtGrams(it.gramsEach), fmtMoney(it.priceEach * it.qty, code: o.currency)]));
   }
-  if (t.discount > 0) b.writeln(trf('Знижка: −{0}', [fmtMoney(t.discount)]));
-  if (t.extra > 0) b.writeln(trf('Підготовка / робота: {0}', [fmtMoney(t.extra)]));
-  b.writeln(trf('Разом: {0}', [fmtMoney(t.total)]));
+  if (t.discount > 0) b.writeln(trf('Знижка: −{0}', [fmtMoney(t.discount, code: o.currency)]));
+  if (t.extra > 0) b.writeln(trf('Підготовка / робота: {0}', [fmtMoney(t.extra, code: o.currency)]));
+  b.writeln(trf('Разом: {0}', [fmtMoney(t.total, code: o.currency)]));
   b.writeln(trf('Орієнтовний час друку: {0}', [formatDuration(t.hours)]));
   if (o.note.trim().isNotEmpty) b.writeln(o.note.trim());
   return b.toString().trim();
@@ -279,7 +279,7 @@ class QuoteCard extends StatelessWidget {
                         style: base.copyWith(color: _muted, fontSize: 12)),
                   ]),
                 ),
-                Text(fmtMoney(it.priceEach * it.qty), style: base.copyWith(fontWeight: FontWeight.w600)),
+                Text(fmtMoney(it.priceEach * it.qty, code: o.currency), style: base.copyWith(fontWeight: FontWeight.w600)),
               ]),
             ),
           if (photos && o.photos.isNotEmpty) ...[
@@ -302,14 +302,14 @@ class QuoteCard extends StatelessWidget {
           ],
           const Divider(color: Color(0xFFE7E3EC), height: 1),
           const SizedBox(height: 8),
-          if (t.discount > 0) row(tr('Знижка від кількості'), '−${fmtMoney(t.discount)}'),
-          if (t.extra > 0) row(tr('Підготовка, робота'), fmtMoney(t.extra)),
-          if (t.minimumAdd > 0) row(tr('Мінімальне замовлення'), fmtMoney(t.minimumAdd)),
+          if (t.discount > 0) row(tr('Знижка від кількості'), '−${fmtMoney(t.discount, code: o.currency)}'),
+          if (t.extra > 0) row(tr('Підготовка, робота'), fmtMoney(t.extra, code: o.currency)),
+          if (t.minimumAdd > 0) row(tr('Мінімальне замовлення'), fmtMoney(t.minimumAdd, code: o.currency)),
           row(tr('Орієнтовний час друку'), formatDuration(t.hours)),
           const SizedBox(height: 8),
           Row(children: [
             Expanded(child: Text(tr('Разом'), style: TextStyle(color: _ink, fontSize: 18, fontWeight: FontWeight.w700))),
-            Text(fmtMoney(t.total), style: const TextStyle(color: _accent, fontSize: 24, fontWeight: FontWeight.w800)),
+            Text(fmtMoney(t.total, code: o.currency), style: const TextStyle(color: _accent, fontSize: 24, fontWeight: FontWeight.w800)),
           ]),
           if (o.note.trim().isNotEmpty) ...[
             const SizedBox(height: 8),

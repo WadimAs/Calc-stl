@@ -88,6 +88,36 @@ class MainActivity : FlutterActivity() {
                         result.error("camera", e.message, null)
                     }
                 }
+                "recognizeText" -> {
+                    val bytes = call.argument<ByteArray>("bytes")
+                    if (bytes == null) {
+                        result.error("args", "no bytes", null)
+                    } else {
+                        try {
+                            val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            if (bmp == null) {
+                                result.error("ocr", "bad image", null)
+                            } else {
+                                val image = com.google.mlkit.vision.common.InputImage.fromBitmap(bmp, 0)
+                                com.google.mlkit.vision.text.TextRecognition
+                                    .getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS)
+                                    .process(image)
+                                    .addOnSuccessListener { text ->
+                                        // One line per recognised line, blocks separated by blank lines.
+                                        val sb = StringBuilder()
+                                        for (block in text.textBlocks) {
+                                            for (line in block.lines) sb.append(line.text).append('\n')
+                                            sb.append('\n')
+                                        }
+                                        result.success(sb.toString())
+                                    }
+                                    .addOnFailureListener { e -> result.error("ocr", e.message, null) }
+                            }
+                        } catch (e: Throwable) {
+                            result.error("ocr", e.message, null)
+                        }
+                    }
+                }
                 "getInitialLink" -> {
                     result.success(initialLink)
                     initialLink = null
