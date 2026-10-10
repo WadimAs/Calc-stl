@@ -4,8 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       voice:
-        description: "Edge TTS voice"
+        description: "Edge TTS voice (if no ElevenLabs key)"
         default: "uk-UA-OstapNeural"
+      eleven_voice:
+        description: "ElevenLabs voice_id (empty = George)"
+        default: ""
+      eleven_model:
+        description: "ElevenLabs model"
+        default: "eleven_multilingual_v2"
 
 permissions:
   contents: write
@@ -30,6 +36,9 @@ jobs:
       - name: Render
         env:
           PROMO_VOICE: ${{ inputs.voice }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVEN_VOICE: ${{ inputs.eleven_voice }}
+          ELEVEN_MODEL: ${{ inputs.eleven_model }}
         run: |
           d=shots; [ -f shots/04_model.png ] || d=$(dirname "$(find shots -name 04_model.png | head -1)")
           python3 tool/promo/make_video.py "$d" promo.mp4

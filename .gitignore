@@ -15,3 +15,4 @@ android/app/debug
 android/app/profile
 android/app/release
 *.apk
+__pycache__/

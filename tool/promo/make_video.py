@@ -264,6 +264,54 @@ def estimate_words(text, speech):
     return out
 
 
+EL_KEY = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+EL_VOICE = os.environ.get("ELEVEN_VOICE", "").strip() or "JBFqnCBsd6RMkjVDRZzb"
+EL_MODEL = os.environ.get("ELEVEN_MODEL", "").strip() or "eleven_multilingual_v2"
+
+
+def eleven(text, path, prev="", nxt=""):
+    """ElevenLabs TTS with character timestamps -> list of (start, end, word)."""
+    import base64
+    import urllib.request
+
+    body = {
+        "text": text,
+        "model_id": EL_MODEL,
+        "voice_settings": {"stability": 0.45, "similarity_boost": 0.8, "style": 0.25, "use_speaker_boost": True},
+    }
+    if EL_MODEL != "eleven_v3":
+        body["previous_text"], body["next_text"] = prev, nxt
+    req = urllib.request.Request(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{EL_VOICE}/with-timestamps?output_format=mp3_44100_128",
+        data=json.dumps(body).encode(), method="POST",
+        headers={"xi-api-key": EL_KEY, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            res = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        sys.exit(f"ElevenLabs HTTP {e.code}: {e.read().decode(errors='replace')[:500]}")
+    with open(path, "wb") as fh:
+        fh.write(base64.b64decode(res["audio_base64"]))
+    al = res.get("alignment") or res.get("normalized_alignment") or {}
+    chars = al.get("characters") or []
+    st = al.get("character_start_times_seconds") or []
+    en = al.get("character_end_times_seconds") or []
+    words, cur, s0, e0 = [], "", None, None
+    for c, a, b in zip(chars, st, en):
+        if c.isspace():
+            if cur:
+                words.append((s0, e0, cur))
+            cur, s0 = "", None
+            continue
+        if s0 is None:
+            s0 = a
+        cur += c
+        e0 = b
+    if cur:
+        words.append((s0, e0, cur))
+    return words
+
+
 async def tts(text, path):
     import edge_tts
 
@@ -316,11 +364,18 @@ def main():
             words = estimate_words(sc["say"], speech)
         else:
             mp3 = os.path.join(tmp, f"s{i}.mp3")
-            words = asyncio.run(tts(sc["say"], mp3))
+            if EL_KEY:
+                prev = scenes[i - 1]["say"] if i > 0 else ""
+                nxt = scenes[i + 1]["say"] if i + 1 < len(scenes) else ""
+                words = eleven(sc["say"], mp3, prev, nxt)
+            else:
+                words = asyncio.run(tts(sc["say"], mp3))
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", mp3, "-ar", "24000", "-ac", "1", wav], check=True)
             speech = duration(wav)
-            words = attach_punct(words, sc["say"]) if words else estimate_words(sc["say"], speech)
-        lead = 0.25
+            if not EL_KEY:
+                words = attach_punct(words, sc["say"])
+            words = words or estimate_words(sc["say"], speech)
+        lead = 0.2
         tail = 2.6 if sc.get("question") else 0.35
         padded = os.path.join(tmp, f"p{i}.wav")
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", wav, "-af",
