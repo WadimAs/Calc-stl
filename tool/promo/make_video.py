@@ -1,10 +1,11 @@
-"""Builds the promo video of STL Вага from UI-test screenshots and a voice-over.
+"""Builds the vertical (TikTok / Reels / Shorts) promo video of STL Вага.
 
 Usage: python3 make_video.py SHOTS_DIR OUT.mp4 [--silent]
 
-Per scene: a headline on the left, the phone with one or two screenshots on
-the right (cross-fade, slow zoom), subtitles = the narration. The voice is
-Microsoft Edge neural TTS (uk-UA), or silence with --silent for previews.
+1080x1920. Per scene: a headline on top, the phone with one or two UI-test
+screenshots (slide-in, cross-fade, slow zoom) and big word-timed captions.
+The voice is Microsoft Edge neural TTS (uk-UA); --silent renders a preview
+without network access, with estimated caption timing.
 """
 import asyncio
 import json
@@ -16,144 +17,137 @@ import tempfile
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-W, H, FPS = 1920, 1080, 30
+W, H, FPS = 1080, 1920, 30
 ACCENT = (255, 122, 47)
 VOICE = os.environ.get("PROMO_VOICE", "uk-UA-OstapNeural")
+RATE = os.environ.get("PROMO_RATE", "+8%")
+HERE = os.path.dirname(os.path.abspath(__file__))
+LOGO = os.path.join(HERE, "..", "..", "assets", "logo.png")
 
 SCENES = [
     {
-        "title": "STL Вага",
-        "kicker": "калькулятор 3D-друку у телефоні",
+        "title": "Скільки коштує\nваш 3D-друк?",
+        "kicker": "STL Вага — рахує телефон",
         "shots": ["04_model"],
-        "say": "Знайомтесь: STL Вага — застосунок, який рахує вагу, час і вартість 3D-друку прямо у вашому телефоні.",
-        "card": True,
+        "say": "Скільки насправді коштує ваш 3D-друк? Я зробив застосунок, який рахує це прямо в телефоні.",
+        "logo": True,
     },
     {
-        "title": "Справжнє нарізання",
+        "title": "Модель → шари",
         "kicker": "STL · 3MF · G-code",
         "shots": ["04_model", "06_layers"],
-        "say": "Відкрийте модель STL, 3MF чи G-code — з файлів, із Телеграму або за посиланням. "
-        "Застосунок нарізає її, як слайсер, і показує шари, стінки та підтримки.",
+        "say": "Відкриваєте модель з файлів чи з Телеграму — і застосунок нарізає її, як слайсер: шари, стінки, підтримки.",
     },
     {
         "title": "Вага, час і ціна",
-        "kicker": "за секунди",
+        "kicker": "за кілька секунд",
         "shots": ["05_result", "09_settings_cost"],
-        "say": "За кілька секунд ви бачите вагу пластику, довжину філаменту й час друку. "
-        "Ціна — чесна: пластик, електроенергія, знос принтера і ваш заробіток. "
-        "Файли з Bambu Studio чи Orca дають точні цифри слайсера.",
+        "say": "За секунди бачите вагу пластику, час друку й ціну: пластик, світло, знос принтера і ваш заробіток.",
     },
     {
-        "title": "Замовлення",
-        "kicker": "клієнти · терміни · нагадування",
-        "shots": ["13_order", "15_order_due"],
-        "say": "Додайте розрахунок до замовлення: клієнт, термін із нагадуванням, знижки від кількості й доплати.",
-    },
-    {
-        "title": "Рахунок у PDF",
-        "kicker": "з вашими реквізитами",
-        "shots": ["16_quote", "17_invoice"],
-        "say": "Пропозицію або рахунок у PDF — з вашими реквізитами й фото готового виробу — "
-        "можна надіслати клієнту в один дотик.",
+        "title": "Замовлення і PDF",
+        "kicker": "клієнти · терміни · рахунки",
+        "shots": ["13_order", "17_invoice"],
+        "say": "Далі — замовлення з клієнтом і терміном, а рахунок у PDF відправляєте в один дотик.",
     },
     {
         "title": "Котушки з фото",
         "kicker": "розпізнавання етикетки",
         "shots": ["32b_label_ocr", "32h_spool_icons"],
-        "say": "Котушку додають по фото етикетки: застосунок сам розпізнає виробника, пластик, колір і вагу — "
-        "навіть рефіли й двоколірний шовковий PLA.",
+        "say": "Котушку додаєте по фото етикетки — виробник, пластик і колір розпізнаються самі.",
     },
     {
-        "title": "Принтери онлайн",
-        "kicker": "Bambu Lab · Klipper",
-        "shots": ["33a_printer_kinds", "34a_bambu_login"],
-        "say": "Підключіть принтер Bambu Lab — вдома або через інтернет — чи Klipper. "
-        "Статус друку та залишок пластику в AMS видно наживо.",
+        "title": "Bambu Lab і Klipper",
+        "kicker": "автосписання пластику",
+        "shots": ["33a_printer_kinds", "32e_print_finished"],
+        "say": "Підключіть Bambu Lab чи Klipper — і після друку застосунок сам запропонує списати пластик з котушки.",
     },
     {
-        "title": "Автосписання",
-        "kicker": "після кожного друку",
-        "shots": ["32e_print_finished", "32g_writeoffs"],
-        "say": "Коли друк завершено, застосунок запропонує списати пластик з потрібної котушки — "
-        "для замовлення, для себе чи як брак. Усе записується в журнал.",
-    },
-    {
-        "title": "Прибуток під контролем",
+        "title": "Прибуток видно",
         "kicker": "статистика · витрати",
-        "shots": ["37_stats_after", "22_catalog"],
-        "say": "Статистика покаже виручку, витрати й чистий прибуток за кожен місяць, "
-        "а прайс-лист готових виробів завжди під рукою.",
+        "shots": ["37_stats_after", "23_expenses"],
+        "say": "А статистика покаже виручку, витрати й чистий прибуток за кожен місяць.",
     },
     {
-        "title": "Просто або професійно",
-        "kicker": "українською та англійською",
-        "shots": ["38_simple_mode", "42_en_model"],
-        "say": "Простий режим — для швидкого розрахунку, розширений — для вашої справи. Українською або англійською.",
-    },
-    {
-        "title": "STL Вага",
-        "kicker": "друкуйте з розрахунком",
+        "title": "Випускати\nдля всіх?",
+        "kicker": "",
         "shots": ["05_result"],
-        "say": "STL Вага. Друкуйте з розрахунком.",
-        "card": True,
-        "outro": True,
+        "say": "Поки що застосунок не в загальному доступі. Чи варто випустити його для всіх? Пишіть у коментарях!",
+        "question": True,
     },
 ]
 
+INTER = "/usr/share/fonts/opentype/inter/"
 
-def font(size, bold=False):
-    for p in [
-        "/usr/share/fonts/opentype/inter/Inter-Bold.otf" if bold else "/usr/share/fonts/opentype/inter/Inter-Regular.otf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        os.path.join(os.path.dirname(__file__), "Inter-Bold.otf" if bold else "Inter-Regular.otf"),
-    ]:
+
+def font(size, weight="Regular"):
+    for p in [INTER + f"Inter-{weight}.otf", INTER + "Inter-Bold.otf",
+              "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]:
         if os.path.exists(p):
             return ImageFont.truetype(p, size)
     return ImageFont.load_default()
 
 
-F_TITLE = font(84, True)
-F_KICK = font(36)
-F_SUB = font(34)
-F_SMALL = font(28)
+F_TITLE = font(84, "ExtraBold")
+F_KICK = font(40, "SemiBold")
+F_CAP = font(68, "Black")
+F_Q = font(120, "Black")
+F_Q2 = font(54, "Bold")
 
 
 def background():
-    bg = Image.new("RGB", (W, H), (24, 20, 28))
+    bg = Image.new("RGB", (W, H))
     d = ImageDraw.Draw(bg)
     for y in range(H):
         t = y / H
-        d.line([(0, y), (W, y)], fill=(int(28 + 14 * t), int(22 + 6 * t), int(34 - 6 * t)))
+        d.line([(0, y), (W, y)], fill=(int(30 + 10 * t), int(22 + 4 * t), int(36 - 10 * t)))
     glow = Image.new("RGB", (W, H), (0, 0, 0))
     gd = ImageDraw.Draw(glow)
-    gd.ellipse([W * 0.45, -H * 0.3, W * 1.25, H * 0.9], fill=(120, 52, 18))
-    glow = glow.filter(ImageFilter.GaussianBlur(160))
-    return Image.blend(bg, glow, 0.35)
+    gd.ellipse([-W * 0.3, H * 0.15, W * 1.3, H * 0.85], fill=(140, 58, 20))
+    glow = glow.filter(ImageFilter.GaussianBlur(200))
+    return Image.blend(bg, glow, 0.4)
 
 
 BG = None
+SCREEN_W = 600
 
 
-def phone(shot, scale):
-    """Screenshot in a phone frame, returns RGBA image."""
-    sw, sh = 470, int(470 * shot.height / shot.width)
-    sw, sh = int(sw * scale), int(sh * scale)
-    pad = int(16 * scale)
+def phone(shot):
+    sw = SCREEN_W
+    sh = int(sw * shot.height / shot.width)
+    pad = 18
     img = Image.new("RGBA", (sw + 2 * pad, sh + 2 * pad), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle([0, 0, img.width - 1, img.height - 1], radius=int(56 * scale), fill=(12, 12, 14, 255))
+    d.rounded_rectangle([0, 0, img.width - 1, img.height - 1], radius=66, fill=(10, 10, 12, 255))
+    d.rounded_rectangle([1, 1, img.width - 2, img.height - 2], radius=66, outline=(70, 70, 78, 255), width=2)
     scr = shot.resize((sw, sh), Image.LANCZOS)
     mask = Image.new("L", (sw, sh), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, sw - 1, sh - 1], radius=int(42 * scale), fill=255)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, sw - 1, sh - 1], radius=50, fill=255)
     img.paste(scr, (pad, pad), mask)
     return img
 
 
+def make_shadow(ph):
+    sh = Image.new("RGBA", (ph.width + 120, ph.height + 120), (0, 0, 0, 0))
+    ImageDraw.Draw(sh).rounded_rectangle([60, 80, ph.width + 60, ph.height + 80], radius=70, fill=(0, 0, 0, 170))
+    return sh.filter(ImageFilter.GaussianBlur(36))
+
+
+def ease(t):
+    t = max(0.0, min(1.0, t))
+    return 1 - (1 - t) ** 3
+
+
+def centered(d, y, text, f, fill, stroke=0, stroke_fill=None):
+    w = f.getlength(text)
+    d.text(((W - w) / 2, y), text, font=f, fill=fill, stroke_width=stroke, stroke_fill=stroke_fill)
+
+
 def wrap(text, f, width):
-    words, lines, cur = text.split(), [], ""
-    for w in words:
+    lines, cur = [], ""
+    for w in text.split():
         t = (cur + " " + w).strip()
-        if f.getlength(t) <= width:
+        if f.getlength(t) <= width or not cur:
             cur = t
         else:
             lines.append(cur)
@@ -163,73 +157,129 @@ def wrap(text, f, width):
     return lines
 
 
-def ease(t):
-    return 0.5 - 0.5 * math.cos(math.pi * max(0.0, min(1.0, t)))
+LOGO_IMG = None
+PHONE_TOP = 430
 
 
-def make_shadow(ph):
-    sh = Image.new("RGBA", (ph.width + 80, ph.height + 80), (0, 0, 0, 0))
-    ImageDraw.Draw(sh).rounded_rectangle([40, 50, ph.width + 40, ph.height + 50], radius=60, fill=(0, 0, 0, 150))
-    return sh.filter(ImageFilter.GaussianBlur(28))
-
-
-def frame(scene, phones, shadow, t, dur, sub_lines):
+def frame(scene, phones, shadow, t, dur, caption, global_t, total):
     img = BG.copy()
-    appear = ease(t / 0.6)
-    # Phone (right), slow zoom, cross-fade between the scene's screenshots.
+    appear = ease(t / 0.5)
+    q = scene.get("question")
+
+    # Phone with slow zoom and a cross-fade to the second screenshot.
     if len(phones) == 1:
         base = phones[0]
     else:
-        k = ease((t - dur / 2 + 0.4) / 0.8)
+        k = ease((t - dur * 0.5 + 0.3) / 0.6)
         base = phones[0] if k <= 0 else (phones[1] if k >= 1 else Image.blend(phones[0], phones[1], k))
-    zoom = 1.0 + 0.035 * (t / max(dur, 0.1))
+    zoom = 1.0 + 0.04 * (t / max(dur, 0.1))
     ph = base.resize((int(base.width * zoom), int(base.height * zoom)), Image.BILINEAR)
-    px = int(W * 0.66 - ph.width / 2 + (1 - appear) * 80)
-    py = int(H / 2 - ph.height / 2)
-    img.paste(shadow, (int(W * 0.66 - base.width / 2) - 40 + int((1 - appear) * 80), int(H / 2 - base.height / 2) - 40), shadow)
-    img.paste(ph, (px, py), ph)
+    slide = (1 - appear) * 160
+    cx = W / 2
+    top = PHONE_TOP + slide
+    if q:
+        ph = ph.filter(ImageFilter.GaussianBlur(10))
+    img.paste(shadow, (int(cx - base.width / 2 - 60), int(top - 60)), shadow)
+    img.paste(ph, (int(cx - ph.width / 2), int(top - (ph.height - base.height) / 2)), ph)
 
-    # Headline (left).
-    x0 = 120
-    alpha = int(255 * appear)
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     ld = ImageDraw.Draw(layer)
-    y = 300 if not scene.get("card") else 380
-    ld.rectangle([x0, y - 34, x0 + 90, y - 26], fill=ACCENT + (alpha,))
-    for line in wrap(scene["title"], F_TITLE, 760):
-        ld.text((x0, y), line, font=F_TITLE, fill=(255, 255, 255, alpha))
-        y += 100
-    ld.text((x0, y + 6), scene["kicker"], font=F_KICK, fill=(255, 190, 150, alpha))
-    if scene.get("outro"):
-        ld.text((x0, y + 90), "github.com/WadimAs/Calc-stl/releases", font=F_SMALL, fill=(220, 220, 230, alpha))
-    # Subtitles (bottom left).
-    if sub_lines:
-        sy = H - 90 - 46 * len(sub_lines)
-        box_w = max(F_SUB.getlength(l) for l in sub_lines) + 48
-        ld.rounded_rectangle([x0 - 24, sy - 18, x0 - 24 + box_w, sy + 46 * len(sub_lines) + 10], radius=18, fill=(0, 0, 0, 150))
-        for l in sub_lines:
-            ld.text((x0, sy), l, font=F_SUB, fill=(245, 245, 250, 255))
-            sy += 46
+    a = int(255 * appear)
+
+    if q:
+        # Dark veil and the big question.
+        ld.rectangle([0, 0, W, H], fill=(14, 10, 18, int(170 * appear)))
+        y = 560 - int((1 - appear) * 60)
+        if LOGO_IMG is not None:
+            lg = LOGO_IMG.resize((200, 200), Image.LANCZOS)
+            layer.alpha_composite(lg, (int(W / 2 - 100), y - 260))
+        for line in scene["title"].split("\n"):
+            centered(ld, y, line, F_Q, (255, 255, 255, a), 6, (0, 0, 0, a))
+            y += 140
+        # Yes / No buttons pulse in after the question is asked.
+        b = ease((t - 2.0) / 0.5)
+        if b > 0:
+            pulse = 1 + 0.04 * math.sin(t * 5)
+            for i, (lbl, col) in enumerate([("ТАК", (46, 170, 90)), ("НІ", (210, 60, 60))]):
+                bw, bh = int(300 * pulse), int(130 * pulse)
+                bx = int(W / 2 + (-1 if i == 0 else 1) * 185 - bw / 2)
+                by = int(y + 70 - bh / 2 + 65 + (1 - b) * 80)
+                ld.rounded_rectangle([bx, by, bx + bw, by + bh], radius=34, fill=col + (int(255 * b),))
+                tw = F_Q2.getlength(lbl)
+                ld.text((bx + (bw - tw) / 2, by + bh / 2 - 34), lbl, font=F_Q2, fill=(255, 255, 255, int(255 * b)))
+        c = ease((t - 3.0) / 0.5)
+        if c > 0:
+            centered(ld, y + 330, "Пишіть у коментарях ↓", F_Q2, (255, 200, 160, int(255 * c)))
+    else:
+        # Headline on top.
+        y = 120 - int((1 - appear) * 40)
+        ld.rounded_rectangle([W / 2 - 50, y - 26, W / 2 + 50, y - 18], radius=4, fill=ACCENT + (a,))
+        for line in scene["title"].split("\n"):
+            centered(ld, y, line, F_TITLE, (255, 255, 255, a))
+            y += 98
+        if scene["kicker"]:
+            centered(ld, y + 8, scene["kicker"], F_KICK, (255, 190, 150, a))
+
+    # Captions: big, centered, stroked, in the lower third (above TikTok's own UI).
+    if caption:
+        lines = wrap(caption, F_CAP, 940)
+        cy = 1330 - 40 * (len(lines) - 1)
+        for line in lines:
+            w = F_CAP.getlength(line)
+            pad = 22
+            ld.rounded_rectangle([(W - w) / 2 - pad, cy - 6, (W + w) / 2 + pad, cy + 86], radius=20,
+                                 fill=(0, 0, 0, 120))
+            centered(ld, cy, line, F_CAP, (255, 255, 255, 255), 5, (0, 0, 0, 255))
+            cy += 96
+
+    # Thin progress bar at the very top.
+    ld.rectangle([0, 0, int(W * global_t / total), 6], fill=ACCENT + (230,))
     img.paste(layer, (0, 0), layer)
     return img
 
 
-def sentences(text):
-    out, cur = [], ""
-    for ch in text:
-        cur += ch
-        if ch in ".!?—" and len(cur.strip()) > 25 and ch != "—":
-            out.append(cur.strip())
-            cur = ""
-    if cur.strip():
-        out.append(cur.strip())
+def chunks(words, max_chars=20):
+    """Groups (start, end, word) into caption chunks of a few words."""
+    out, cur = [], []
+    for w in words:
+        text = " ".join(x[2] for x in cur + [w])
+        if cur and (len(text) > max_chars or cur[-1][2][-1] in ".,?!:—"):
+            out.append(cur)
+            cur = [w]
+        else:
+            cur.append(w)
+    if cur:
+        out.append(cur)
+    return [(c[0][0], c[-1][1], " ".join(x[2] for x in c)) for c in out]
+
+
+def estimate_words(text, speech):
+    ws = text.split()
+    total = sum(len(w) + 1 for w in ws)
+    acc, out = 0.0, []
+    for w in ws:
+        d = speech * (len(w) + 1) / total
+        out.append((acc, acc + d, w))
+        acc += d
     return out
 
 
 async def tts(text, path):
     import edge_tts
 
-    await edge_tts.Communicate(text, VOICE, rate="+4%").save(path)
+    words = []
+    try:
+        com = edge_tts.Communicate(text, VOICE, rate=RATE, boundary="WordBoundary")
+    except TypeError:
+        com = edge_tts.Communicate(text, VOICE, rate=RATE)
+    with open(path, "wb") as fh:
+        async for ch in com.stream():
+            if ch["type"] == "audio":
+                fh.write(ch["data"])
+            elif ch["type"] == "WordBoundary":
+                s = ch["offset"] / 1e7
+                words.append((s, s + ch["duration"] / 1e7, ch["text"]))
+    return words
 
 
 def duration(path):
@@ -238,71 +288,88 @@ def duration(path):
     return float(json.loads(r.stdout)["format"]["duration"])
 
 
+def attach_punct(words, text):
+    """Edge returns words without punctuation; take the original tokens instead when counts match."""
+    toks = [t for t in text.split() if any(ch.isalnum() for ch in t)]
+    if len(toks) == len(words):
+        return [(s, e, t) for (s, e, _), t in zip(words, toks)]
+    return words
+
+
 def main():
-    global BG
+    global BG, LOGO_IMG
     shots_dir, out = sys.argv[1], sys.argv[2]
     silent = "--silent" in sys.argv
+    only = os.environ.get("PROMO_ONLY")  # e.g. "7" renders one scene for previews
     BG = background()
+    if os.path.exists(LOGO):
+        LOGO_IMG = Image.open(LOGO).convert("RGBA")
     tmp = tempfile.mkdtemp()
-    audio_parts = []
-    timeline = []
-    for i, sc in enumerate(SCENES):
+    audio_parts, timeline = [], []
+    scenes = [SCENES[int(only)]] if only else SCENES
+    for i, sc in enumerate(scenes):
         wav = os.path.join(tmp, f"s{i}.wav")
         if silent:
-            dur = max(3.0, len(sc["say"]) / 14.0)
+            speech = max(2.5, len(sc["say"]) / 15.5)
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
-                            "-t", f"{dur:.2f}", wav], check=True)
+                            "-t", f"{speech:.2f}", wav], check=True)
+            words = estimate_words(sc["say"], speech)
         else:
             mp3 = os.path.join(tmp, f"s{i}.mp3")
-            asyncio.run(tts(sc["say"], mp3))
+            words = asyncio.run(tts(sc["say"], mp3))
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", mp3, "-ar", "24000", "-ac", "1", wav], check=True)
-        speech = duration(wav)
-        lead, tail = 0.5, 0.9
+            speech = duration(wav)
+            words = attach_punct(words, sc["say"]) if words else estimate_words(sc["say"], speech)
+        lead = 0.25
+        tail = 2.6 if sc.get("question") else 0.35
         padded = os.path.join(tmp, f"p{i}.wav")
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", wav, "-af",
-                        f"adelay={int(lead * 1000)},apad=pad_dur={tail}", "-ar", "24000", "-ac", "1", padded], check=True)
+                        f"adelay={int(lead * 1000)},apad=pad_dur={tail}", "-ar", "24000", "-ac", "1", padded],
+                       check=True)
         dur = duration(padded)
         audio_parts.append(padded)
-        timeline.append((sc, dur, speech, lead))
+        caps = [(s + lead, e + lead, txt) for s, e, txt in chunks(words)]
+        timeline.append((sc, dur, caps))
+        print(f"scene {i}: {dur:.1f}s, {len(words)} words", flush=True)
 
-    # Video frames → ffmpeg.
+    total = sum(t[1] for t in timeline)
     video = os.path.join(tmp, "video.mp4")
     proc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
-                             "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+                             "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "19",
                              "-pix_fmt", "yuv420p", video], stdin=subprocess.PIPE)
-    for sc, dur, speech, lead in timeline:
+    gt = 0.0
+    for sc, dur, caps in timeline:
         phones = []
         for name in sc["shots"]:
             p = os.path.join(shots_dir, name + ".png")
-            shot = Image.open(p).convert("RGB") if os.path.exists(p) else Image.new("RGB", (540, 1200), (40, 40, 40))
-            phones.append(phone(shot, 1.0))
+            shot = Image.open(p).convert("RGB") if os.path.exists(p) else Image.new("RGB", (540, 1169), (40, 40, 40))
+            phones.append(phone(shot))
         shadow = make_shadow(phones[0])
-        parts = sentences(sc["say"])
-        # Subtitle timing proportional to characters.
-        total_chars = sum(len(p) for p in parts) or 1
-        spans, acc = [], lead
-        for p in parts:
-            dt = speech * len(p) / total_chars
-            spans.append((acc, acc + dt, wrap(p, F_SUB, 900)))
-            acc += dt
         n = int(round(dur * FPS))
         for f in range(n):
             t = f / FPS
-            lines = next((s[2] for s in spans if s[0] <= t < s[1] + 0.25), [])
-            proc.stdin.write(frame(sc, phones, shadow, t, dur, lines).convert("RGB").tobytes())
+            cap = None
+            for k, (s, e, txt) in enumerate(caps):
+                nxt = caps[k + 1][0] if k + 1 < len(caps) else e + 0.6
+                if s <= t < nxt:
+                    cap = txt
+                    break
+            proc.stdin.write(frame(sc, phones, shadow, t, dur, cap, gt + t, total).convert("RGB").tobytes())
+        gt += dur
     proc.stdin.close()
     proc.wait()
 
-    # Audio concat and mux.
     lst = os.path.join(tmp, "list.txt")
     with open(lst, "w") as fh:
         for p in audio_parts:
             fh.write(f"file '{p}'\n")
     audio = os.path.join(tmp, "audio.wav")
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", audio], check=True)
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", video, "-i", audio, "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
-                    "-shortest", out], check=True)
-    print("video", out, f"{sum(t[1] for t in timeline):.1f}s")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", audio],
+                   check=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", video, "-i", audio, "-c:v", "copy", "-c:a", "aac",
+                    "-b:a", "160k", "-af", "loudnorm=I=-14:TP=-1.5", "-shortest", "-movflags", "+faststart", out],
+                   check=True)
+    print("video", out, f"{total:.1f}s")
 
 
 if __name__ == "__main__":
