@@ -10,6 +10,12 @@ sleep 8
 adb shell input keyevent KEYCODE_WAKEUP || true
 adb shell wm dismiss-keyguard || true
 adb shell input keyevent 82 || true
+# No system "isn't responding" dialogs over the recording (the slow software
+# GPU makes the launcher time out); the launcher itself is not needed.
+adb shell settings put global hide_error_dialogs 1 || true
+adb shell settings put secure anr_show_background 0 || true
+adb shell pm disable-user --user 0 com.google.android.apps.nexuslauncher >/dev/null 2>&1 || true
+adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
 # Clean status bar (demo mode): 12:00, full battery and signal, no notifications.
 adb shell settings put global sysui_demo_allowed 1
 for c in "clock -e hhmm 1200" "battery -e level 100 -e plugged false" "network -e wifi show -e level 4 -e mobile show -e datatype none -e level 4" "notifications -e visible false"; do

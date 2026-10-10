@@ -59,7 +59,7 @@ SCENES = [
     {
         "title": "Чесна ціна",
         "kicker": "пластик · світло · знос · заробіток",
-        "media": ["shot:05_result", "shot:09_settings_cost"],
+        "media": ["clip:cost"],
         "say": "У ціні — пластик, світло, знос принтера і ваш заробіток. А файли з Bambu Studio чи Orca дають точні цифри слайсера.",
     },
     {
@@ -83,7 +83,7 @@ SCENES = [
     {
         "title": "Ваша справа",
         "kicker": "статистика · прайс · автокопія",
-        "media": ["shot:37_stats_after", "shot:22_catalog"],
+        "media": ["clip:business"],
         "say": "Статистика покаже виручку, витрати й прибуток. А ще прайс-лист, клієнти й автокопія на Google Диск.",
     },
     {
@@ -106,6 +106,7 @@ FALLBACK_SHOT = {
     "open": "04_model", "rotate": "04_model", "holes": "04_model", "infill": "05_result",
     "supports": "06_layers", "layers": "06_layers", "order": "13_order", "pdf": "17_invoice",
     "ocr": "32b_label_ocr", "printers": "33a_printer_kinds", "print": "32e_print_finished", "lang": "42_en_model",
+    "cost": "09_settings_cost", "business": "37_stats_after",
 }
 
 INTER = "/usr/share/fonts/opentype/inter/"

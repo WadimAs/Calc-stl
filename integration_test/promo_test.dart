@@ -95,12 +95,30 @@ void main() {
       await settle(500);
     }
 
+    bool onScreen(Finder f) {
+      if (f.evaluate().isEmpty) return false;
+      final r = tester.getRect(f.first);
+      final size = tester.view.physicalSize / tester.view.devicePixelRatio;
+      return r.top >= 60 && r.bottom <= size.height - 40;
+    }
+
+    /// Scrolls smoothly (down first, then up) until [f] is on screen.
     Future<void> glideTo(Finder f) async {
-      for (int i = 0; i < 20 && f.evaluate().isEmpty; i++) {
+      for (int i = 0; i < 12 && !onScreen(f); i++) {
         await glide(-350, ms: 500);
       }
+      for (int i = 0; i < 24 && !onScreen(f); i++) {
+        await glide(350, ms: 500);
+      }
+      await waitFor(f, seconds: 5);
       await tester.ensureVisible(f.first);
       await settle(500);
+    }
+
+    Future<void> toTop() async {
+      for (int i = 0; i < 6; i++) {
+        await glide(900, ms: 350);
+      }
     }
 
     Finder inDialog(Finder f) => find.descendant(of: find.byType(AlertDialog), matching: f);
@@ -136,21 +154,27 @@ void main() {
       await settle(300);
       // Two-finger zoom in.
       final g1 = await tester.startGesture(c + const Offset(-40, 0));
-      final g2 = await tester.startGesture(c + const Offset(40, 0), pointer: 7);
-      for (int i = 0; i < 20; i++) {
-        await g1.moveBy(const Offset(-5, 0));
-        await g2.moveBy(const Offset(5, 0));
-        await tester.pump(const Duration(milliseconds: 40));
+      final g2 = await tester.startGesture(c + const Offset(40, 0));
+      try {
+        for (int i = 0; i < 20; i++) {
+          await g1.moveBy(const Offset(-5, 0));
+          await g2.moveBy(const Offset(5, 0));
+          await tester.pump(const Duration(milliseconds: 40));
+        }
+      } finally {
+        await g1.up();
+        await g2.up();
       }
-      await g1.up();
-      await g2.up();
       await settle(1000);
     });
 
     await clip('holes', () async {
       await tap(find.byTooltip('Вимірювання'));
       await tap(find.text('Отвори'), after: 300);
-      await settle(2500);
+      await settle(2800);
+      if (find.byTooltip('Закрити вимірювання').evaluate().isNotEmpty) {
+        await tap(find.byTooltip('Закрити вимірювання'), after: 400);
+      }
     });
 
     await clip('infill', () async {
@@ -168,20 +192,29 @@ void main() {
       }
       await g.up();
       await settle(1500);
-      await glide(700, ms: 1000);
+      await settle(800);
+      await toTop();
+    });
+
+    await clip('cost', () async {
+      await tap(find.byTooltip('Налаштування'), after: 1200);
+      await glide(-700, ms: 1200);
+      await settle(600);
+      await glide(-900, ms: 1300);
       await settle(1500);
+      await home();
     });
 
     await clip('supports', () async {
       HomePage.debugOpen!(PickedFile('bracket.stl', bracketStl()));
-      await waitFor(find.text('Підігнати під слайсер'), seconds: 60);
-      await settle(800);
+      await waitFor(find.text('До замовлення'), seconds: 60);
+      await settle(2000);
       final sw = find.widgetWithText(SwitchListTile, 'Підтримки');
       await glideTo(sw);
-      await tap(sw, after: 600);
-      await tap(find.text('Деревоподібні'), after: 600);
-      await waitFor(find.text('Підігнати під слайсер'), seconds: 60);
-      await settle(1500);
+      await tap(sw, after: 800);
+      await glideTo(find.text('Деревоподібні'));
+      await tap(find.text('Деревоподібні'), after: 3000);
+      await toTop();
     });
 
     await clip('layers', () async {
@@ -205,6 +238,8 @@ void main() {
       await glideTo(find.text('До замовлення'));
       await tap(find.text('До замовлення'));
       await tap(find.text('Нове замовлення'));
+      await waitFor(find.text('Новий клієнт'));
+      await settle(600);
       await tap(find.text('Новий клієнт'));
       final fields = inDialog(find.byType(TextField));
       await tester.enterText(fields.at(0), 'Оля Тестова');
@@ -212,7 +247,8 @@ void main() {
       await tester.enterText(fields.at(1), '+380501234567');
       await settle(400);
       await tap(inDialog(find.text('Зберегти')), after: 1200);
-      await tap(find.text('Відкрити'), after: 1200);
+      await waitFor(find.text('Відкрити'), seconds: 8);
+      await tap(find.text('Відкрити'), after: 1500);
       await glide(-500);
       await settle(600);
     });
@@ -252,6 +288,17 @@ void main() {
       await tap(find.text('Списати'), after: 1200);
       await menu('Котушки');
       await settle(1800);
+      await home();
+    });
+
+    await clip('business', () async {
+      await menu('Замовлення');
+      await settle(1800);
+      await home();
+      await menu('Статистика');
+      await settle(1500);
+      await glide(-500, ms: 1200);
+      await settle(1500);
       await home();
     });
 
