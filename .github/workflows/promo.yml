@@ -7,11 +7,18 @@ on:
         description: "Edge TTS voice (if no ElevenLabs key)"
         default: "uk-UA-OstapNeural"
       eleven_voice:
-        description: "ElevenLabs voice_id (default: Evgeniy Shevchenko)"
-        default: "Ntd0iVwICtUtA6Fvx27M"
+        description: "ElevenLabs voice_id (default: Alex Nekrasov)"
+        default: "9Sj8ugvpK1DmcAXyvi3a"
       eleven_model:
         description: "ElevenLabs model"
         default: "eleven_multilingual_v2"
+      new_music:
+        description: "Generate new background music (otherwise reuse the last one)"
+        type: boolean
+        default: false
+      music_prompt:
+        description: "Music prompt (empty = default upbeat tech promo)"
+        default: ""
 
 permissions:
   contents: write
@@ -37,6 +44,18 @@ jobs:
           if gh release download promo-clips -p promo-clips.zip -R ${{ github.repository }}; then
             mkdir clips && cd clips && unzip -q ../promo-clips.zip && ls -la && cat marks.txt
           fi
+      - name: Music
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          PROMO_MUSIC_PROMPT: ${{ inputs.music_prompt }}
+        run: |
+          if [ "${{ inputs.new_music }}" != "true" ] && gh release download promo-video -p music.mp3 -R ${{ github.repository }}; then
+            echo "reusing music.mp3"
+          elif [ -n "$ELEVENLABS_API_KEY" ]; then
+            python3 tool/promo/music.py music.mp3 150 || rm -f music.mp3
+          fi
+          ls -la music.mp3 || true
       - name: Render
         env:
           PROMO_VOICE: ${{ inputs.voice }}
@@ -46,6 +65,7 @@ jobs:
         run: |
           d=shots; [ -f shots/04_model.png ] || d=$(dirname "$(find shots -name 04_model.png | head -1)")
           [ -d clips ] && export PROMO_CLIPS=$PWD/clips
+          [ -s music.mp3 ] && export PROMO_MUSIC=$PWD/music.mp3
           if [ -n "$ELEVENLABS_API_KEY" ]; then echo "voice: ElevenLabs ${ELEVEN_MODEL} ${ELEVEN_VOICE:-George}" > render.log; else echo "voice: Edge $PROMO_VOICE (no ElevenLabs key)" > render.log; fi
           python3 tool/promo/make_video.py "$d" promo.mp4 2>&1 | tee -a render.log
           test -s promo.mp4
@@ -59,4 +79,5 @@ jobs:
           files: |
             promo.mp4
             render.log
+            music.mp3
           body: Промо-відео застосунку (згенеровано автоматично).

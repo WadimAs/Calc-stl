@@ -311,6 +311,9 @@ def load_marks(clips_dir):
     return marks
 
 
+END_FADE = 0.9  # seconds of fade to black at the end
+MUSIC_VOL = float(os.environ.get("PROMO_MUSIC_VOL", "0.22"))  # music level under the voice
+MUSIC_FADE = 3.5  # seconds of music fade-out at the end
 MAX_SPEED = 2.5  # fastest playback of a screen recording
 MAX_SCENE = 11.0  # longest scene stretched for a recording, seconds
 REC_LATENCY = float(os.environ.get("PROMO_REC_LATENCY", "0.6"))
@@ -592,7 +595,7 @@ def main():
                 words = attach_punct(words, sc["say"])
             words = words or estimate_words(sc["say"], speech)
         lead = 0.2
-        tail = 2.6 if sc.get("question") else 0.35
+        tail = 4.2 if sc.get("question") else 0.35
         # Let the recording play out a bit after the voice when it needs more time.
         tail = max(tail, clip_need(sc) - speech - lead)
         padded = os.path.join(tmp, f"p{i}.wav")
@@ -640,7 +643,11 @@ def main():
                 if s <= t < nxt:
                     cap = txt
                     break
-            proc.stdin.write(frame(sc, phones, shadow, t, dur, cap, gt + t, total).convert("RGB").tobytes())
+            img = frame(sc, phones, shadow, t, dur, cap, gt + t, total).convert("RGB")
+            left = total - (gt + t)
+            if left < END_FADE:  # gentle fade to black at the very end
+                img = Image.blend(Image.new("RGB", img.size), img, max(0.0, left / END_FADE))
+            proc.stdin.write(img.tobytes())
         gt += dur
     proc.stdin.close()
     proc.wait()
@@ -652,9 +659,25 @@ def main():
     audio = os.path.join(tmp, "audio.wav")
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", audio],
                    check=True)
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", video, "-i", audio, "-c:v", "copy", "-c:a", "aac",
-                    "-b:a", "160k", "-af", "loudnorm=I=-14:TP=-1.5", "-shortest", "-movflags", "+faststart", out],
-                   check=True)
+    music = os.environ.get("PROMO_MUSIC", "")
+    if music and os.path.exists(music):
+        # Music loops under the voice, ducks while the voice speaks (sidechain)
+        # and fades in/out with the picture; the voice itself is untouched.
+        fade_st = max(0.0, total - MUSIC_FADE)
+        graph = (
+            "[1:a]aresample=44100,aformat=channel_layouts=stereo,asplit=2[v][key];"
+            f"[2:a]aresample=44100,aformat=channel_layouts=stereo,atrim=0:{total:.2f},asetpts=N/SR/TB,"
+            f"volume={MUSIC_VOL},afade=t=in:d=1.2,afade=t=out:st={fade_st:.2f}:d={MUSIC_FADE}[m];"
+            "[m][key]sidechaincompress=threshold=0.02:ratio=6:attack=30:release=600:makeup=1[duck];"
+            "[v][duck]amix=inputs=2:duration=first:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=9[a]")
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", video, "-i", audio, "-stream_loop", "-1", "-i", music,
+                        "-filter_complex", graph, "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-c:a", "aac",
+                        "-b:a", "192k", "-t", f"{total:.2f}", "-movflags", "+faststart", out], check=True)
+        print("music", music, flush=True)
+    else:
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", video, "-i", audio, "-c:v", "copy", "-c:a", "aac",
+                        "-b:a", "160k", "-af", "loudnorm=I=-14:TP=-1.5", "-shortest", "-movflags", "+faststart", out],
+                       check=True)
     print("video", out, f"{total:.1f}s")
 
 
