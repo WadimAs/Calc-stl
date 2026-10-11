@@ -9,7 +9,11 @@ import urllib.error
 import urllib.request
 
 KEY = os.environ["ELEVENLABS_API_KEY"].strip()
-PROMPT = os.environ.get("PROMO_MUSIC_PROMPT", "").strip() or (
+ENERGETIC = (
+    "High-energy upbeat electronic track for a fast TikTok tech product promo. 128 BPM, punchy kick and claps, "
+    "driving bassline, bright synth stabs and arpeggios, exciting and confident, builds energy from the first "
+    "second, no vocals, ends with a clean final hit.")
+PROMPT = os.environ.get("PROMO_MUSIC_PROMPT", "").strip() or (ENERGETIC if os.environ.get("PROMO_CUT") == "short" else None) or (
     "Upbeat modern electronic background music for a tech product promo video. "
     "Light driving beat, warm synth chords, soft plucks, positive and confident mood, "
     "steady energy without drops, no vocals, smooth gentle ending.")

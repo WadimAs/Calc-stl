@@ -101,6 +101,56 @@ SCENES = [
     },
 ]
 
+# Short, fast cut (PROMO_CUT=short): ~45 s for TikTok.
+SCENES_SHORT = [
+    {
+        "title": "Скільки коштує\nваш 3D-друк?",
+        "kicker": "STL Вага — рахує телефон",
+        "media": ["clip:open"],
+        "say": "Скільки насправді коштує ваш 3D-друк? Мій застосунок рахує це за секунди.",
+    },
+    {
+        "title": "Модель → ціна",
+        "kicker": "вага · час · вартість",
+        "media": ["clip:rotate", "clip:infill"],
+        "say": "Відкрили модель — і одразу бачите вагу, час друку й ціну.",
+    },
+    {
+        "title": "Як у слайсері",
+        "kicker": "шари · підтримки · дерева",
+        "media": ["clip:supports", "clip:layers"],
+        "say": "Справжнє нарізання: шари, підтримки, навіть деревоподібні.",
+    },
+    {
+        "title": "Замовлення і PDF",
+        "kicker": "клієнти · рахунки",
+        "media": ["clip:order", "clip:pdf"],
+        "say": "Замовлення з клієнтом і рахунок у PDF — в один дотик.",
+    },
+    {
+        "title": "Котушки з фото",
+        "kicker": "розпізнавання етикетки",
+        "media": ["clip:ocr", "clip:ocr2"],
+        "say": "Котушку додаєте просто фото етикетки.",
+    },
+    {
+        "title": "Bambu Lab і Klipper",
+        "kicker": "автосписання пластику",
+        "media": ["clip:print"],
+        "say": "А після друку пластик списується сам.",
+    },
+    {
+        "title": "Випускати\nдля всіх?",
+        "kicker": "",
+        "media": ["shot:05_result"],
+        "say": "Випускати застосунок для всіх? Пишіть у коментарях!",
+        "question": True,
+    },
+]
+SHORT = os.environ.get("PROMO_CUT", "") == "short"
+if SHORT:
+    SCENES = SCENES_SHORT
+
 # Screenshot used when a recording is missing.
 FALLBACK_SHOT = {
     "open": "04_model", "rotate": "04_model", "holes": "04_model", "infill": "05_result",
@@ -312,10 +362,11 @@ def load_marks(clips_dir):
 
 
 END_FADE = 0.9  # seconds of fade to black at the end
-MUSIC_VOL = float(os.environ.get("PROMO_MUSIC_VOL", "0.22"))  # music level under the voice
+MUSIC_VOL = float(os.environ.get("PROMO_MUSIC_VOL", "0.28" if SHORT else "0.22"))  # music level under the voice
 MUSIC_FADE = 3.5  # seconds of music fade-out at the end
-MAX_SPEED = 2.5  # fastest playback of a screen recording
-MAX_SCENE = 11.0  # longest scene stretched for a recording, seconds
+MAX_SPEED = 3.5 if SHORT else 2.5  # fastest playback of a screen recording
+MAX_SCENE = 5.5 if SHORT else 11.0  # longest scene stretched for a recording, seconds
+VOICE_SPEED = float(os.environ.get("PROMO_SPEED", "1.1" if SHORT else "1.0"))
 REC_LATENCY = float(os.environ.get("PROMO_REC_LATENCY", "0.6"))
 
 
@@ -483,7 +534,8 @@ def eleven(text, path, prev="", nxt=""):
     body = {
         "text": text,
         "model_id": EL_MODEL,
-        "voice_settings": {"stability": 0.45, "similarity_boost": 0.8, "style": 0.25, "use_speaker_boost": True},
+        "voice_settings": {"stability": 0.45, "similarity_boost": 0.8, "style": 0.3 if SHORT else 0.25,
+                           "use_speaker_boost": True, "speed": VOICE_SPEED},
     }
     if EL_MODEL != "eleven_v3":
         body["previous_text"], body["next_text"] = prev, nxt
@@ -594,8 +646,8 @@ def main():
             if not EL_KEY:
                 words = attach_punct(words, sc["say"])
             words = words or estimate_words(sc["say"], speech)
-        lead = 0.2
-        tail = 4.2 if sc.get("question") else 0.35
+        lead = 0.1 if SHORT else 0.2
+        tail = (3.4 if SHORT else 4.2) if sc.get("question") else (0.12 if SHORT else 0.35)
         # Let the recording play out a bit after the voice when it needs more time.
         tail = max(tail, clip_need(sc) - speech - lead)
         padded = os.path.join(tmp, f"p{i}.wav")

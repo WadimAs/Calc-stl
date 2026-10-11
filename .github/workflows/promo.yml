@@ -3,6 +3,11 @@ name: Promo video
 on:
   workflow_dispatch:
     inputs:
+      cut:
+        description: "long (~1:45) or short (~45 s, faster, energetic music)"
+        type: choice
+        options: [long, short]
+        default: long
       voice:
         description: "Edge TTS voice (if no ElevenLabs key)"
         default: "uk-UA-OstapNeural"
@@ -49,27 +54,34 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           PROMO_MUSIC_PROMPT: ${{ inputs.music_prompt }}
+          PROMO_CUT: ${{ inputs.cut }}
         run: |
-          if [ "${{ inputs.new_music }}" != "true" ] && gh release download promo-video -p music.mp3 -R ${{ github.repository }}; then
-            echo "reusing music.mp3"
+          m=music.mp3; len=150
+          [ "$PROMO_CUT" = "short" ] && m=music-short.mp3 && len=60
+          if [ "${{ inputs.new_music }}" != "true" ] && gh release download promo-video -p $m -R ${{ github.repository }}; then
+            echo "reusing $m"
           elif [ -n "$ELEVENLABS_API_KEY" ]; then
-            python3 tool/promo/music.py music.mp3 150 || rm -f music.mp3
+            python3 tool/promo/music.py $m $len || rm -f $m
           fi
-          ls -la music.mp3 || true
+          ls -la $m || true
       - name: Render
         env:
           PROMO_VOICE: ${{ inputs.voice }}
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           ELEVEN_VOICE: ${{ inputs.eleven_voice }}
           ELEVEN_MODEL: ${{ inputs.eleven_model }}
+          PROMO_CUT: ${{ inputs.cut }}
         run: |
           d=shots; [ -f shots/04_model.png ] || d=$(dirname "$(find shots -name 04_model.png | head -1)")
           [ -d clips ] && export PROMO_CLIPS=$PWD/clips
-          [ -s music.mp3 ] && export PROMO_MUSIC=$PWD/music.mp3
+          m=music.mp3; out=promo.mp4
+          [ "$PROMO_CUT" = "short" ] && m=music-short.mp3 && out=promo-short.mp4
+          [ -s $m ] && export PROMO_MUSIC=$PWD/$m
           if [ -n "$ELEVENLABS_API_KEY" ]; then echo "voice: ElevenLabs ${ELEVEN_MODEL} ${ELEVEN_VOICE:-George}" > render.log; else echo "voice: Edge $PROMO_VOICE (no ElevenLabs key)" > render.log; fi
-          python3 tool/promo/make_video.py "$d" promo.mp4 2>&1 | tee -a render.log
-          test -s promo.mp4
-          ls -la promo.mp4
+          python3 tool/promo/make_video.py "$d" $out 2>&1 | tee -a render.log
+          test -s $out
+          ls -la $out
+          [ "$PROMO_CUT" = "short" ] && mv render.log render-short.log || true
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: promo-video
@@ -77,7 +89,7 @@ jobs:
           prerelease: true
           make_latest: false
           files: |
-            promo.mp4
-            render.log
-            music.mp3
+            promo*.mp4
+            render*.log
+            music*.mp3
           body: Промо-відео застосунку (згенеровано автоматично).
