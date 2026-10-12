@@ -1,0 +1,26 @@
+name: Edit release notes
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (build-N)"
+        required: true
+      body:
+        description: "New release notes (markdown)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  edit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Edit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BODY: ${{ inputs.body }}
+        run: |
+          printf '%s' "$BODY" > notes.md
+          gh release edit "${{ inputs.tag }}" -R "${{ github.repository }}" --notes-file notes.md
