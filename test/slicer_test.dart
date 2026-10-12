@@ -1302,19 +1302,14 @@ void main() {
     });
   });
 
-  test('usage stats from the server', () {
-    final s = UsageStats.fromJson({
-      'online': 3, 'day': 12, 'week': 40, 'month': 75, 'total': 120, 'newWeek': 9,
-      'daily': [{'day': '2026-10-11', 'n': 10}, {'day': '2026-10-12', 'n': 12}],
-      'versions': [{'v': '1.0 (83)', 'n': 50}],
-      'countries': [{'c': 'UA', 'n': 70}],
-      'at': 0,
-    })!;
-    expect(s.online, 3);
-    expect(s.total, 120);
-    expect(s.daily.last, ('2026-10-12', 12));
-    expect(s.versions.first.$1, '1.0 (83)');
-    expect(UsageStats.fromJson({'error': 'forbidden'}), isNull);
+  test('usage counter keys (UTC day / hour)', () {
+    final t = DateTime.utc(2026, 10, 12, 7, 5);
+    expect(Usage.dayKey(t), 'd-2026-10-12');
+    expect(Usage.hourKey(t), 'h-2026-10-12-07');
+    final s = UsageStats(installs: 5, now: 1, today: 2, days: [
+      for (int i = 0; i < 14; i++) (t.subtract(Duration(days: 13 - i)), i < 7 ? 100 : 1),
+    ]);
+    expect(s.week, 7);
   });
 }
 

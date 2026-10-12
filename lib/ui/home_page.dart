@@ -98,8 +98,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     HomePage.debugOpen = _open;
     WidgetsBinding.instance.addObserver(this);
     if (!Updates.disabled) Usage.start();
-    Usage.adminKey().then((k) {
-      if (mounted) setState(() => _usageAdmin = k.isNotEmpty);
+    Usage.admin().then((a) {
+      if (mounted) setState(() => _usageAdmin = a);
     });
     AutoBackup.settingsSource = () => _settings;
     onJsonWrite = (name) {
@@ -727,8 +727,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (Updates.disabled) return;
     if (state == AppLifecycleState.resumed) {
       Usage.start();
-      Usage.adminKey().then((k) {
-        if (mounted && _usageAdmin != k.isNotEmpty) setState(() => _usageAdmin = k.isNotEmpty);
+      Usage.admin().then((a) {
+        if (mounted && _usageAdmin != a) setState(() => _usageAdmin = a);
       });
     } else if (state == AppLifecycleState.paused) {
       Usage.pause();
@@ -922,8 +922,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _openSettings() async {
     await showSettingsSheet(context, _settings, _updateSettings);
-    final k = await Usage.adminKey();
-    if (mounted && _usageAdmin != k.isNotEmpty) setState(() => _usageAdmin = k.isNotEmpty);
+    final a = await Usage.admin();
+    if (mounted && _usageAdmin != a) setState(() => _usageAdmin = a);
   }
 
   void _openHistory() {

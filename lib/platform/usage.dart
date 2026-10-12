@@ -1,85 +1,46 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
-
-import 'package:flutter/services.dart';
 
 import '../data/json_store.dart';
 import '../i18n/i18n.dart';
-import 'updates.dart';
 
-/// Numbers from the stats server (author only).
+/// Numbers from the public counter (author only).
 class UsageStats {
-  final int online, day, week, month, total, newWeek;
-  final List<(String, int)> daily, versions, countries;
-  final DateTime at;
+  final int installs, now, today;
+  final List<(DateTime, int)> days; // last 14 days, oldest first
 
-  const UsageStats({
-    required this.online,
-    required this.day,
-    required this.week,
-    required this.month,
-    required this.total,
-    required this.newWeek,
-    required this.daily,
-    required this.versions,
-    required this.countries,
-    required this.at,
-  });
+  const UsageStats({required this.installs, required this.now, required this.today, required this.days});
 
-  static UsageStats? fromJson(Object? j) {
-    if (j is! Map || j['total'] is! num) return null;
-    int n(String k) => (j[k] as num?)?.toInt() ?? 0;
-    List<(String, int)> rows(String k, String name) => [
-          for (final r in (j[k] as List? ?? const []))
-            if (r is Map) ('${r[name] ?? ''}', (r['n'] as num?)?.toInt() ?? 0),
-        ];
-    return UsageStats(
-      online: n('online'),
-      day: n('day'),
-      week: n('week'),
-      month: n('month'),
-      total: n('total'),
-      newWeek: n('newWeek'),
-      daily: rows('daily', 'day'),
-      versions: rows('versions', 'v'),
-      countries: rows('countries', 'c'),
-      at: DateTime.fromMillisecondsSinceEpoch(n('at')),
-    );
-  }
+  int get week => days.reversed.take(7).fold(0, (a, d) => a + d.$2);
 }
 
-/// Anonymous usage counter: a random install id and the app version are sent
-/// when the app starts and every few minutes while it is open. Nothing else.
+/// Anonymous usage counter on the free public Abacus service (no account,
+/// no personal data): every install adds +1 to "installs" once, to the
+/// day's counter once a day and to the hour's counter once an hour while open.
 class Usage {
+  static const _base = 'https://abacus.jasoncameron.dev';
+  static const _ns = 'stl-vaga-wadimas';
   static const _file = 'usage.json';
-  static const _interval = Duration(minutes: 5);
-  static String? _url;
   static Map<String, dynamic> _state = {};
+  static bool _loaded = false;
   static Timer? _timer;
 
-  /// Tests: never contact the server.
-  static bool disabled = false;
-
   static Future<void> _load() async {
-    if (_url == null) {
-      try {
-        _url = (await rootBundle.loadString('assets/stats_url.txt')).trim();
-      } catch (_) {
-        _url = '';
-      }
-    }
+    if (_loaded) return;
     final raw = await JsonStore.read(_file);
     _state = raw is Map ? Map<String, dynamic>.from(raw) : {};
-    if (_state['id'] is! String) {
-      final r = Random.secure();
-      _state['id'] = List.generate(16, (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
-      await JsonStore.write(_file, _state);
-    }
+    _loaded = true;
   }
 
-  static bool get configured => (_url ?? '').isNotEmpty;
+  static Future<void> _save() => JsonStore.write(_file, _state);
+
+  static String _d(DateTime t) => t.toIso8601String().substring(0, 10);
+  static String dayKey(DateTime t) => 'd-${_d(t.toUtc())}';
+  static String hourKey(DateTime t) {
+    final u = t.toUtc();
+    return 'h-${_d(u)}-${u.hour.toString().padLeft(2, '0')}';
+  }
 
   static Future<bool> enabled() async {
     await _load();
@@ -89,7 +50,7 @@ class Usage {
   static Future<void> setEnabled(bool on) async {
     await _load();
     _state['off'] = !on;
-    await JsonStore.write(_file, _state);
+    await _save();
     if (on) {
       start();
     } else {
@@ -97,68 +58,72 @@ class Usage {
     }
   }
 
-  /// Author's key for the stats screen ('' = not set).
-  static Future<String> adminKey() async {
+  /// The "Users" screen is shown in the menu (author only, 7 taps on the version).
+  static Future<bool> admin() async {
     await _load();
-    return _state['admin'] is String ? _state['admin'] as String : '';
+    return _state['admin'] == true;
   }
 
-  static Future<void> setAdminKey(String key) async {
+  static Future<void> setAdmin(bool on) async {
     await _load();
-    _state['admin'] = key.trim();
-    await JsonStore.write(_file, _state);
+    _state['admin'] = on;
+    await _save();
   }
 
-  /// Starts pinging (call once when the app opens).
+  /// Call when the app opens or comes back to the foreground.
   static Future<void> start() async {
-    if (disabled) return;
     await _load();
-    if (!configured || _state['off'] == true) return;
+    if (_state['off'] == true) return;
     _timer?.cancel();
-    unawaited(_ping());
-    _timer = Timer.periodic(_interval, (_) => _ping());
+    unawaited(_tick());
+    _timer = Timer.periodic(const Duration(minutes: 10), (_) => _tick());
   }
 
   static void pause() => _timer?.cancel();
 
-  static Future<void> _ping() async {
+  static Future<void> _tick() async {
+    final now = DateTime.now();
+    if (_state['installed'] != true && await _hit('installs')) _state['installed'] = true;
+    final d = dayKey(now), h = hourKey(now);
+    if (_state['day'] != d && await _hit(d)) _state['day'] = d;
+    if (_state['hour'] != h && await _hit(h)) _state['hour'] = h;
+    await _save();
+  }
+
+  static Future<Object?> _get(String path) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
     try {
-      final v = await Updates.installedName();
-      final req = await client.postUrl(Uri.parse('$_url/ping'));
-      req.headers.contentType = ContentType.json;
-      req.write(jsonEncode({'id': _state['id'], 'v': v, 'lang': lang}));
+      final req = await client.getUrl(Uri.parse('$_base/$path'));
       final res = await req.close().timeout(const Duration(seconds: 8));
-      await res.drain<void>();
+      final body = await res.transform(utf8.decoder).join();
+      if (res.statusCode == 404) return 0;
+      if (res.statusCode != 200) return null;
+      final j = jsonDecode(body);
+      return j is Map && j['value'] is num ? (j['value'] as num).toInt() : null;
     } catch (_) {
-      // offline: next time
+      return null;
     } finally {
       client.close(force: true);
     }
   }
 
-  /// Stats for the author; throws a readable message on errors.
+  static Future<bool> _hit(String key) async => await _get('hit/$_ns/$key') != null;
+
+  static Future<int> _value(String key) async {
+    final v = await _get('get/$_ns/$key');
+    if (v == null) throw StateError(tr('Не вдалося отримати дані. Перевірте інтернет.'));
+    return v as int;
+  }
+
   static Future<UsageStats> stats() async {
-    await _load();
-    if (!configured) throw StateError(tr('Сервер статистики ще не налаштовано.'));
-    final key = await adminKey();
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
-    try {
-      final req = await client.getUrl(Uri.parse('$_url/stats'));
-      req.headers.set('x-admin-key', key);
-      final res = await req.close().timeout(const Duration(seconds: 12));
-      final body = await res.transform(utf8.decoder).join();
-      if (res.statusCode == 403) throw StateError(tr('Невірний ключ статистики.'));
-      if (res.statusCode != 200) throw StateError('HTTP ${res.statusCode}');
-      final s = UsageStats.fromJson(jsonDecode(body));
-      if (s == null) throw StateError(tr('Сервер повернув незрозумілу відповідь.'));
-      return s;
-    } on SocketException {
-      throw StateError(tr('Немає з\'єднання з інтернетом.'));
-    } on TimeoutException {
-      throw StateError(tr('Сервер не відповідає.'));
-    } finally {
-      client.close(force: true);
-    }
+    final now = DateTime.now();
+    final dates = [for (int i = 13; i >= 0; i--) now.toUtc().subtract(Duration(days: i))];
+    final values = await Future.wait([
+      _value('installs'),
+      _value(hourKey(now)),
+      for (final d in dates) _value(dayKey(d)),
+    ]);
+    final days = [for (int i = 0; i < dates.length; i++) (dates[i], values[i + 2])];
+    return UsageStats(installs: values[0], now: values[1], today: days.last.$2, days: days);
   }
 }

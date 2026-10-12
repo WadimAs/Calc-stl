@@ -1,5 +1,15 @@
 [
   {
+    "id": "2026-10-12c",
+    "version": "1.3.8",
+    "uk": [
+      "Анонімна статистика використання: застосунок лише додає +1 до загальних лічильників (встановлення, активні за день і годину), без жодних ваших даних. Вимкнути можна в налаштуваннях."
+    ],
+    "en": [
+      "Anonymous usage statistics: the app only adds +1 to shared counters (installs, active per day and hour), with none of your data. You can turn it off in settings."
+    ]
+  },
+  {
     "id": "2026-10-12b",
     "version": "1.3.7",
     "uk": [

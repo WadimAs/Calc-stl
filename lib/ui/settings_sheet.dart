@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../slicer/settings.dart';
 import '../platform/updates.dart';
 import '../platform/usage.dart';
-import 'usage_page.dart';
 import 'widgets.dart';
 import '../i18n/i18n.dart';
 import '../platform/rates.dart';
@@ -765,13 +764,16 @@ class _AboutRowState extends State<_AboutRow> {
     });
   }
 
-  /// Seven taps on the version: the author's stats key.
+  /// Seven taps on the version: show / hide the author's "Users" screen.
   Future<void> _tapVersion() async {
     if (++_taps < 7) return;
     _taps = 0;
-    if (await askUsageKey(context) && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Пункт «Користувачі» з\'явився в меню.'))));
-    }
+    final on = !await Usage.admin();
+    await Usage.setAdmin(on);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(on ? tr('Пункт «Користувачі» з\'явився в меню.') : tr('Пункт «Користувачі» прибрано з меню.')),
+    ));
   }
 
   Future<void> _check() async {
@@ -811,7 +813,7 @@ class _AboutRowState extends State<_AboutRow> {
           contentPadding: EdgeInsets.zero,
           dense: true,
           title: Text(tr('Анонімна статистика використання')),
-          subtitle: Text(tr('Лише випадковий номер встановлення й версія — щоб автор знав, скільки людей користується застосунком.')),
+          subtitle: Text(tr('Лише анонімні лічильники: встановлення, активні за день і годину — щоб автор знав, скільки людей користується застосунком.')),
           value: _usage!,
           onChanged: (v) {
             setState(() => _usage = v);
