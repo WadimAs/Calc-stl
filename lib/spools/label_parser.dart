@@ -258,7 +258,9 @@ String _cap(String w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1).
 /// English name of the closest known colour ("White", "Jade"…) for tags that
 /// store only RGB.
 String nearestColorName(int argb) {
-  int r(int c) => (c >> 16) & 0xFF, g(int c) => (c >> 8) & 0xFF, b(int c) => c & 0xFF;
+  int r(int c) => (c >> 16) & 0xFF;
+  int g(int c) => (c >> 8) & 0xFF;
+  int b(int c) => c & 0xFF;
   String best = '';
   int bestD = 1 << 30;
   _colors.forEach((name, c) {
