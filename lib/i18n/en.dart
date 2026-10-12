@@ -806,7 +806,6 @@ const Map<String, String> en = {
   'Менше копій': 'Fewer copies',
   'Більше копій': 'More copies',
   'копій': 'copies',
-  'Кількість копій': 'Number of copies',
   'Однакових деталей': 'Identical parts',
   'шт.': 'pcs',
 };
