@@ -29,7 +29,7 @@ class StlWeightApp extends StatelessWidget {
       // A new key rebuilds every screen in the new language.
       builder: (context, l, _) => MaterialApp(
         key: ValueKey(l),
-        title: tr('Друкар'),
+        title: tr('Котушка'),
         debugShowCheckedModeBanner: false,
         locale: Locale(l),
         supportedLocales: const [Locale('uk'), Locale('en')],

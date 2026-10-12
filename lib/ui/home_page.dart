@@ -1196,7 +1196,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final model = _model;
     return Scaffold(
       appBar: AppBar(
-        title: Text(model?.name ?? tr('Друкар'), overflow: TextOverflow.ellipsis),
+        title: Text(model?.name ?? tr('Котушка'), overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(tooltip: tr('Відкрити файл'), onPressed: _loading ? null : _pick, icon: const Icon(Icons.folder_open)),
           IconButton(tooltip: tr('Налаштування'), onPressed: _openSettings, icon: const Icon(Icons.tune)),

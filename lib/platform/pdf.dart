@@ -56,7 +56,7 @@ class PdfImage {
       '/BitsPerComponent 8 /Filter /FlateDecode /Length ${data.length} >>',
       data,
     );
-    obj(4, '<< /Title ${_pdfString(title)} /Producer (Drukar) >>');
+    obj(4, '<< /Title ${_pdfString(title)} /Producer (Kotushka) >>');
     for (int p = 0; p < pages; p++) {
       // The picture's top on this page sits p*usableH above the page top.
       final top = _pageH - _margin + p * usableH;

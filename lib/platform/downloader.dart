@@ -33,7 +33,7 @@ Uri resolveModelUrl(String text) {
   final host = url.host.toLowerCase().replaceFirst('www.', '');
   for (final e in _browserOnly.entries) {
     if (host == e.key || host.endsWith('.${e.key}')) {
-      throw DownloadException(trf('{0} не дає завантажувати файли без входу в акаунт. Завантажте модель у браузері й відкрийте файл через «Поділитися» → Друкар.', [e.value]));
+      throw DownloadException(trf('{0} не дає завантажувати файли без входу в акаунт. Завантажте модель у браузері й відкрийте файл через «Поділитися» → Котушка.', [e.value]));
     }
   }
   if (host == 'thingiverse.com') {
