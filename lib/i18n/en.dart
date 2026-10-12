@@ -802,4 +802,11 @@ const Map<String, String> en = {
   'Етикетка': 'Label',
   'NFC-мітку прив\'язано': 'NFC tag linked',
   'Відв\'язати': 'Unlink',
+  // Copies on the result card
+  'Менше копій': 'Fewer copies',
+  'Більше копій': 'More copies',
+  'копій': 'copies',
+  'Кількість копій': 'Number of copies',
+  'Однакових деталей': 'Identical parts',
+  'шт.': 'pcs',
 };

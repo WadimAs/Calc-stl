@@ -710,6 +710,68 @@ class _HomePageState extends State<HomePage> {
     return false;
   }
 
+  /// "− 3 шт. +" on the result card: identical parts counted at once.
+  Widget _copiesPill(SliceSettings s, ThemeData theme) {
+    final cs = theme.colorScheme;
+    void set(int n) => _updateSettings(s.copyWith(copies: n.clamp(1, 500).toInt()));
+    Widget btn(IconData icon, String tip, VoidCallback? onTap) => IconButton(
+          tooltip: tip,
+          visualDensity: VisualDensity.compact,
+          onPressed: onTap,
+          icon: Icon(icon, size: 20),
+        );
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surface.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        btn(Icons.remove, tr('Менше копій'), s.copies > 1 ? () => set(s.copies - 1) : null),
+        InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _askCopies(s),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('${s.copies}', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+              Text(tr('копій'), style: theme.textTheme.labelSmall),
+            ]),
+          ),
+        ),
+        btn(Icons.add, tr('Більше копій'), s.copies < 500 ? () => set(s.copies + 1) : null),
+      ]),
+    );
+  }
+
+  Future<void> _askCopies(SliceSettings s) async {
+    final c = TextEditingController(text: '${s.copies}');
+    final n = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('Кількість копій')),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          TextField(
+            controller: c,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(labelText: tr('Однакових деталей'), suffixText: tr('шт.')),
+            onSubmitted: (v) => Navigator.pop(ctx, int.tryParse(v.trim())),
+          ),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final q in const [1, 2, 5, 10, 20, 50, 100])
+              ActionChip(label: Text('$q'), onPressed: () => Navigator.pop(ctx, q)),
+          ]),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('Скасувати'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, int.tryParse(c.text.trim())), child: Text(tr('Готово'))),
+        ],
+      ),
+    );
+    if (n != null && n > 0) _updateSettings(s.copyWith(copies: n.clamp(1, 500).toInt()));
+  }
+
   void _updateSettings(SliceSettings s) {
     if (s.language != _settings.language) {
       // Save first: the whole app is rebuilt in the new language.
@@ -1774,17 +1836,26 @@ class _HomePageState extends State<HomePage> {
               ),
             ]),
             const SizedBox(height: 4),
-            if (fig != null)
-              AnimatedOpacity(
-                opacity: busy && fig.source == null ? 0.4 : 1,
-                duration: const Duration(milliseconds: 200),
-                child: Text(
-                  fmtGrams(fig.gramsTotal),
-                  style: theme.textTheme.displayMedium?.copyWith(fontWeight: FontWeight.w700, color: onCard),
-                ),
-              )
-            else if (!busy && _sliceError == null)
-              const Text('—'),
+            Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+              Expanded(
+                child: fig != null
+                    ? AnimatedOpacity(
+                        opacity: busy && fig.source == null ? 0.4 : 1,
+                        duration: const Duration(milliseconds: 200),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            fmtGrams(fig.gramsTotal),
+                            style: theme.textTheme.displayMedium?.copyWith(fontWeight: FontWeight.w700, color: onCard),
+                          ),
+                        ),
+                      )
+                    : (!busy && _sliceError == null ? const Text('—') : const SizedBox.shrink()),
+              ),
+              const SizedBox(width: 8),
+              _copiesPill(s, theme),
+            ]),
             if (fig != null)
               Wrap(spacing: 6, runSpacing: 4, children: [
                 if (fig.source != null)
@@ -2131,15 +2202,6 @@ class _HomePageState extends State<HomePage> {
             subtitle: Text(tr('Одна стінка, без кришки й заповнення')),
             value: s.vaseMode,
             onChanged: (v) => _updateSettings(s.copyWith(vaseMode: v)),
-          ),
-          StepperRow(
-            label: tr('Кількість'),
-            value: s.copies.toDouble(),
-            min: 1,
-            max: 500,
-            step: 1,
-            unit: tr(' шт'),
-            onChanged: (v) => _updateSettings(s.copyWith(copies: v.round())),
           ),
         ]),
       ),

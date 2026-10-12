@@ -165,6 +165,18 @@ void main() {
       await shot('05_result');
     });
 
+    await step('copies', () async {
+      await tap(find.byTooltip('Більше копій'));
+      await tap(find.byTooltip('Більше копій'));
+      await waitFor(find.textContaining('3 шт. · одна'), seconds: 20);
+      await shot('05b_copies');
+      await tap(find.text('копій'));
+      await waitFor(find.text('Кількість копій'));
+      await shot('05c_copies_dialog');
+      await tap(find.widgetWithText(ActionChip, '1'));
+      await waitFor(find.byTooltip('Менше копій'));
+    });
+
     await step('layers', () async {
       await tap(find.text('Шари'));
       await settle(2000);
