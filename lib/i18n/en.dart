@@ -799,7 +799,7 @@ const Map<String, String> en = {
   'На мітці немає даних про пластик. Її прив\'язано до котушки — тепер її можна знаходити дотиком.':
       'The tag has no filament data. It is linked to the spool — tap it to find the spool.',
   'З NFC-мітки ({0}): {1}': 'From NFC tag ({0}): {1}',
-  'Фото етикетки': 'Label photo',
+  'Етикетка': 'Label',
   'NFC-мітку прив\'язано': 'NFC tag linked',
   'Відв\'язати': 'Unlink',
 };

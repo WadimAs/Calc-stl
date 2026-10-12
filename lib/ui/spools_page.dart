@@ -501,7 +501,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
                 icon: _scanning
                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.document_scanner_outlined),
-                label: Text(tr('Фото етикетки')),
+                label: Text(tr('Етикетка')),
               ),
             ),
             const SizedBox(width: 8),
