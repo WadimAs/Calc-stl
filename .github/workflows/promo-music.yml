@@ -1,0 +1,37 @@
+name: Promo music
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Music prompt"
+        required: true
+      seconds:
+        description: "Length, seconds"
+        default: "60"
+      name:
+        description: "File name in the promo-video release"
+        default: "music-custom.mp3"
+
+permissions:
+  contents: write
+
+jobs:
+  music:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          PROMO_MUSIC_PROMPT: ${{ inputs.prompt }}
+        run: |
+          python3 tool/promo/music.py "${{ inputs.name }}" "${{ inputs.seconds }}"
+          ls -la "${{ inputs.name }}"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: promo-video
+          name: Промо-відео
+          prerelease: true
+          make_latest: false
+          files: ${{ inputs.name }}
