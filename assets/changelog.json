@@ -1,5 +1,19 @@
 [
   {
+    "id": "2026-10-12a",
+    "version": "1.3.6",
+    "uk": [
+      "Котушки з NFC-мітки: піднесіть котушку Bambu Lab до телефону — пластик, колір, вага й температури заповняться самі.",
+      "Підтримуються також мітки OpenSpool і OpenPrintTag (Prusament).",
+      "Будь-яку котушку можна записати на чисту NFC-наліпку (NTAG213/215/216), а потім знаходити її одним дотиком."
+    ],
+    "en": [
+      "Spools from NFC tags: hold a Bambu Lab spool to the phone — material, colour, weight and temperatures fill in by themselves.",
+      "OpenSpool and OpenPrintTag (Prusament) tags are supported too.",
+      "Any spool can be written to a blank NFC sticker (NTAG213/215/216) and then found with one tap."
+    ]
+  },
+  {
     "id": "2026-10-10f",
     "version": "1.3.5",
     "uk": [

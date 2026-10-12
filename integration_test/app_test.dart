@@ -10,6 +10,7 @@ import 'package:stl_weight/main.dart' as app;
 import 'package:stl_weight/printers/print_hub.dart';
 import 'package:stl_weight/printers/printers.dart';
 import 'package:stl_weight/platform/files.dart';
+import 'package:stl_weight/platform/nfc.dart';
 import 'package:stl_weight/platform/updates.dart';
 import 'package:stl_weight/ui/home_page.dart';
 import 'package:stl_weight/ui/spool_icon.dart';
@@ -304,6 +305,36 @@ void main() {
       await tap(find.text('Встановлено на котушку'));
       await waitFor(find.text('Refill на котушці'));
       await shot('32d_refill_mounted');
+      await home();
+    });
+
+    await step('nfc', () async {
+      Nfc.debugTag = demoBambuTag();
+      await menu('Котушки');
+      await tap(find.byTooltip('Котушка з NFC-мітки'));
+      await shot('32k_nfc_sheet');
+      await waitFor(find.textContaining('З NFC-мітки'), seconds: 20);
+      await settle(600);
+      await shot('32l_nfc_read');
+      final t = (find.textContaining('З NFC-мітки').evaluate().first.widget as Text).data ?? '';
+      note('NFC result: $t');
+      if (!t.contains('Bambu Lab') || !t.contains('PLA Silk')) throw StateError('NFC: $t');
+      await tap(find.text('Зберегти'));
+      await settle(800);
+      await shot('32m_nfc_in_list');
+      // The same tag again finds the spool.
+      await tap(find.byTooltip('Котушка з NFC-мітки'));
+      await waitFor(find.textContaining('Це ваша котушка'), seconds: 20);
+      await shot('32n_nfc_found');
+      await tap(find.text('Скасувати'));
+      // Write a blank tag for another spool.
+      Nfc.debugTag = const NfcTag(uid: '04112233445566', writable: true);
+      await tap(find.byType(PopupMenuButton<String>).first);
+      await tap(find.text('Записати на NFC-мітку'));
+      await waitFor(find.textContaining('Мітку записано'), seconds: 20);
+      await shot('32o_nfc_written');
+      if (Nfc.debugWritten == null || !Nfc.debugWritten!.$1.contains('json')) throw StateError('NFC write');
+      Nfc.debugTag = null;
       await home();
     });
 

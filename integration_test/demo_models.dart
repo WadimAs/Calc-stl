@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:stl_weight/platform/nfc.dart';
 
 /// Triangles of an axis-aligned box (outward normals).
 List<double> box(double x0, double y0, double z0, double x1, double y1, double z1) {
@@ -120,3 +121,21 @@ Uint8List gearStl() {
   return bd.buffer.asUint8List();
 }
 
+/// A Bambu Lab "PLA Silk" tag as the phone reads it (MIFARE blocks 0..19).
+NfcTag demoBambuTag() {
+  Uint8List blk([List<int> b = const []]) => Uint8List(16)..setRange(0, b.length, b);
+  final b5 = ByteData(16)
+    ..setUint32(0, 0xD4AF37FF)
+    ..setUint16(4, 1000, Endian.little)
+    ..setFloat32(8, 1.75, Endian.little);
+  final b6 = ByteData(16)
+    ..setUint16(8, 230, Endian.little)
+    ..setUint16(10, 190, Endian.little);
+  final blocks = List<Uint8List?>.generate(20, (_) => blk());
+  blocks[2] = blk('PLA'.codeUnits);
+  blocks[4] = blk('PLA Silk'.codeUnits);
+  blocks[5] = b5.buffer.asUint8List();
+  blocks[6] = b6.buffer.asUint8List();
+  blocks[16] = blk([2, 0, 2, 0, 0xFF, 0xE5, 0x88, 0x1E]);
+  return NfcTag(uid: '9A1B2C3D', techs: const ['NfcA', 'MifareClassic'], mifareBlocks: blocks);
+}

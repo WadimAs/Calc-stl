@@ -27,6 +27,7 @@ class MainActivity : FlutterActivity() {
     private var initialUri: Uri? = null
     private var initialLink: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val nfc by lazy { NfcHelper(this) }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -122,6 +123,25 @@ class MainActivity : FlutterActivity() {
                 "getInitialLink" -> {
                     result.success(initialLink)
                     initialLink = null
+                }
+                "nfcState" -> result.success(nfc.state())
+                "nfcRead" -> nfc.read(result)
+                "nfcWrite" -> {
+                    val mime = call.argument<String>("mime") ?: "application/json"
+                    val payload = call.argument<ByteArray>("payload") ?: ByteArray(0)
+                    nfc.write(mime, payload, result)
+                }
+                "nfcCancel" -> {
+                    nfc.cancel()
+                    result.success(null)
+                }
+                "openNfcSettings" -> {
+                    try {
+                        startActivity(Intent(android.provider.Settings.ACTION_NFC_SETTINGS))
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
                 }
                 "filesDir" -> result.success(filesDir.absolutePath)
                 "appInfo" -> {
@@ -284,6 +304,12 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    override fun onPause() {
+        // Reader mode only works in the foreground; the waiting dialog closes.
+        nfc.cancel()
+        super.onPause()
     }
 
     override fun onNewIntent(intent: Intent) {

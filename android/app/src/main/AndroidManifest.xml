@@ -2,6 +2,9 @@
     <!-- Updates, models by link, printers on the local network. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Spool tags (Bambu Lab, OpenSpool, OpenPrintTag); NFC is optional. -->
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"

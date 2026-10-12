@@ -25,6 +25,9 @@ class Spool {
   /// What the whole spool cost (0 = unknown).
   final double price;
 
+  /// UID of the NFC tag on the spool ('' = none): tapping it finds the spool.
+  final String nfcUid;
+
   const Spool({
     required this.id,
     required this.materialId,
@@ -38,6 +41,7 @@ class Spool {
     this.refill = false,
     this.onSpool = false,
     this.extraColors = const [],
+    this.nfcUid = '',
   });
 
   /// "Bambu Lab · Jade White"
@@ -61,6 +65,7 @@ class Spool {
     bool? refill,
     bool? onSpool,
     List<int>? extraColors,
+    String? nfcUid,
   }) =>
       Spool(
         id: id,
@@ -75,6 +80,7 @@ class Spool {
         refill: refill ?? this.refill,
         onSpool: onSpool ?? this.onSpool,
         extraColors: extraColors ?? this.extraColors,
+        nfcUid: nfcUid ?? this.nfcUid,
       );
 
   Map<String, dynamic> toJson() => {
@@ -90,6 +96,7 @@ class Spool {
         'refill': refill,
         'onSpool': onSpool,
         'colors2': extraColors,
+        if (nfcUid.isNotEmpty) 'nfc': nfcUid,
       };
 
   static Spool? fromJson(Object? raw) {
@@ -112,6 +119,7 @@ class Spool {
           for (final c in raw['colors2'] as List)
             if (c is num) c.toInt(),
       ],
+      nfcUid: raw['nfc'] is String ? raw['nfc'] as String : '',
     );
   }
 }

@@ -254,3 +254,21 @@ SpoolLabel parseSpoolLabel(String text) {
 }
 
 String _cap(String w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}';
+
+/// English name of the closest known colour ("White", "Jade"…) for tags that
+/// store only RGB.
+String nearestColorName(int argb) {
+  int r(int c) => (c >> 16) & 0xFF, g(int c) => (c >> 8) & 0xFF, b(int c) => c & 0xFF;
+  String best = '';
+  int bestD = 1 << 30;
+  _colors.forEach((name, c) {
+    if (!RegExp(r'^[a-z]+$').hasMatch(name)) return;
+    final d = (r(c) - r(argb)) * (r(c) - r(argb)) * 3 + (g(c) - g(argb)) * (g(c) - g(argb)) * 4 +
+        (b(c) - b(argb)) * (b(c) - b(argb)) * 2;
+    if (d < bestD) {
+      bestD = d;
+      best = name;
+    }
+  });
+  return _cap(best);
+}

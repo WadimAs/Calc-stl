@@ -10,6 +10,9 @@ import '../history/history.dart';
 import '../spools/writeoffs.dart';
 import '../spools/label_parser.dart';
 import '../platform/files.dart';
+import '../platform/nfc.dart';
+import '../spools/spool_tags.dart';
+import 'nfc_sheet.dart';
 import 'spool_icon.dart';
 import 'spool_picker.dart';
 import 'widgets.dart';
@@ -44,8 +47,9 @@ class _SpoolsPageState extends State<SpoolsPage> {
     });
   }
 
-  Future<void> _edit([Spool? s, bool scan = false]) async {
-    final r = await showDialog<(Spool, bool)>(context: context, builder: (_) => _SpoolDialog(spool: s, scan: scan));
+  Future<void> _edit([Spool? s, bool scan = false, NfcTag? nfc]) async {
+    final r = await showDialog<(Spool, bool)>(
+        context: context, builder: (_) => _SpoolDialog(spool: s, scan: scan, nfc: nfc));
     if (r == null) return;
     final (result, asExpense) = r;
     final list = await SpoolStore.upsert(result);
@@ -75,6 +79,45 @@ class _SpoolsPageState extends State<SpoolsPage> {
       );
       if (use == true) widget.onUsePrice!(result.materialId, perKg);
     }
+  }
+
+  /// Tap a tag: the spool it belongs to, or a new spool filled from it.
+  Future<void> _nfc() async {
+    final tag = await scanNfcTag(context);
+    if (tag == null || !mounted) return;
+    final info = parseSpoolTag(tag);
+    final list = _spools ?? await SpoolStore.load();
+    Spool? found;
+    for (final s in list) {
+      if ((s.nfcUid.isNotEmpty && s.nfcUid == tag.uid) || (info?.spoolId != null && s.id == info!.spoolId)) {
+        found = s;
+        break;
+      }
+    }
+    if (!mounted) return;
+    if (found != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(trf('Це ваша котушка: {0}, залишилось {1}', [
+          found.title.isEmpty ? materialById(found.materialId).name : found.title,
+          fmtGrams(found.remainingGrams),
+        ])),
+      ));
+      await _edit(found, false, found.nfcUid == tag.uid ? null : tag);
+      return;
+    }
+    await _edit(null, false, tag);
+  }
+
+  /// Writes the spool to a blank tag (OpenSpool) and links it.
+  Future<void> _writeTag(Spool s) async {
+    final uid = await writeNfcTag(context, openSpoolMime, openSpoolPayload(s));
+    if (uid == null || !mounted) return;
+    final list = await SpoolStore.upsert(s.copyWith(nfcUid: uid));
+    if (!mounted) return;
+    setState(() => _spools = list);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(tr('Мітку записано. Тепер досить піднести її до телефону, щоб знайти котушку.')),
+    ));
   }
 
   void _usePrice(Spool s) {
@@ -141,6 +184,11 @@ class _SpoolsPageState extends State<SpoolsPage> {
             icon: const Icon(Icons.receipt_long_outlined),
           ),
           IconButton(
+            tooltip: tr('Котушка з NFC-мітки'),
+            onPressed: _nfc,
+            icon: const Icon(Icons.nfc),
+          ),
+          IconButton(
             tooltip: tr('Додати з фото етикетки'),
             onPressed: () => _edit(null, true),
             icon: const Icon(Icons.document_scanner_outlined),
@@ -194,6 +242,15 @@ class _SpoolsPageState extends State<SpoolsPage> {
                                       padding: const EdgeInsets.only(top: 4),
                                       child: _RefillChip(onSpool: s.onSpool),
                                     ),
+                                  if (s.nfcUid.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Row(children: [
+                                        Icon(Icons.nfc, size: 14, color: theme.colorScheme.primary),
+                                        const SizedBox(width: 4),
+                                        Text(tr('NFC-мітка'), style: theme.textTheme.labelSmall),
+                                      ]),
+                                    ),
                                   const SizedBox(height: 6),
                                   LinearProgressIndicator(
                                     value: s.fraction,
@@ -215,6 +272,7 @@ class _SpoolsPageState extends State<SpoolsPage> {
                                   if (v == 'price') _usePrice(s);
                                   if (v == 'mount') _setOnSpool(s, !s.onSpool);
                                   if (v == 'del') _delete(s);
+                                  if (v == 'nfc') _writeTag(s);
                                 },
                                 itemBuilder: (_) => [
                                   PopupMenuItem(value: 'off', child: Text(tr('Списати вручну'))),
@@ -225,6 +283,10 @@ class _SpoolsPageState extends State<SpoolsPage> {
                                     ),
                                   if (s.pricePerKg != null && widget.onUsePrice != null)
                                     PopupMenuItem(value: 'price', child: Text(tr('Рахувати за ціною котушки'))),
+                                  PopupMenuItem(
+                                    value: 'nfc',
+                                    child: Text(s.nfcUid.isEmpty ? tr('Записати на NFC-мітку') : tr('Перезаписати NFC-мітку')),
+                                  ),
                                   PopupMenuItem(value: 'del', child: Text(tr('Видалити'))),
                                 ],
                               ),
@@ -244,7 +306,10 @@ class _SpoolDialog extends StatefulWidget {
   /// Start by photographing the spool label.
   final bool scan;
 
-  const _SpoolDialog({this.spool, this.scan = false});
+  /// Fill from this NFC tag (and link it).
+  final NfcTag? nfc;
+
+  const _SpoolDialog({this.spool, this.scan = false, this.nfc});
 
   @override
   State<_SpoolDialog> createState() => _SpoolDialogState();
@@ -296,10 +361,66 @@ class _SpoolDialogState extends State<_SpoolDialog> {
   bool _scanning = false;
   String? _scanNote;
 
+  late String _nfcUid = widget.spool?.nfcUid ?? '';
+  String? _nfcNote;
+
   @override
   void initState() {
     super.initState();
     if (widget.scan) WidgetsBinding.instance.addPostFrameCallback((_) => _scan());
+    if (widget.nfc != null) WidgetsBinding.instance.addPostFrameCallback((_) => _applyTag(widget.nfc!));
+  }
+
+  /// Fields from a recognised label or tag.
+  void _applyLabel(SpoolLabel l) {
+    if (l.materialId != null && materials.any((m) => m.id == l.materialId)) _material = l.materialId!;
+    if (l.colorArgb != null) _color = l.colorArgb!;
+    if (l.colorArgb != null) _extra = List.of(l.extraColors);
+    _slot = 0;
+    if (l.brand != null) _brand.text = l.brand!;
+    if (l.colorName != null) _name.text = l.colorName!;
+    if (l.refill) {
+      _refill = true;
+      _onSpool = false;
+    }
+    if (l.weightGrams != null) {
+      _total.text = _fmt(l.weightGrams!);
+      if (widget.spool == null) _left.text = _fmt(l.weightGrams!);
+    }
+  }
+
+  Future<void> _readNfc() async {
+    final tag = await scanNfcTag(context);
+    if (tag != null && mounted) _applyTag(tag);
+  }
+
+  void _applyTag(NfcTag tag) {
+    final info = parseSpoolTag(tag);
+    setState(() {
+      _nfcUid = tag.uid;
+      if (info == null) {
+        _nfcNote = tag.mifareError == 'unsupported'
+            ? tr('Цей телефон не читає мітки MIFARE Classic (як у Bambu Lab), тож даних не видно. Мітку прив\'язано до котушки — її можна знаходити дотиком.')
+            : tr('На мітці немає даних про пластик. Її прив\'язано до котушки — тепер її можна знаходити дотиком.');
+        return;
+      }
+      final l = info.label;
+      _applyLabel(l);
+      if (info.consumed != null && l.weightGrams != null && widget.spool == null) {
+        _left.text = _fmt((l.weightGrams! - info.consumed!).clamp(0, l.weightGrams!).toDouble());
+      }
+      _nfcNote = trf('З NFC-мітки ({0}): {1}', [
+        info.format,
+        [
+          l.brand,
+          l.materialText,
+          l.colorName,
+          if (l.weightGrams != null) fmtGrams(l.weightGrams!),
+          if (info.diameter != null) '${info.diameter} мм', // no-tr
+          if (info.minTemp != null && info.maxTemp != null) '${info.minTemp}–${info.maxTemp} °C',
+        ].whereType<String>().where((x) => x.isNotEmpty).join(' · '),
+      ]);
+    });
   }
 
   /// Photo of the label → OCR → fields.
@@ -334,20 +455,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
       final l = parseSpoolLabel(text);
       if (!mounted) return;
       setState(() {
-        if (l.materialId != null && materials.any((m) => m.id == l.materialId)) _material = l.materialId!;
-        if (l.colorArgb != null) _color = l.colorArgb!;
-        if (l.colorArgb != null) _extra = List.of(l.extraColors);
-        _slot = 0;
-        if (l.brand != null) _brand.text = l.brand!;
-        if (l.colorName != null) _name.text = l.colorName!;
-        if (l.refill) {
-          _refill = true;
-          _onSpool = false;
-        }
-        if (l.weightGrams != null) {
-          _total.text = _fmt(l.weightGrams!);
-          if (widget.spool == null) _left.text = _fmt(l.weightGrams!);
-        }
+        _applyLabel(l);
         _scanNote = l.isEmpty
             ? tr('Не вдалося нічого розпізнати. Сфотографуйте етикетку ближче, рівно й при гарному світлі.')
             : trf('Розпізнано: {0}', [
@@ -386,18 +494,48 @@ class _SpoolDialogState extends State<_SpoolDialog> {
       title: Text(widget.spool == null ? tr('Нова котушка') : tr('Котушка')),
       content: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          OutlinedButton.icon(
-            onPressed: _scanning ? null : _scan,
-            icon: _scanning
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.document_scanner_outlined),
-            label: Text(tr('Заповнити з фото етикетки')),
-          ),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _scanning ? null : _scan,
+                icon: _scanning
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.document_scanner_outlined),
+                label: Text(tr('Фото етикетки')),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _readNfc,
+                icon: const Icon(Icons.nfc),
+                label: Text(tr('NFC-мітка')),
+              ),
+            ),
+          ]),
           if (_scanNote != null)
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(_scanNote!, style: Theme.of(context).textTheme.bodySmall),
             ),
+          if (_nfcNote != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(_nfcNote!, style: Theme.of(context).textTheme.bodySmall),
+            ),
+          if (_nfcUid.isNotEmpty)
+            Row(children: [
+              Icon(Icons.nfc, size: 16, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 6),
+              Expanded(child: Text(tr('NFC-мітку прив\'язано'), style: Theme.of(context).textTheme.bodySmall)),
+              TextButton(
+                onPressed: () => setState(() {
+                  _nfcUid = '';
+                  _nfcNote = null;
+                }),
+                child: Text(tr('Відв\'язати')),
+              ),
+            ]),
           DropdownButtonFormField<String>(
             key: ValueKey(_material),
             // ignore: deprecated_member_use
@@ -571,6 +709,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
                       brand: _brand.text.trim(),
                       refill: _refill,
                       onSpool: _refill && _onSpool,
+                      nfcUid: _nfcUid,
                     )
                   : old.copyWith(
                       materialId: _material,
@@ -583,6 +722,7 @@ class _SpoolDialogState extends State<_SpoolDialog> {
                       brand: _brand.text.trim(),
                       refill: _refill,
                       onSpool: _refill && _onSpool,
+                      nfcUid: _nfcUid,
                     ),
               old == null && _asExpense,
             ));

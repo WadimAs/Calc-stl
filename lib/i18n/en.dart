@@ -770,4 +770,36 @@ const Map<String, String> en = {
   'Списання': 'Write-off',
   'Ще котушка': 'Another spool',
   '{0} з {1}': '{0} of {1}',
+
+  // NFC spool tags
+  'Піднесіть котушку до телефону': 'Hold the spool to your phone',
+  'Мітка зазвичай на боці котушки. Тримайте її біля задньої частини телефону, де NFC.':
+      'The tag is usually on the side of the spool. Hold it near the back of the phone, where NFC is.',
+  'Піднесіть чисту NFC-мітку': 'Hold a blank NFC tag to your phone',
+  'Підійдуть наліпки NTAG213/215/216. Дані котушки буде записано у форматі OpenSpool.':
+      'NTAG213/215/216 stickers work. The spool data is written in OpenSpool format.',
+  'Мітка захищена від запису.': 'The tag is write-protected.',
+  'На мітці замало місця. Візьміть NTAG215 або NTAG216.': 'Not enough space on the tag. Use NTAG215 or NTAG216.',
+  'Ця мітка не підтримує запис NDEF.': 'This tag does not support NDEF writing.',
+  'Не вдалося прочитати мітку: {0}. Спробуйте ще раз і тримайте телефон нерухомо.':
+      'Could not read the tag: {0}. Try again and hold the phone still.',
+  'На цьому телефоні немає NFC.': 'This phone has no NFC.',
+  'NFC вимкнено': 'NFC is off',
+  'Увімкнути NFC': 'Turn on NFC',
+  'Спробувати знову': 'Try again',
+  'Це ваша котушка: {0}, залишилось {1}': 'This is your spool: {0}, {1} left',
+  'Мітку записано. Тепер досить піднести її до телефону, щоб знайти котушку.':
+      'Tag written. Now just hold it to the phone to find the spool.',
+  'Котушка з NFC-мітки': 'Spool from NFC tag',
+  'Записати на NFC-мітку': 'Write to NFC tag',
+  'Перезаписати NFC-мітку': 'Rewrite NFC tag',
+  'NFC-мітка': 'NFC tag',
+  'Цей телефон не читає мітки MIFARE Classic (як у Bambu Lab), тож даних не видно. Мітку прив\'язано до котушки — її можна знаходити дотиком.':
+      'This phone cannot read MIFARE Classic tags (used by Bambu Lab), so no data is shown. The tag is linked to the spool — tap it to find the spool.',
+  'На мітці немає даних про пластик. Її прив\'язано до котушки — тепер її можна знаходити дотиком.':
+      'The tag has no filament data. It is linked to the spool — tap it to find the spool.',
+  'З NFC-мітки ({0}): {1}': 'From NFC tag ({0}): {1}',
+  'Фото етикетки': 'Label photo',
+  'NFC-мітку прив\'язано': 'NFC tag linked',
+  'Відв\'язати': 'Unlink',
 };

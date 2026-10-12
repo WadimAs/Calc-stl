@@ -11,6 +11,8 @@ import 'package:stl_weight/platform/downloader.dart';
 import 'package:stl_weight/platform/pdf.dart';
 import 'package:stl_weight/printers/mqtt.dart';
 import 'package:stl_weight/spools/label_parser.dart';
+import 'package:stl_weight/spools/spool_tags.dart';
+import 'package:stl_weight/platform/nfc.dart';
 import 'package:stl_weight/ui/widgets.dart' show fmtMoney;
 import 'package:stl_weight/ui/whats_new.dart';
 import 'package:stl_weight/ui/finished_print_dialog.dart';
@@ -1172,6 +1174,130 @@ void main() {
       expect(Spool.fromJson(jsonDecode(jsonEncode(dual.toJson())))!.colors, [1, 2, 3]);
 
       expect(parseSpoolLabel('hello world').isEmpty, isTrue);
+    });
+  });
+
+  group('NFC spool tags', () {
+    Uint8List blk([List<int> bytes = const []]) => Uint8List(16)..setRange(0, bytes.length, bytes);
+    Uint8List ascii(String t) => blk(t.codeUnits);
+
+    test('Bambu Lab blocks', () {
+      final b5 = ByteData(16)
+        ..setUint8(0, 0xFF)
+        ..setUint8(1, 0x00)
+        ..setUint8(2, 0x00)
+        ..setUint8(3, 0xFF)
+        ..setUint16(4, 1000, Endian.little)
+        ..setFloat32(8, 1.75, Endian.little);
+      final b6 = ByteData(16)
+        ..setUint16(8, 230, Endian.little)
+        ..setUint16(10, 190, Endian.little);
+      final blocks = List<Uint8List?>.generate(20, (_) => blk());
+      blocks[1] = ascii('A05-R0  GFA05');
+      blocks[2] = ascii('PLA');
+      blocks[4] = ascii('PLA Silk');
+      blocks[5] = b5.buffer.asUint8List();
+      blocks[6] = b6.buffer.asUint8List();
+      blocks[16] = blk([2, 0, 2, 0, 0xFF, 0xE5, 0x88, 0x1E]); // second colour 1E88E5 (ABGR)
+      final info = parseSpoolTag(NfcTag(uid: '01020304', mifareBlocks: blocks))!;
+      expect(info.format, 'Bambu Lab');
+      expect(info.label.brand, 'Bambu Lab');
+      expect(info.label.materialId, 'PLA-SILK');
+      expect(info.label.colorArgb, 0xFFFF0000);
+      expect(info.label.extraColors, [0xFF1E88E5]);
+      expect(info.label.weightGrams, 1000);
+      expect(info.diameter, 1.75);
+      expect(info.minTemp, 190);
+      expect(info.maxTemp, 230);
+      expect(info.label.colorName, 'Silk Red / Blue');
+    });
+
+    test('Bambu tag that could not be read gives nothing', () {
+      expect(parseSpoolTag(const NfcTag(uid: 'AA', mifareError: 'unsupported')), isNull);
+    });
+
+    test('OpenSpool written by the app reads back', () {
+      final s = Spool(
+        id: 'sp1',
+        materialId: 'PETG',
+        name: 'Ocean',
+        colorArgb: 0xFF1E88E5,
+        extraColors: const [0xFFFFFFFF],
+        totalGrams: 1000,
+        remainingGrams: 640,
+        createdAt: _epoch,
+        brand: 'eSUN',
+      );
+      final payload = openSpoolPayload(s);
+      final j = jsonDecode(utf8.decode(payload)) as Map;
+      expect(j['protocol'], 'openspool');
+      expect(j['type'], 'PETG');
+      expect(j['color_hex'], '1E88E5');
+      final tag = NfcTag(uid: '04AABB', records: [NdefRec(2, openSpoolMime, payload)]);
+      final info = parseSpoolTag(tag)!;
+      expect(info.format, 'OpenSpool');
+      expect(info.spoolId, 'sp1');
+      expect(info.label.brand, 'eSUN');
+      expect(info.label.materialId, 'PETG');
+      expect(info.label.colorName, 'Ocean');
+      expect(info.label.colorArgb, 0xFF1E88E5);
+      expect(info.label.extraColors, [0xFFFFFFFF]);
+      expect(info.label.weightGrams, 1000);
+    });
+
+    test('OpenSpool from other apps (strings, generic brand)', () {
+      final p = Uint8List.fromList(utf8.encode(
+          '{"protocol":"openspool","version":"1.0","type":"PLA","color_hex":"#FFAABB","brand":"Generic","min_temp":"190","max_temp":"220"}'));
+      final info = parseOpenSpool(p)!;
+      expect(info.label.brand, isNull);
+      expect(info.label.materialId, 'PLA');
+      expect(info.label.colorArgb, 0xFFFFAABB);
+      expect(info.minTemp, 190);
+      expect(info.maxTemp, 220);
+      expect(parseOpenSpool(Uint8List.fromList(utf8.encode('{"hello":1}'))), isNull);
+    });
+
+    test('OpenPrintTag CBOR with consumed weight', () {
+      List<int> text(String t) => [0x60 + t.length, ...utf8.encode(t)];
+      final main = <int>[
+        0xA6, //
+        0x09, 0x00, // material_type PLA
+        0x0A, ...text('Galaxy Black'),
+        0x0B, ...text('Prusament'),
+        0x10, 0x19, 0x03, 0xE8, // nominal weight 1000
+        0x13, 0x43, 0x20, 0x20, 0x20, // primary colour
+        0x18, 0x22, 0x18, 0xD7, // min print temp 215
+      ];
+      const metaLen = 6; // {0: main offset, 2: aux offset}
+      final auxOff = metaLen + main.length;
+      final meta = [0xA2, 0x00, metaLen, 0x02, 0x18, auxOff];
+      final aux = [0xA1, 0x00, 0x19, 0x01, 0x2C]; // consumed 300 g
+      final p = Uint8List.fromList([...meta, ...main, ...aux]);
+      final info = parseSpoolTag(NfcTag(uid: 'E0040150', records: [NdefRec(2, openPrintTagMime, p)]))!;
+      expect(info.format, 'OpenPrintTag');
+      expect(info.label.brand, 'Prusament');
+      expect(info.label.materialId, 'PLA');
+      expect(info.label.colorName, 'Galaxy Black');
+      expect(info.label.colorArgb, 0xFF202020);
+      expect(info.label.weightGrams, 1000);
+      expect(info.consumed, 300);
+      expect(info.minTemp, 215);
+    });
+
+    test('CBOR basics', () {
+      expect(Cbor.decode(Uint8List.fromList([0xF9, 0x3C, 0x00]), 0).$1, 1.0); // half float
+      expect(Cbor.decode(Uint8List.fromList([0x38, 0x63]), 0).$1, -100);
+      final (v, end) = Cbor.decode(Uint8List.fromList([0x9F, 0x01, 0x02, 0xFF]), 0); // indefinite array
+      expect(v, [1, 2]);
+      expect(end, 4);
+    });
+
+    test('spool keeps its tag UID', () {
+      final s = Spool(
+          id: 'x', materialId: 'PLA', name: '', colorArgb: 0, totalGrams: 1, remainingGrams: 1,
+          createdAt: _epoch, nfcUid: '04A1B2C3');
+      expect(Spool.fromJson(jsonDecode(jsonEncode(s.toJson())))!.nfcUid, '04A1B2C3');
+      expect(nearestColorName(0xFFFEFEFE), 'White');
     });
   });
 }
