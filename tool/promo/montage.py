@@ -194,12 +194,14 @@ def main():
         d = ImageDraw.Draw(layer)
         d.rectangle([0, 0, W, H], fill=(12, 8, 14, int(150 * (1 - k))))
         a = int(255 * mv.ease(t / 0.3) * (1 - k))
+        title_lines = plan.get("title_lines") or mv.wrap(plan["title"], F_TITLE, 940)
+        block = len(title_lines) * (F_TITLE.size + 18)
+        y = int(H * 0.47 - block / 2) + 120  # title block centred, logo above it
         if logo is not None and a > 0:
             lg = logo.resize((190, 190), Image.LANCZOS)
             lg.putalpha(lg.getchannel("A").point(lambda v: v * a // 255))
-            layer.alpha_composite(lg, (int(W / 2 - 95), 520))
-        y = 770
-        for li, line in enumerate(plan["title"].replace(" облік", "\nоблік").split("\n")):
+            layer.alpha_composite(lg, (int(W / 2 - 95), y - 250))
+        for li, line in enumerate(title_lines):
             pop = 1 + 0.12 * math.exp(-max(0, t - li * beat) * 8) if t >= li * beat else 0
             if pop:
                 fs = mv.font(int(F_TITLE.size * pop), "Black")
