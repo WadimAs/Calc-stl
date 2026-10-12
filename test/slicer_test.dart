@@ -13,6 +13,7 @@ import 'package:stl_weight/printers/mqtt.dart';
 import 'package:stl_weight/spools/label_parser.dart';
 import 'package:stl_weight/spools/spool_tags.dart';
 import 'package:stl_weight/platform/nfc.dart';
+import 'package:stl_weight/platform/usage.dart';
 import 'package:stl_weight/ui/widgets.dart' show fmtMoney;
 import 'package:stl_weight/ui/whats_new.dart';
 import 'package:stl_weight/ui/finished_print_dialog.dart';
@@ -1299,6 +1300,21 @@ void main() {
       expect(Spool.fromJson(jsonDecode(jsonEncode(s.toJson())))!.nfcUid, '04A1B2C3');
       expect(nearestColorName(0xFFFEFEFE), 'White');
     });
+  });
+
+  test('usage stats from the server', () {
+    final s = UsageStats.fromJson({
+      'online': 3, 'day': 12, 'week': 40, 'month': 75, 'total': 120, 'newWeek': 9,
+      'daily': [{'day': '2026-10-11', 'n': 10}, {'day': '2026-10-12', 'n': 12}],
+      'versions': [{'v': '1.0 (83)', 'n': 50}],
+      'countries': [{'c': 'UA', 'n': 70}],
+      'at': 0,
+    })!;
+    expect(s.online, 3);
+    expect(s.total, 120);
+    expect(s.daily.last, ('2026-10-12', 12));
+    expect(s.versions.first.$1, '1.0 (83)');
+    expect(UsageStats.fromJson({'error': 'forbidden'}), isNull);
   });
 }
 

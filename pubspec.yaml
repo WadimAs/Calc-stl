@@ -25,3 +25,4 @@ flutter:
   assets:
     - assets/logo.png
     - assets/changelog.json
+    - assets/stats_url.txt

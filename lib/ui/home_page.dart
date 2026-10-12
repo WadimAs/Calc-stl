@@ -26,6 +26,7 @@ import '../platform/updates.dart';
 import '../slicer/settings.dart';
 import '../slicer/slice_runner.dart';
 import '../slicer/slicer.dart';
+import '../platform/usage.dart';
 import '../viewer/measure.dart';
 import '../viewer/model_viewer.dart';
 import 'catalog_page.dart';
@@ -40,6 +41,7 @@ import 'quote_page.dart';
 import 'settings_sheet.dart';
 import 'spools_page.dart';
 import 'stats_page.dart';
+import 'usage_page.dart';
 import 'whats_new.dart';
 import 'widgets.dart';
 import '../i18n/i18n.dart';
@@ -54,7 +56,9 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
+  bool _usageAdmin = false;
+
   static const _modelColor = Color(0xFFFF8A3D);
   static const _layerChoices = [0.08, 0.12, 0.16, 0.20, 0.24, 0.28];
 
@@ -92,6 +96,11 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     PlatformFiles.listen(_open, onLink: _openUrl);
     HomePage.debugOpen = _open;
+    WidgetsBinding.instance.addObserver(this);
+    if (!Updates.disabled) Usage.start();
+    Usage.adminKey().then((k) {
+      if (mounted) setState(() => _usageAdmin = k.isNotEmpty);
+    });
     AutoBackup.settingsSource = () => _settings;
     onJsonWrite = (name) {
       if (name != 'autobackup.json') AutoBackup.schedule();
@@ -206,6 +215,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _printsSub?.cancel();
     _debounce?.cancel();
     _job?.cancel();
@@ -462,6 +472,8 @@ class _HomePageState extends State<HomePage> {
         _autoBackupMenu();
       case 'whatsnew':
         _showAllChanges();
+      case 'usage':
+        _push(const UsagePage());
       case 'intro':
         Navigator.of(context)
             .push<bool>(MaterialPageRoute(fullscreenDialog: true, builder: (_) => const IntroPage()))
@@ -710,6 +722,19 @@ class _HomePageState extends State<HomePage> {
     return false;
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (Updates.disabled) return;
+    if (state == AppLifecycleState.resumed) {
+      Usage.start();
+      Usage.adminKey().then((k) {
+        if (mounted && _usageAdmin != k.isNotEmpty) setState(() => _usageAdmin = k.isNotEmpty);
+      });
+    } else if (state == AppLifecycleState.paused) {
+      Usage.pause();
+    }
+  }
+
   /// "− 3 шт. +" on the result card: identical parts counted at once.
   Widget _copiesPill(SliceSettings s, ThemeData theme) {
     final cs = theme.colorScheme;
@@ -895,7 +920,11 @@ class _HomePageState extends State<HomePage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
-  void _openSettings() => showSettingsSheet(context, _settings, _updateSettings);
+  Future<void> _openSettings() async {
+    await showSettingsSheet(context, _settings, _updateSettings);
+    final k = await Usage.adminKey();
+    if (mounted && _usageAdmin != k.isNotEmpty) setState(() => _usageAdmin = k.isNotEmpty);
+  }
 
   void _openHistory() {
     Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const HistoryPage()));
@@ -1196,6 +1225,9 @@ class _HomePageState extends State<HomePage> {
                     value: 'spools', child: ListTile(leading: Icon(Icons.album_outlined), title: Text(tr('Котушки')))),
                 PopupMenuItem(
                     value: 'stats', child: ListTile(leading: Icon(Icons.bar_chart), title: Text(tr('Статистика')))),
+              if (_usageAdmin)
+                PopupMenuItem(
+                    value: 'usage', child: ListTile(leading: Icon(Icons.groups_outlined), title: Text(tr('Користувачі')))),
                 PopupMenuItem(
                     value: 'export', child: ListTile(leading: Icon(Icons.backup_outlined), title: Text(tr('Зберегти копію даних')))),
                 PopupMenuItem(

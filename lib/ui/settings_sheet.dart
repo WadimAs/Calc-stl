@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../slicer/settings.dart';
 import '../platform/updates.dart';
+import '../platform/usage.dart';
+import 'usage_page.dart';
 import 'widgets.dart';
 import '../i18n/i18n.dart';
 import '../platform/rates.dart';
@@ -749,6 +751,8 @@ class _AboutRow extends StatefulWidget {
 class _AboutRowState extends State<_AboutRow> {
   String _version = '';
   bool _checking = false;
+  bool? _usage;
+  int _taps = 0;
 
   @override
   void initState() {
@@ -756,6 +760,18 @@ class _AboutRowState extends State<_AboutRow> {
     Updates.installedName().then((v) {
       if (mounted) setState(() => _version = v);
     });
+    Usage.enabled().then((v) {
+      if (mounted) setState(() => _usage = v);
+    });
+  }
+
+  /// Seven taps on the version: the author's stats key.
+  Future<void> _tapVersion() async {
+    if (++_taps < 7) return;
+    _taps = 0;
+    if (await askUsageKey(context) && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(tr('Пункт «Користувачі» з\'явився в меню.'))));
+    }
   }
 
   Future<void> _check() async {
@@ -773,9 +789,12 @@ class _AboutRowState extends State<_AboutRow> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Row(children: [
+    final row = Row(children: [
       Expanded(
-        child: Text(trf('Версія {0}', [_version]), style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+        child: GestureDetector(
+          onTap: _tapVersion,
+          child: Text(trf('Версія {0}', [_version]), style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+        ),
       ),
       TextButton.icon(
         onPressed: _checking ? null : _check,
@@ -784,6 +803,21 @@ class _AboutRowState extends State<_AboutRow> {
             : const Icon(Icons.system_update_outlined),
         label: Text(tr('Перевірити оновлення')),
       ),
+    ]);
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      row,
+      if (_usage != null)
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text(tr('Анонімна статистика використання')),
+          subtitle: Text(tr('Лише випадковий номер встановлення й версія — щоб автор знав, скільки людей користується застосунком.')),
+          value: _usage!,
+          onChanged: (v) {
+            setState(() => _usage = v);
+            Usage.setEnabled(v);
+          },
+        ),
     ]);
   }
 }
