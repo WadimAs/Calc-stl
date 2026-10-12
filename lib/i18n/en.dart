@@ -2,13 +2,13 @@
 // ignore_for_file: lines_longer_than_80_chars
 
 const Map<String, String> en = {
-  'Це не резервна копія STL Вага': 'This is not an STL Weight backup',
+  'Це не резервна копія Друкаря': 'This is not a Drukar backup',
   'виріб': 'product',
   'модель': 'model',
   'Дата;Модель;Матеріал;Копій;Вага моделі, г;Підтримки, г;Разом, г;Філамент, м;Час, год;Ціна за кг;Пластик, грн;Електроенергія, грн;Амортизація, грн;Собівартість, грн;Націнка %;Доплата;Ціна, грн;Примітка': 'Date;Model;Material;Copies;Model weight, g;Supports, g;Total, g;Filament, m;Time, h;Price per kg;Plastic, UAH;Electricity, UAH;Depreciation, UAH;Cost, UAH;Markup %;Extra;Price, UAH;Note',
   '{0} хв': '{0} min',
   '{0} год {1} хв': '{0} h {1} min',
-  'STL Вага': 'STL Weight',
+  'Друкар': 'Drukar',
   'У G-code немає даних про вагу чи час друку': 'The G-code has no weight or print time data',
   'Модель порожня': 'The model is empty',
   'Профіль: {0}': 'Profile: {0}',
@@ -46,7 +46,7 @@ const Map<String, String> en = {
   'Сьогодні термін: {0}': 'Due today: {0}',
   '{0} шт · {1}{2}': '{0} pcs · {1}{2}',
   'Це не схоже на посилання': 'This does not look like a link',
-  '{0} не дає завантажувати файли без входу в акаунт. Завантажте модель у браузері й відкрийте файл через «Поділитися» → STL Вага.': '{0} does not allow downloads without signing in. Download the model in your browser and open the file via Share → STL Weight.',
+  '{0} не дає завантажувати файли без входу в акаунт. Завантажте модель у браузері й відкрийте файл через «Поділитися» → Друкар.': '{0} does not allow downloads without signing in. Download the model in your browser and open the file via Share → Drukar.',
   'Сайт не дозволяє завантаження без входу. Завантажте файл у браузері й поділіться ним із застосунком.': 'The site does not allow downloads without signing in. Download the file in your browser and share it with the app.',
   'Сайт відповів помилкою {0}': 'The site returned error {0}',
   'Файл завеликий': 'The file is too large',

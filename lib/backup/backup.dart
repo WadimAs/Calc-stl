@@ -42,7 +42,7 @@ class Backup {
   static Future<SliceSettings> restore(Uint8List bytes) async {
     final raw = jsonDecode(utf8.decode(bytes, allowMalformed: true));
     if (raw is! Map || raw['app'] != 'stl_weight') {
-      throw FormatException(tr('Це не резервна копія STL Вага'));
+      throw FormatException(tr('Це не резервна копія Друкаря'));
     }
     final settings = raw['settings'] is Map
         ? SliceSettings.fromJson(Map<String, dynamic>.from(raw['settings'] as Map))
