@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../data/records.dart';
 import '../history/history.dart';
 import '../mesh/slicer_project.dart';
+import '../platform/files.dart';
 import '../printers/print_hub.dart';
 import '../printers/bambu_cloud.dart';
 import '../printers/moonraker.dart';
@@ -223,10 +224,11 @@ class _PrintersPageState extends State<PrintersPage> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 4),
                     secondary: const Icon(Icons.auto_delete_outlined),
                     title: Text(tr('Пропонувати списання після друку')),
-                    subtitle: Text(tr('Коли принтер закінчить друк, застосунок спитає, з якої котушки й для чого списати пластик')),
+                    subtitle: Text(tr('Коли принтер закінчить друк, прийде сповіщення — навіть якщо застосунок закритий (перевірка приблизно раз на 15 хв). Застосунок спитає, з якої котушки й для чого списати пластик')),
                     value: PrinterHub.instance.enabled,
                     onChanged: (v) async {
                       await PrinterHub.instance.setEnabled(v);
+                      if (v) await PlatformFiles.requestNotifications();
                       if (mounted) setState(() {});
                     },
                   ),

@@ -10,6 +10,7 @@ import '../spools/spools.dart';
 import '../spools/writeoffs.dart';
 import 'spool_picker.dart';
 import 'widgets.dart';
+import '../platform/files.dart';
 
 String _norm(String s) => s
     .toLowerCase()
@@ -55,6 +56,19 @@ String? guessSpool(PrinterConn p, UsageLine l, List<Spool> spools) {
 }
 
 /// Asks where the filament of a finished print goes and writes it off.
+/// Push notification "print finished — write the filament off?".
+Future<void> notifyFinishedPrint(FinishedPrint f) async {
+  await PlatformFiles.notifyNow(
+    f.key.hashCode & 0x3fffffff,
+    f.failed ? tr('Друк перервано') : tr('Друк завершено'),
+    trf('{0} — списати пластик з котушки?', [
+      [if (f.job.isNotEmpty) f.job, f.printer.name, if (f.grams != null) fmtGrams(f.grams!)].join(' · ')
+    ]),
+    kind: 'print',
+  );
+  await PrinterHub.instance.markNotified(f);
+}
+
 Future<void> showFinishedPrint(BuildContext context, FinishedPrint f) async {
   final spools = await SpoolStore.load();
   final orders = (await OrderStore.load()).where((o) => !o.status.printed).toList();

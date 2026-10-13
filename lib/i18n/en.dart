@@ -757,7 +757,7 @@ const Map<String, String> en = {
   'Пізніше': 'Later',
   '{0} — списати пластик з котушки?': '{0} — write the filament off a spool?',
   'Пропонувати списання після друку': 'Offer a write-off after each print',
-  'Коли принтер закінчить друк, застосунок спитає, з якої котушки й для чого списати пластик': 'When a printer finishes, the app asks which spool to write the filament off and what the print was for',
+  'Коли принтер закінчить друк, прийде сповіщення — навіть якщо застосунок закритий (перевірка приблизно раз на 15 хв). Застосунок спитає, з якої котушки й для чого списати пластик': 'When a printer finishes you get a notification — even with the app closed (checked about every 15 min). The app asks which spool to write the filament off and what the print was for',
   'дані Bambu Cloud': 'Bambu Cloud data',
   'за датчиком AMS, приблизно': 'from the AMS gauge, approximate',
   'дані слайсера з принтера': 'slicer data from the printer',

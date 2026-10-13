@@ -94,9 +94,23 @@ class PlatformFiles {
   }
 
   /// Shows a notification right away (e.g. a print finished).
-  static Future<void> notifyNow(int id, String title, String text) async {
+  static Future<void> notifyNow(int id, String title, String text, {String kind = ''}) async {
     try {
-      await _channel.invokeMethod<bool>('notifyNow', {'id': id, 'title': title, 'text': text});
+      await _channel.invokeMethod<bool>('notifyNow', {'id': id, 'title': title, 'text': text, 'kind': kind});
+    } catch (_) {}
+  }
+
+  /// Android checks the printers every ~15 minutes even with the app closed.
+  static Future<void> schedulePrintWatch(bool on) async {
+    try {
+      await _channel.invokeMethod<bool>('schedulePrintWatch', {'on': on});
+    } catch (_) {}
+  }
+
+  /// Background check finished (lets Android stop the job).
+  static Future<void> backgroundDone() async {
+    try {
+      await _channel.invokeMethod<void>('backgroundDone');
     } catch (_) {}
   }
 

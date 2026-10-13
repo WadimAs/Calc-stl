@@ -4,6 +4,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'i18n/i18n.dart';
 import 'platform/files.dart';
 import 'slicer/settings.dart';
+import 'printers/print_hub.dart';
+import 'ui/finished_print_dialog.dart';
 import 'ui/home_page.dart';
 
 Future<void> main() async {
@@ -16,6 +18,24 @@ Future<void> main() async {
     applyLang('auto');
   }
   runApp(const StlWeightApp());
+}
+
+/// Android background job (every ~15 min, app closed): checks the printers
+/// and posts a notification for every finished print not answered yet.
+@pragma('vm:entry-point')
+Future<void> backgroundCheck() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    final s = await PlatformFiles.loadSettings();
+    applyLang(s.language);
+    final found = await PrinterHub.instance.checkInBackground().timeout(const Duration(seconds: 50));
+    for (final f in found) {
+      await notifyFinishedPrint(f);
+    }
+  } catch (_) {
+    // offline / printer unreachable: next run
+  }
+  await PlatformFiles.backgroundDone();
 }
 
 class StlWeightApp extends StatelessWidget {

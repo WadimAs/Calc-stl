@@ -124,6 +124,11 @@ class MainActivity : FlutterActivity() {
                     result.success(initialLink)
                     initialLink = null
                 }
+                "schedulePrintWatch" -> {
+                    PrintCheckJob.schedule(this, call.argument<Boolean>("on") == true)
+                    result.success(true)
+                }
+                "backgroundDone" -> result.success(null)
                 "nfcState" -> result.success(nfc.state())
                 "nfcRead" -> nfc.read(result)
                 "nfcWrite" -> {
@@ -239,6 +244,7 @@ class MainActivity : FlutterActivity() {
                         .putExtra("id", call.argument<Int>("id") ?: 1)
                         .putExtra("title", call.argument<String>("title") ?: "")
                         .putExtra("text", call.argument<String>("text") ?: "")
+                        .putExtra("kind", call.argument<String>("kind") ?: "")
                     ReminderReceiver().onReceive(this, i)
                     result.success(true)
                 }
@@ -306,10 +312,22 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        resumed = true
+    }
+
     override fun onPause() {
+        resumed = false
         // Reader mode only works in the foreground; the waiting dialog closes.
         nfc.cancel()
         super.onPause()
+    }
+
+    companion object {
+        /** The app is on screen (background printer checks are skipped then). */
+        @Volatile
+        var resumed = false
     }
 
     override fun onNewIntent(intent: Intent) {

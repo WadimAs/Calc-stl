@@ -17,9 +17,12 @@ class ReminderReceiver : BroadcastReceiver() {
         val title = intent.getStringExtra("title") ?: "Замовлення"
         val text = intent.getStringExtra("text") ?: ""
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val prints = intent.getStringExtra("kind") == "print"
+        val channel = if (prints) CHANNEL_PRINTS else CHANNEL
         if (Build.VERSION.SDK_INT >= 26) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Терміни замовлень", NotificationManager.IMPORTANCE_DEFAULT)
+                if (prints) NotificationChannel(CHANNEL_PRINTS, "Принтери: друк завершено", NotificationManager.IMPORTANCE_HIGH)
+                else NotificationChannel(CHANNEL, "Терміни замовлень", NotificationManager.IMPORTANCE_DEFAULT)
             )
         }
         val open = PendingIntent.getActivity(
@@ -28,13 +31,13 @@ class ReminderReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val builder = if (Build.VERSION.SDK_INT >= 26) {
-            Notification.Builder(context, CHANNEL)
+            Notification.Builder(context, channel)
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(context)
         }
         val n = builder
-            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setSmallIcon(if (prints) android.R.drawable.stat_sys_download_done else android.R.drawable.ic_popup_reminder)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))
@@ -50,6 +53,7 @@ class ReminderReceiver : BroadcastReceiver() {
 
     companion object {
         const val CHANNEL = "deadlines"
+        const val CHANNEL_PRINTS = "prints"
 
         private fun pending(context: Context, id: Int, title: String?, text: String?): PendingIntent {
             val i = Intent(context, ReminderReceiver::class.java)

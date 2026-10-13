@@ -663,16 +663,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (PrinterHub.instance.inForeground) {
         _askFinishedPrints();
       } else {
-        PlatformFiles.notifyNow(
-          f.key.hashCode & 0x3fffffff,
-          f.failed ? tr('Друк перервано') : tr('Друк завершено'),
-          trf('{0} — списати пластик з котушки?', [
-            [f.job, if (f.grams != null) fmtGrams(f.grams!)].join(' · ')
-          ]),
-        );
+        notifyFinishedPrint(f);
       }
     });
-    if ((await printerStore.load()).isNotEmpty) await PrinterHub.instance.start();
+    if ((await printerStore.load()).isNotEmpty) {
+      await PrinterHub.instance.start();
+      // Push "print finished" needs the notification permission (Android 13+).
+      if (!Updates.disabled && PrinterHub.instance.enabled) PlatformFiles.requestNotifications();
+    }
   }
 
   /// Shows the queued prints one after another.
