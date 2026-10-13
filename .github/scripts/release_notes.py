@@ -9,4 +9,4 @@ for line in e["uk"]:
 print("\n## What's new\n")
 for line in e["en"]:
     print(f"- {line}")
-print("\n`stl-weight.apk` — для більшості телефонів, `stl-weight-arm32.apk` — для старих 32-бітних.")
+print("\n`kotushka.apk` — для більшості телефонів, `kotushka-arm32.apk` — для старих 32-бітних. (Файли `stl-weight*.apk` — ті самі, для оновлення старих версій.)")

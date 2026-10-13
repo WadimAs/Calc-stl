@@ -56,7 +56,7 @@ class Updates {
     try {
       final req = await client.getUrl(Uri.parse('https://api.github.com/repos/$_repo/releases/latest'));
       req.headers.set(HttpHeaders.acceptHeader, 'application/vnd.github+json');
-      req.headers.set(HttpHeaders.userAgentHeader, 'stl-weight-app');
+      req.headers.set(HttpHeaders.userAgentHeader, 'kotushka-app');
       final res = await req.close().timeout(const Duration(seconds: 10));
       if (res.statusCode != 200) return null;
       final body = jsonDecode(await res.transform(utf8.decoder).join());
@@ -66,9 +66,12 @@ class Updates {
       final m = RegExp(r'(\d+)$').firstMatch(tag);
       final build = m == null ? null : int.tryParse(m.group(1)!);
       if (build == null || build <= current) return null;
-      // 64-bit phones get stl-weight.apk, old 32-bit ones stl-weight-arm32.apk.
-      final want = await _is64() ? 'stl-weight.apk' : 'stl-weight-arm32.apk';
-      String? apk, anyApk;
+      // 64-bit phones get kotushka.apk, old 32-bit ones kotushka-arm32.apk
+      // (older releases: stl-weight*.apk).
+      final is64 = await _is64();
+      final want = is64 ? 'kotushka.apk' : 'kotushka-arm32.apk';
+      final legacy = is64 ? 'stl-weight.apk' : 'stl-weight-arm32.apk';
+      String? apk, old, anyApk;
       final assets = body['assets'];
       if (assets is List) {
         for (final a in assets) {
@@ -77,9 +80,10 @@ class Updates {
           if (!n.endsWith('.apk')) continue;
           anyApk ??= a['browser_download_url'] as String?;
           if (n == want) apk = a['browser_download_url'] as String?;
+          if (n == legacy) old = a['browser_download_url'] as String?;
         }
       }
-      apk ??= anyApk;
+      apk ??= old ?? anyApk;
       final page = body['html_url'] is String ? body['html_url'] as String : 'https://github.com/$_repo/releases/latest';
       return UpdateInfo(build, apk ?? page, page);
     } catch (_) {
