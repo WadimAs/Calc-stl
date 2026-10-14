@@ -9,6 +9,8 @@ on:
       - 'test_driver/**'
       - '.github/workflows/ui-test.yml'
       - '.github/scripts/ui_run.sh'
+      - '.github/scripts/printwatch_e2e.sh'
+      - '.github/scripts/fake_moonraker.py'
       - 'android/**'
       - '.github/scripts/add_deps.py'
 
@@ -23,7 +25,7 @@ concurrency:
 jobs:
   ui:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v5
         with:
@@ -87,7 +89,9 @@ jobs:
 
       # Build the test APK while nothing else runs; the run below reuses it.
       - name: Build debug APK
-        run: flutter build apk --debug
+        run: |
+          flutter build apk --debug
+          cp build/app/outputs/flutter-apk/app-debug.apk debug-app.apk
 
       # The minified release build is checked only when Android parts change.
       - name: Check if Android parts changed

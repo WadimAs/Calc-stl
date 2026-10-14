@@ -80,6 +80,9 @@ done
 pull
 kill $PULLER 2>/dev/null || true
 
+# "Print finished" notification with the app in the background (fake printer).
+timeout 900 bash .github/scripts/printwatch_e2e.sh debug-app.apk || echo "E2E script timeout" >> drive.txt
+
 # Release build (minified by R8): text recognition must still work.
 if [ -f release-x64.apk ]; then
   adb uninstall $PKG >/dev/null 2>&1 || true
