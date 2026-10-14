@@ -137,24 +137,33 @@ class PrinterHub with WidgetsBindingObserver {
 
   Stream<FinishedPrint> get finished => _finished.stream;
 
-  /// Runs inside the "print in progress" foreground service (no UI).
-  bool serviceMode = false;
-
   /// Something was printing during the last check (background job).
   bool sawPrinting = false;
-  DateTime? _serviceAsked;
+
+  /// When the "is it finished?" check is set for (expected end of a print).
+  DateTime? _alarmAt;
   final _mrStatus = <String, (PrinterStatus, DateTime)>{};
 
   List<PrinterConn> get printers => _printers;
 
-  /// A print is running: keep a live watch even after the app is closed.
-  void _onPrinting() {
+  /// A print is running: Android runs one check right after its expected end
+  /// (works with the app closed; nothing is shown meanwhile). The check sets
+  /// the next one if the print is still going.
+  void _onPrinting([PrinterStatus? s]) {
     sawPrinting = true;
-    if (serviceMode || _sink != null) return;
+    if (!enabled) return;
     final now = DateTime.now();
-    if (_serviceAsked != null && now.difference(_serviceAsked!) < const Duration(minutes: 5)) return;
-    _serviceAsked = now;
-    unawaited(PlatformFiles.startPrintService());
+    var wait = s?.remaining ?? const Duration(minutes: 15);
+    if (wait > const Duration(minutes: 45)) wait = const Duration(minutes: 45); // re-check long prints
+    final at = now.add(wait + const Duration(seconds: 50));
+    final min = now.add(const Duration(minutes: 2));
+    final target = at.isBefore(min) ? min : at;
+    final cur = _alarmAt;
+    // Keep the earliest pending check (several printers); an early check is
+    // harmless — it simply sets the next one.
+    if (cur != null && cur.isAfter(now) && target.isAfter(cur.subtract(const Duration(seconds: 90)))) return;
+    _alarmAt = target;
+    unawaited(PlatformFiles.schedulePrintAlarm(target));
   }
 
   /// Prints running right now (fresh data only).
@@ -212,7 +221,6 @@ class PrinterHub with WidgetsBindingObserver {
       for (final k in cur['notified'] is List ? cur['notified'] as List : const []) {
         if (k is String) _notified.add(k);
       }
-      if (serviceMode) enabled = cur['enabled'] != false;
       for (final w in cur['waiting'] is List ? cur['waiting'] as List : const []) {
         if (w is Map && w['key'] is String && !_open.containsKey(w['key']) &&
             !_waitingRaw.any((x) => x is Map && x['key'] == w['key'])) {
@@ -411,7 +419,7 @@ class PrinterHub with WidgetsBindingObserver {
         };
       }
       b.sawPrinting = true;
-      _onPrinting();
+      _onPrinting(s);
       return;
     }
     if (!enabled || key == null || !(s.finished || s.failed)) return;
@@ -537,7 +545,7 @@ class PrinterHub with WidgetsBindingObserver {
       try {
         final st = await MoonrakerClient(p).status();
         _mrStatus[p.id] = (st, DateTime.now());
-        if (st.printing) _onPrinting();
+        if (st.printing) _onPrinting(st);
       } catch (_) {}
       try {
         final jobs = await MoonrakerClient(p).history(limit: 5);

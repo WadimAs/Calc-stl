@@ -26,8 +26,11 @@ class H(BaseHTTPRequestHandler):
         if self.path.startswith('/printer/objects/query'):
             elapsed = min(time.time() - START, FINISH_AFTER)
             prog = 0.2 + 0.6 * elapsed / FINISH_AFTER
+            # Duration so that Moonraker's estimate (dur/prog - dur) = real time left.
+            left = max(FINISH_AFTER - elapsed, 1.0)
+            dur = left * prog / (1 - prog)
             st = {'state': 'complete' if done() else 'printing', 'filename': 'benchy.gcode',
-                  'print_duration': DURATION * prog, 'filament_used': 1500.0 * prog}
+                  'print_duration': dur, 'filament_used': 1500.0 * prog}
             res = {'status': {'print_stats': st, 'virtual_sdcard': {'progress': 1.0 if done() else prog},
                               'extruder': {'temperature': 215, 'target': 215},
                               'heater_bed': {'temperature': 60, 'target': 60}}}

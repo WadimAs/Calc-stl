@@ -33,17 +33,17 @@ adb shell am start -n $PKG/.MainActivity >/dev/null
 sleep 45
 mkdir -p screenshots
 adb exec-out screencap -p > screenshots/e2e_1_app.png || true
-if adb shell dumpsys activity services $PKG | grep -q PrintWatchService; then
-  log "service started while printing: OK"
+if adb shell dumpsys alarm | grep -E "RTC_WAKEUP|ELAPSED" -A3 | grep -q "$PKG"; then
+  log "check set for the end of the print: OK"
 else
-  log "service started while printing: FAIL"
+  log "check set for the end of the print: FAIL"
 fi
+adb shell dumpsys alarm | grep -B2 -A3 "$PKG" | head -16 | sed 's/^/E2E alarm: /' | tee -a drive.txt
 if adb shell dumpsys notification --noredact | grep -qE "android\.title=.*(Друкується|Printing)"; then
-  log "shade stays clean while printing: FAIL (progress notification visible)"
+  log "shade stays clean while printing: FAIL"
 else
   log "shade stays clean while printing: OK"
 fi
-
 
 # Leave the app and let Android trim it, like a user going away.
 adb shell input keyevent KEYCODE_HOME
@@ -76,18 +76,11 @@ adb exec-out screencap -p > screenshots/e2e_3_shade_finished.png 2>/dev/null || 
 adb shell cmd statusbar collapse || true
 adb shell dumpsys notification --noredact | grep -E "android\.(title|text)=" | grep -vE "^\s*$" | head -12 | sed 's/^/E2E notif: /' | tee -a drive.txt
 
-# The service must stop by itself once nothing prints.
-stopped=0
-for i in $(seq 1 30); do
-  if ! adb shell dumpsys activity services $PKG | grep -q PrintWatchService; then stopped=1; break; fi
-  sleep 10
-done
-[ $stopped = 1 ] && log "service stopped when idle: OK" || log "service stopped when idle: FAIL"
 adb shell input keyevent KEYCODE_WAKEUP || true
 
 kill $FAKE 2>/dev/null || true
 head -3 fake_moonraker.log | sed 's/^/E2E /' >> drive.txt
 tail -5 fake_moonraker.log | sed 's/^/E2E /' >> drive.txt
 grep -c FAKE fake_moonraker.log | sed 's/^/E2E fake requests: /' >> drive.txt
-adb logcat -d | grep -iE "PrintWatch|ForegroundService|flutter" | tail -30 | sed 's/^/E2E log: /' >> drive.txt
+adb logcat -d | grep -iE "PrintAlarm|PrintCheck|JobScheduler.*stl_weight|flutter" | tail -30 | sed 's/^/E2E log: /' >> drive.txt
 exit 0

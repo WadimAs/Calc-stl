@@ -239,7 +239,10 @@ class MainActivity : FlutterActivity() {
                     )
                     result.success(true)
                 }
-                "startPrintService" -> result.success(PrintWatchService.start(this))
+                "schedulePrintAlarm" -> {
+                    PrintAlarmReceiver.schedule(this, (call.argument<Number>("at") ?: 0).toLong())
+                    result.success(true)
+                }
                 "appResumed" -> result.success(resumed)
                 "pushStatus" -> {
                     val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager

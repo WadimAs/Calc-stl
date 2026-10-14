@@ -690,7 +690,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.notifications_active_outlined),
         title: Text(tr('Сповіщення «Друк завершено»')),
-        content: Text(tr('Щоб сповіщення приходили одразу, навіть коли застосунок закритий, дозвольте «Котушці» працювати у фоні без обмежень батареї. Застосунок активний лише поки йде друк.')),
+        content: Text(tr('Щоб сповіщення приходили одразу, навіть коли застосунок закритий, дозвольте «Котушці» працювати у фоні без обмежень батареї. Застосунок перевіряє принтер лише тоді, коли друк має закінчитись.')),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Пізніше'))),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Дозволити'))),

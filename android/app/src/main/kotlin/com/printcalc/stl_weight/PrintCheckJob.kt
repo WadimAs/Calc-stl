@@ -26,6 +26,7 @@ class PrintCheckJob : JobService() {
 
     override fun onStartJob(p: JobParameters): Boolean {
         if (MainActivity.resumed) return false
+        if (params != null) return false // a check is already running
         params = p
         val loader = FlutterInjector.instance().flutterLoader()
         loader.startInitialization(applicationContext)
@@ -45,7 +46,10 @@ class PrintCheckJob : JobService() {
                             ReminderReceiver().onReceive(this, i)
                             result.success(true)
                         }
-                        "startPrintService" -> result.success(PrintWatchService.start(applicationContext))
+                        "schedulePrintAlarm" -> {
+                            PrintAlarmReceiver.schedule(applicationContext, (call.argument<Number>("at") ?: 0).toLong())
+                            result.success(true)
+                        }
                         "appResumed" -> result.success(MainActivity.resumed)
                         "backgroundDone" -> {
                             result.success(null)
@@ -61,7 +65,7 @@ class PrintCheckJob : JobService() {
                 finish(false)
             }
         }
-        main.postDelayed({ finish(false) }, 90_000) // safety net
+        main.postDelayed({ if (params === p) finish(false) }, 90_000) // safety net
         return true
     }
 
@@ -82,6 +86,23 @@ class PrintCheckJob : JobService() {
 
     companion object {
         private const val JOB_ID = 7101
+        private const val NOW_ID = 7103
+
+        /** One check right now (the print should have ended). */
+        fun runNow(context: Context) {
+            val js = context.getSystemService(Context.JOB_SCHEDULER_SERVICE) as JobScheduler
+            val cn = ComponentName(context, PrintCheckJob::class.java)
+            try {
+                val b = JobInfo.Builder(NOW_ID, cn).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                if (android.os.Build.VERSION.SDK_INT >= 31) b.setExpedited(true) else b.setOverrideDeadline(0)
+                js.schedule(b.build())
+            } catch (e: Exception) {
+                try {
+                    js.schedule(JobInfo.Builder(NOW_ID, cn).setOverrideDeadline(0).build())
+                } catch (_: Exception) {
+                }
+            }
+        }
 
         fun schedule(context: Context, on: Boolean) {
             val js = context.getSystemService(Context.JOB_SCHEDULER_SERVICE) as JobScheduler

@@ -107,26 +107,11 @@ class PlatformFiles {
     } catch (_) {}
   }
 
-  /// Live watch while a print runs (foreground service). False when Android
-  /// does not allow starting it right now.
-  static Future<bool> startPrintService() async {
+  /// One printer check at [at] (expected end of a print), works with the app
+  /// closed and the phone asleep. null cancels it.
+  static Future<void> schedulePrintAlarm(DateTime? at) async {
     try {
-      return await _channel.invokeMethod<bool>('startPrintService') ?? false;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  static Future<void> stopPrintService() async {
-    try {
-      await _channel.invokeMethod<bool>('stopPrintService');
-    } catch (_) {}
-  }
-
-  /// Text of the ongoing "printing" notification.
-  static Future<void> printServiceText(String text) async {
-    try {
-      await _channel.invokeMethod<bool>('printServiceText', {'text': text});
+      await _channel.invokeMethod<bool>('schedulePrintAlarm', {'at': at?.millisecondsSinceEpoch ?? 0});
     } catch (_) {}
   }
 

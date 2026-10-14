@@ -856,6 +856,6 @@ const Map<String, String> en = {
   'Сповіщення про друк можуть не приходити': 'Print notifications may not arrive',
   'Увімкнути сповіщення': 'Turn on notifications',
   'Щоб сповіщення приходили вчасно': 'To get notifications on time',
-  'Щоб сповіщення приходили одразу, навіть коли застосунок закритий, дозвольте «Котушці» працювати у фоні без обмежень батареї. Застосунок активний лише поки йде друк.': 'To get notifications right away, even with the app closed, allow Spool to run in the background without battery restrictions. The app stays active only while a print is running.',
+  'Щоб сповіщення приходили одразу, навіть коли застосунок закритий, дозвольте «Котушці» працювати у фоні без обмежень батареї. Застосунок перевіряє принтер лише тоді, коли друк має закінчитись.': 'To get notifications right away, even with the app closed, allow Spool to run in the background without battery restrictions. The app checks the printer only when a print is due to finish.',
   'ще {0}': '{0} left',
 };
