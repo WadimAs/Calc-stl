@@ -17,7 +17,9 @@ put() { # file content
   b64=$(printf '%s' "$2" | base64 -w0)
   adb shell "run-as $PKG sh -c 'mkdir -p files && echo $b64 | base64 -d > files/$1'"
 }
-put settings.json '{"language":"uk","seenIntro":true}'
+CL=$(python3 -c "import json;print(json.load(open('assets/changelog.json'))[0]['id'])")
+put settings.json "{\"language\":\"uk\",\"seenIntro\":true,\"seenChangelog\":\"$CL\"}"
+adb shell "run-as $PKG ls -la files" | sed 's/^/E2E files: /' | tee -a drive.txt
 put printers.json '[{"id":"mr1","name":"Fake K1","kind":"moonraker","host":"10.0.2.2","serial":"","accessCode":"","apiKey":"","port":7125,"writtenOff":[],"cloud":false}]'
 
 FINISH_AFTER=150 python3 .github/scripts/fake_moonraker.py 2> fake_moonraker.log &
@@ -29,6 +31,8 @@ adb shell input keyevent KEYCODE_WAKEUP || true
 adb shell wm dismiss-keyguard || true
 adb shell am start -n $PKG/.MainActivity >/dev/null
 sleep 45
+mkdir -p screenshots
+adb exec-out screencap -p > screenshots/e2e_1_app.png || true
 if adb shell dumpsys activity services $PKG | grep -q PrintWatchService; then
   log "service started while printing: OK"
 else
@@ -41,6 +45,9 @@ adb shell input keyevent KEYCODE_HOME
 sleep 3
 adb shell am kill $PKG || true
 adb shell input keyevent KEYCODE_SLEEP || true
+sleep 20
+adb shell "run-as $PKG cat files/printwatch.json" | head -c 600 | sed 's/^/E2E printwatch: /' | tee -a drive.txt
+echo >> drive.txt
 
 ok=0
 for i in $(seq 1 60); do
@@ -65,6 +72,8 @@ done
 adb shell input keyevent KEYCODE_WAKEUP || true
 
 kill $FAKE 2>/dev/null || true
+head -3 fake_moonraker.log | sed 's/^/E2E /' >> drive.txt
 tail -5 fake_moonraker.log | sed 's/^/E2E /' >> drive.txt
+grep -c FAKE fake_moonraker.log | sed 's/^/E2E fake requests: /' >> drive.txt
 adb logcat -d | grep -iE "PrintWatch|ForegroundService|flutter" | tail -30 | sed 's/^/E2E log: /' >> drive.txt
 exit 0
