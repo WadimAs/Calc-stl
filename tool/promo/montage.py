@@ -29,13 +29,13 @@ W, H, FPS = 1080, 1920, 30
 ACCENT = mv.ACCENT
 SCREEN_H = 1400
 INTRO = 2.0
-OUTRO = 3.2
+OUTRO = 4.2
 
 F_TITLE = mv.font(104, "Black")
 F_CAP = mv.font(62, "ExtraBold")
 F_SMALL = mv.font(36, "SemiBold")
-F_OUT = mv.font(70, "Black")
-F_OUT2 = mv.font(48, "Bold")
+F_OUT = mv.font(88, "Black")
+F_OUT2 = mv.font(56, "Black")
 
 
 # ------------------------------------------------------------------ music
@@ -237,10 +237,29 @@ def main():
         d = ImageDraw.Draw(layer)
         d.rectangle([0, 0, W, H], fill=(12, 8, 14, int(170 * mv.ease(t / 0.3))))
         a = int(255 * mv.ease(t / 0.3))
-        y = caption(d, plan["outro"][0], 760, a, F_OUT, 940)
+        if logo is not None and a > 0:
+            lg = logo.resize((170, 170), Image.LANCZOS)
+            lg.putalpha(lg.getchannel("A").point(lambda v: v * a // 255))
+            layer.alpha_composite(lg, (int(W / 2 - 85), 470))
+        y = caption(d, plan["outro"][0], 700, a, F_OUT, 940)
         a2 = int(255 * mv.ease((t - beat * 2) / 0.3))
         if a2 > 0:
-            caption(d, plan["outro"][1], y + 40, a2, F_OUT2, 940)
+            # Call to action in an accent pill that pulses on the beat.
+            bt = ((t % beat) / beat)
+            z = 1 + 0.05 * math.exp(-bt * 6)
+            f2 = mv.font(int(F_OUT2.size * z), "Black")
+            lines = mv.wrap(plan["outro"][1], f2, 860)
+            lh = f2.size + 14
+            bw = max(f2.getlength(l) for l in lines) + 80
+            bh = lh * len(lines) + 50
+            top = y + 50
+            d.rounded_rectangle([(W - bw) / 2, top, (W + bw) / 2, top + bh], radius=bh / 2 if len(lines) == 1 else 44,
+                                fill=ACCENT + (a2,))
+            ty = top + 25
+            for l in lines:
+                w = f2.getlength(l)
+                d.text(((W - w) / 2, ty), l, font=f2, fill=(255, 255, 255, a2))
+                ty += lh
         left = outro - t
         if left < 0.6:
             d.rectangle([0, 0, W, H], fill=(0, 0, 0, int(255 * (1 - left / 0.6))))
