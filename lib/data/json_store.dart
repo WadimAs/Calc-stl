@@ -27,9 +27,18 @@ class JsonStore {
   static Future<void> write(String name, Object? value) async {
     final f = await _file(name);
     if (f == null) return;
-    final tmp = File('${f.path}.tmp');
-    await tmp.writeAsString(jsonEncode(value));
-    await tmp.rename(f.path);
+    // Unique temp name: the app, the background check and the print service
+    // may write the same file at once.
+    final tmp = File('${f.path}.${DateTime.now().microsecondsSinceEpoch}${identityHashCode(value)}.tmp');
+    try {
+      await tmp.writeAsString(jsonEncode(value));
+      await tmp.rename(f.path);
+    } catch (_) {
+      try {
+        if (await tmp.exists()) await tmp.delete();
+      } catch (_) {}
+      rethrow;
+    }
     onJsonWrite?.call(name);
   }
 }
