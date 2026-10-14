@@ -107,6 +107,72 @@ class PlatformFiles {
     } catch (_) {}
   }
 
+  /// Live watch while a print runs (foreground service). False when Android
+  /// does not allow starting it right now.
+  static Future<bool> startPrintService() async {
+    try {
+      return await _channel.invokeMethod<bool>('startPrintService') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> stopPrintService() async {
+    try {
+      await _channel.invokeMethod<bool>('stopPrintService');
+    } catch (_) {}
+  }
+
+  /// Text of the ongoing "printing" notification.
+  static Future<void> printServiceText(String text) async {
+    try {
+      await _channel.invokeMethod<bool>('printServiceText', {'text': text});
+    } catch (_) {}
+  }
+
+  /// The app is on screen (it asks about finished prints itself).
+  static Future<bool> appResumed() async {
+    try {
+      return await _channel.invokeMethod<bool>('appResumed') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// What may stop "print finished" notifications: notifications switched off,
+  /// battery optimisation on; plus the phone maker (Xiaomi & co. need autostart).
+  static Future<({bool notifications, bool battery, String maker})> pushStatus() async {
+    try {
+      final r = await _channel.invokeMethod<Object?>('pushStatus');
+      if (r is Map) {
+        return (
+          notifications: r['notifications'] != false,
+          battery: r['battery'] != false,
+          maker: r['maker'] is String ? r['maker'] as String : '',
+        );
+      }
+    } catch (_) {}
+    return (notifications: true, battery: true, maker: '');
+  }
+
+  static Future<void> openNotificationSettings() async {
+    try {
+      await _channel.invokeMethod<bool>('openNotificationSettings');
+    } catch (_) {}
+  }
+
+  static Future<void> requestBatteryExemption() async {
+    try {
+      await _channel.invokeMethod<bool>('requestBatteryExemption');
+    } catch (_) {}
+  }
+
+  static Future<void> openAppSettings() async {
+    try {
+      await _channel.invokeMethod<bool>('openAppSettings');
+    } catch (_) {}
+  }
+
   /// Background check finished (lets Android stop the job).
   static Future<void> backgroundDone() async {
     try {

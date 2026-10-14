@@ -1,5 +1,17 @@
 [
   {
+    "id": "2026-10-14b",
+    "version": "1.4.2",
+    "uk": [
+      "Сповіщення «Друк завершено» приходять одразу, навіть коли застосунок закритий: поки йде друк, «Котушка» стежить за принтером і показує прогрес у шторці.",
+      "Якщо телефон блокує сповіщення чи роботу у фоні — у розділі «Принтери» з'явиться підказка й кнопка, щоб це виправити."
+    ],
+    "en": [
+      "“Print finished” notifications arrive right away, even with the app closed: while printing, Spool watches the printer and shows the progress in the notification shade.",
+      "If the phone blocks notifications or background work, the Printers screen shows a hint and a button to fix it."
+    ]
+  },
+  {
     "id": "2026-10-14a",
     "version": "1.4.1",
     "uk": [

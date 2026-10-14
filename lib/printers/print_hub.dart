@@ -101,6 +101,7 @@ class _Bambu {
   final StreamController<PrinterStatus> out = StreamController.broadcast();
   StreamSubscription<PrinterStatus>? sub;
   PrinterStatus? last;
+  DateTime? lastAt;
 
   // Current job: key and AMS grams at its start (for the usage estimate).
   String? jobKey;
@@ -136,6 +137,47 @@ class PrinterHub with WidgetsBindingObserver {
 
   Stream<FinishedPrint> get finished => _finished.stream;
 
+  /// Runs inside the "print in progress" foreground service (no UI).
+  bool serviceMode = false;
+
+  /// Something was printing during the last check (background job).
+  bool sawPrinting = false;
+  DateTime? _serviceAsked;
+  final _mrStatus = <String, (PrinterStatus, DateTime)>{};
+
+  List<PrinterConn> get printers => _printers;
+
+  /// A print is running: keep a live watch even after the app is closed.
+  void _onPrinting() {
+    sawPrinting = true;
+    if (serviceMode || _sink != null) return;
+    final now = DateTime.now();
+    if (_serviceAsked != null && now.difference(_serviceAsked!) < const Duration(minutes: 5)) return;
+    _serviceAsked = now;
+    unawaited(PlatformFiles.startPrintService());
+  }
+
+  /// Prints running right now (fresh data only).
+  List<(PrinterConn, PrinterStatus)> get activePrints {
+    final now = DateTime.now();
+    bool fresh(DateTime? t) => t != null && now.difference(t) < const Duration(minutes: 10);
+    final out = <(PrinterConn, PrinterStatus)>[];
+    for (final p in _printers) {
+      final b = _bambu[p.id];
+      if (b != null && b.last?.printing == true && fresh(b.lastAt)) out.add((p, b.last!));
+      final m = _mrStatus[p.id];
+      if (m != null && m.$1.printing && fresh(m.$2)) out.add((p, m.$1));
+    }
+    return out;
+  }
+
+  /// Announced by a notification from another part of the app (re-read from disk).
+  Future<bool> notifiedElsewhere(String key) async {
+    final raw = await JsonStore.read(_file);
+    return raw is Map && raw['notified'] is List && (raw['notified'] as List).contains(key) ||
+        raw is Map && raw['done'] is List && (raw['done'] as List).contains(key);
+  }
+
   Future<void> _load() async {
     final raw = await JsonStore.read(_file);
     if (raw is Map) {
@@ -160,6 +202,30 @@ class PrinterHub with WidgetsBindingObserver {
   }
 
   Future<void> _save() async {
+    // The app, the background check and the print service share this file:
+    // keep what the others recorded.
+    final cur = await JsonStore.read(_file);
+    if (cur is Map) {
+      for (final k in cur['done'] is List ? cur['done'] as List : const []) {
+        if (k is String) _done.add(k);
+      }
+      for (final k in cur['notified'] is List ? cur['notified'] as List : const []) {
+        if (k is String) _notified.add(k);
+      }
+      if (serviceMode) enabled = cur['enabled'] != false;
+      for (final w in cur['waiting'] is List ? cur['waiting'] as List : const []) {
+        if (w is Map && w['key'] is String && !_open.containsKey(w['key']) &&
+            !_waitingRaw.any((x) => x is Map && x['key'] == w['key'])) {
+          _waitingRaw.add(w);
+        }
+      }
+    }
+    bool answered(Object? w) =>
+        w is Map &&
+        (_done.contains(w['key']) ||
+            (w['aliases'] is List && (w['aliases'] as List).any((a) => _done.contains(a))));
+    _waitingRaw.removeWhere(answered);
+    _open.removeWhere((k, f) => _done.contains(k) || f.aliases.any(_done.contains));
     await JsonStore.write(_file, {
       'enabled': enabled,
       'done': _tail(_done),
@@ -180,20 +246,46 @@ class PrinterHub with WidgetsBindingObserver {
       WidgetsBinding.instance.addObserver(this);
       await _load();
       _printers = await printerStore.load();
-      // Prints found earlier (also by a background check) and not answered yet.
-      for (final w in _waitingRaw) {
-        final f = FinishedPrint.fromJson(w, _printers);
-        if (f != null && !_known(f.key, f.aliases)) {
-          _pending.add(f.key);
-          _queue.add(f);
-          _open[f.key] = f;
-        }
-      }
-      _waitingRaw = [];
+      _adoptWaiting();
       if (_queue.isNotEmpty) _finished.add(_queue.first);
     }
     await refresh();
     unawaited(_catchUpCloud());
+  }
+
+  /// Prints found earlier (also by a background check or the print service)
+  /// and not answered yet go to the queue.
+  void _adoptWaiting() {
+    for (final w in _waitingRaw) {
+      final f = FinishedPrint.fromJson(w, _printers);
+      if (f != null && !_known(f.key, f.aliases) && !_done.contains(f.key)) {
+        _pending.add(f.key);
+        _queue.add(f);
+        _open[f.key] = f;
+      }
+    }
+    _waitingRaw = [];
+  }
+
+  /// Back in the app: pick up what the service / background check found.
+  Future<void> _reloadWaiting() async {
+    final raw = await JsonStore.read(_file);
+    if (raw is! Map) return;
+    for (final k in raw['done'] is List ? raw['done'] as List : const []) {
+      if (k is String) _done.add(k);
+    }
+    for (final k in raw['notified'] is List ? raw['notified'] as List : const []) {
+      if (k is String) _notified.add(k);
+    }
+    _queue.removeWhere((f) => _done.contains(f.key));
+    _open.removeWhere((k, _) => _done.contains(k));
+    if (raw['waiting'] is List) {
+      _waitingRaw = [
+        for (final w in raw['waiting'] as List)
+          if (w is Map && !_open.containsKey(w['key'])) w,
+      ];
+      _adoptWaiting();
+    }
   }
 
   bool _known(String id, [List<String> aliases = const []]) =>
@@ -271,6 +363,7 @@ class PrinterHub with WidgetsBindingObserver {
       b.sub = b.client.status.listen(
         (s) {
           b.last = s;
+          b.lastAt = DateTime.now();
           if (!b.out.isClosed) b.out.add(s);
           _onBambu(p, b, s);
         },
@@ -318,6 +411,7 @@ class PrinterHub with WidgetsBindingObserver {
         };
       }
       b.sawPrinting = true;
+      _onPrinting();
       return;
     }
     if (!enabled || key == null || !(s.finished || s.failed)) return;
@@ -357,6 +451,9 @@ class PrinterHub with WidgetsBindingObserver {
         final slots = {for (final sl in _bambu[p.id]?.last?.slots ?? const <FilamentSlot>[]) sl.key: sl};
         for (final t in tasks) {
           final end = t.end;
+          if (t.status == 1 && t.start != null && DateTime.now().difference(t.start!) < const Duration(days: 2)) {
+            _onPrinting();
+          }
           if (end == null || t.status == 1 || t.weight <= 0) continue; // still printing / no data
           if (DateTime.now().difference(end) > const Duration(days: 3)) continue;
           final id = _cloudKey(p.serial, t.id);
@@ -438,6 +535,11 @@ class PrinterHub with WidgetsBindingObserver {
     if (!enabled) return;
     for (final p in _printers.where((p) => p.kind == PrinterKind.moonraker)) {
       try {
+        final st = await MoonrakerClient(p).status();
+        _mrStatus[p.id] = (st, DateTime.now());
+        if (st.printing) _onPrinting();
+      } catch (_) {}
+      try {
         final jobs = await MoonrakerClient(p).history(limit: 5);
         for (final j in jobs) {
           final id = 'mr:${p.id}:${j.id}';
@@ -493,6 +595,7 @@ class PrinterHub with WidgetsBindingObserver {
   /// One-off check without the UI (Android background job): finished prints
   /// not answered and not announced yet. They are saved for the app.
   Future<List<FinishedPrint>> checkInBackground() async {
+    sawPrinting = false;
     await _load();
     _printers = await printerStore.load();
     if (!enabled || _printers.isEmpty) return [];
@@ -567,7 +670,9 @@ class PrinterHub with WidgetsBindingObserver {
       }
       _pollMoonraker();
       _catchUpCloud();
-      if (_queue.isNotEmpty) _finished.add(_queue.first); // show what came in while away
+      _reloadWaiting().then((_) {
+        if (_queue.isNotEmpty) _finished.add(_queue.first); // show what came in while away
+      });
     }
   }
 }

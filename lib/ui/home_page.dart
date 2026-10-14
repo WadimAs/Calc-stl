@@ -669,8 +669,35 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if ((await printerStore.load()).isNotEmpty) {
       await PrinterHub.instance.start();
       // Push "print finished" needs the notification permission (Android 13+).
-      if (!Updates.disabled && PrinterHub.instance.enabled) PlatformFiles.requestNotifications();
+      if (!Updates.disabled && PrinterHub.instance.enabled) {
+        await PlatformFiles.requestNotifications();
+        unawaited(_askBackgroundOnce());
+      }
     }
+  }
+
+  /// Once: Android's battery optimisation delays printer checks for hours.
+  Future<void> _askBackgroundOnce() async {
+    await Future<void>.delayed(const Duration(seconds: 3));
+    final h = await JsonStore.read('pushhint.json');
+    if (h is Map && h['asked'] == true) return;
+    final s = await PlatformFiles.pushStatus();
+    if (s.battery || !mounted) return;
+    await JsonStore.write('pushhint.json', {if (h is Map) ...h.cast<String, Object?>(), 'asked': true});
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.notifications_active_outlined),
+        title: Text(tr('Сповіщення «Друк завершено»')),
+        content: Text(tr('Щоб сповіщення приходили одразу, навіть коли застосунок закритий, дозвольте «Котушці» працювати у фоні без обмежень батареї. Застосунок активний лише поки йде друк.')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(tr('Пізніше'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(tr('Дозволити'))),
+        ],
+      ),
+    );
+    if (ok == true) await PlatformFiles.requestBatteryExemption();
   }
 
   /// Shows the queued prints one after another.

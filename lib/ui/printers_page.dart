@@ -14,6 +14,7 @@ import '../printers/printers.dart';
 import '../slicer/settings.dart';
 import '../spools/spools.dart';
 import 'spool_icon.dart';
+import 'push_health.dart';
 import 'widgets.dart';
 import '../i18n/i18n.dart';
 
@@ -224,7 +225,7 @@ class _PrintersPageState extends State<PrintersPage> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 4),
                     secondary: const Icon(Icons.auto_delete_outlined),
                     title: Text(tr('Пропонувати списання після друку')),
-                    subtitle: Text(tr('Коли принтер закінчить друк, прийде сповіщення — навіть якщо застосунок закритий (перевірка приблизно раз на 15 хв). Застосунок спитає, з якої котушки й для чого списати пластик')),
+                    subtitle: Text(tr('Коли принтер закінчить друк, прийде сповіщення — навіть якщо застосунок закритий. Поки йде друк, прогрес видно в шторці. Застосунок спитає, з якої котушки й для чого списати пластик')),
                     value: PrinterHub.instance.enabled,
                     onChanged: (v) async {
                       await PrinterHub.instance.setEnabled(v);
@@ -232,6 +233,7 @@ class _PrintersPageState extends State<PrintersPage> {
                       if (mounted) setState(() {});
                     },
                   ),
+                if (list.isNotEmpty && PrinterHub.instance.enabled) const PushHealthCard(),
                 for (final p in list)
                   Card(
                     margin: const EdgeInsets.symmetric(vertical: 4),

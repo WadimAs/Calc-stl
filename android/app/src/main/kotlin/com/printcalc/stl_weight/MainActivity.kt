@@ -239,6 +239,53 @@ class MainActivity : FlutterActivity() {
                     )
                     result.success(true)
                 }
+                "startPrintService" -> result.success(PrintWatchService.start(this))
+                "appResumed" -> result.success(resumed)
+                "pushStatus" -> {
+                    val nm = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
+                    var on = nm.areNotificationsEnabled()
+                    if (on && Build.VERSION.SDK_INT >= 26) {
+                        val ch = nm.getNotificationChannel(ReminderReceiver.CHANNEL_PRINTS)
+                        if (ch != null && ch.importance == android.app.NotificationManager.IMPORTANCE_NONE) on = false
+                    }
+                    val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+                    val free = Build.VERSION.SDK_INT < 23 || pm.isIgnoringBatteryOptimizations(packageName)
+                    result.success(mapOf("notifications" to on, "battery" to free, "maker" to Build.MANUFACTURER))
+                }
+                "openNotificationSettings" -> {
+                    try {
+                        val i = if (Build.VERSION.SDK_INT >= 26) {
+                            Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                        } else {
+                            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+                        }
+                        startActivity(i)
+                    } catch (e: Exception) {
+                        startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                    }
+                    result.success(true)
+                }
+                "requestBatteryExemption" -> {
+                    try {
+                        startActivity(
+                            Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+                        )
+                    } catch (e: Exception) {
+                        try {
+                            startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                        } catch (_: Exception) {
+                        }
+                    }
+                    result.success(true)
+                }
+                "openAppSettings" -> {
+                    try {
+                        startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                    } catch (_: Exception) {
+                    }
+                    result.success(true)
+                }
                 "notifyNow" -> {
                     val i = Intent(this, ReminderReceiver::class.java)
                         .putExtra("id", call.argument<Int>("id") ?: 1)

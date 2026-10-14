@@ -45,6 +45,8 @@ class PrintCheckJob : JobService() {
                             ReminderReceiver().onReceive(this, i)
                             result.success(true)
                         }
+                        "startPrintService" -> result.success(PrintWatchService.start(applicationContext))
+                        "appResumed" -> result.success(MainActivity.resumed)
                         "backgroundDone" -> {
                             result.success(null)
                             main.post { finish(false) }
