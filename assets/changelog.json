@@ -1,13 +1,23 @@
 [
   {
+    "id": "2026-10-14c",
+    "version": "1.4.3",
+    "uk": [
+      "Стеження за друком тепер непомітне: у шторці нічого не висить, приходить лише «Друк завершено»."
+    ],
+    "en": [
+      "Print watching is now invisible: nothing stays in the notification shade, only “Print finished” arrives."
+    ]
+  },
+  {
     "id": "2026-10-14b",
     "version": "1.4.2",
     "uk": [
-      "Сповіщення «Друк завершено» приходять одразу, навіть коли застосунок закритий: поки йде друк, «Котушка» стежить за принтером і показує прогрес у шторці.",
+      "Сповіщення «Друк завершено» приходять одразу, навіть коли застосунок закритий: поки йде друк, «Котушка» непомітно стежить за принтером, нічого не висить у шторці.",
       "Якщо телефон блокує сповіщення чи роботу у фоні — у розділі «Принтери» з'явиться підказка й кнопка, щоб це виправити."
     ],
     "en": [
-      "“Print finished” notifications arrive right away, even with the app closed: while printing, Spool watches the printer and shows the progress in the notification shade.",
+      "“Print finished” notifications arrive right away, even with the app closed: while printing, Spool quietly watches the printer — nothing stays in the notification shade.",
       "If the phone blocks notifications or background work, the Printers screen shows a hint and a button to fix it."
     ]
   },

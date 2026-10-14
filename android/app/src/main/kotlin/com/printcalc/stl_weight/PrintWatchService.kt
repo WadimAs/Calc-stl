@@ -108,9 +108,16 @@ class PrintWatchService : Service() {
     private fun build(text: String): Notification {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
+            // Silent channel: nothing in the status bar or the shade, the
+            // service just keeps working (the user wants a clean shade).
+            try {
+                nm.deleteNotificationChannel(OLD_CHANNEL)
+            } catch (_: Exception) {
+            }
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Принтери: друк триває", NotificationManager.IMPORTANCE_LOW).apply {
+                NotificationChannel(CHANNEL, "Принтери: стеження за друком", NotificationManager.IMPORTANCE_NONE).apply {
                     setShowBadge(false)
+                    lockscreenVisibility = Notification.VISIBILITY_SECRET
                 }
             )
         }
@@ -130,6 +137,10 @@ class PrintWatchService : Service() {
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .apply {
+                @Suppress("DEPRECATION")
+                setPriority(Notification.PRIORITY_MIN)
+            }
             .build()
     }
 
@@ -162,7 +173,8 @@ class PrintWatchService : Service() {
     }
 
     companion object {
-        private const val CHANNEL = "printing"
+        private const val CHANNEL = "printing_silent"
+        private const val OLD_CHANNEL = "printing"
         private const val NOTIFICATION_ID = 7102
         private const val ACTION_STOP = "stop"
 

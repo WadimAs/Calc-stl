@@ -848,7 +848,7 @@ const Map<String, String> en = {
   'Дозволити роботу у фоні': 'Allow background work',
   'Друкується: {0}': 'Printing: {0}',
   'Зроблено': 'Done',
-  'Коли принтер закінчить друк, прийде сповіщення — навіть якщо застосунок закритий. Поки йде друк, прогрес видно в шторці. Застосунок спитає, з якої котушки й для чого списати пластик': 'When the printer finishes, you get a notification — even with the app closed. While printing, the progress is shown in the notification shade. The app asks which spool to write the filament off and what it was for',
+  'Коли принтер закінчить друк, прийде сповіщення — навіть якщо застосунок закритий. Застосунок спитає, з якої котушки й для чого списати пластик': 'When the printer finishes, you get a notification — even with the app closed. The app asks which spool to write the filament off and what it was for',
   'На телефонах {0} також увімкніть «Автозапуск» і в «Контролі активності» / «Батареї» виберіть «Без обмежень» для «Котушки».': 'On {0} phones also turn on “Autostart” and set “No restrictions” in Battery / Activity control for Spool.',
   'Налаштування застосунку': 'App settings',
   'Сповіщення «Друк завершено»': '“Print finished” notifications',

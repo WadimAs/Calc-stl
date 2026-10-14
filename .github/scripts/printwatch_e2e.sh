@@ -38,11 +38,20 @@ if adb shell dumpsys activity services $PKG | grep -q PrintWatchService; then
 else
   log "service started while printing: FAIL"
 fi
-adb shell dumpsys notification --noredact | grep -E "android\.title=.*(Друкується|Printing)" | head -2 | sed 's/^/E2E progress: /' | tee -a drive.txt
+if adb shell dumpsys notification --noredact | grep -qE "android\.title=.*(Друкується|Printing)"; then
+  log "shade stays clean while printing: FAIL (progress notification visible)"
+else
+  log "shade stays clean while printing: OK"
+fi
+
 
 # Leave the app and let Android trim it, like a user going away.
 adb shell input keyevent KEYCODE_HOME
 sleep 3
+adb shell cmd statusbar expand-notifications || true
+sleep 2
+adb exec-out screencap -p > screenshots/e2e_2_shade_printing.png 2>/dev/null || true
+adb shell cmd statusbar collapse || true
 adb shell am kill $PKG || true
 adb shell input keyevent KEYCODE_SLEEP || true
 sleep 20
@@ -60,6 +69,11 @@ if [ $ok = 1 ]; then
 else
   log "finished notification with the app in background: FAIL"
 fi
+adb shell input keyevent KEYCODE_WAKEUP || true
+adb shell cmd statusbar expand-notifications || true
+sleep 2
+adb exec-out screencap -p > screenshots/e2e_3_shade_finished.png 2>/dev/null || true
+adb shell cmd statusbar collapse || true
 adb shell dumpsys notification --noredact | grep -E "android\.(title|text)=" | grep -vE "^\s*$" | head -12 | sed 's/^/E2E notif: /' | tee -a drive.txt
 
 # The service must stop by itself once nothing prints.

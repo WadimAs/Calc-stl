@@ -225,7 +225,7 @@ class _PrintersPageState extends State<PrintersPage> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 4),
                     secondary: const Icon(Icons.auto_delete_outlined),
                     title: Text(tr('Пропонувати списання після друку')),
-                    subtitle: Text(tr('Коли принтер закінчить друк, прийде сповіщення — навіть якщо застосунок закритий. Поки йде друк, прогрес видно в шторці. Застосунок спитає, з якої котушки й для чого списати пластик')),
+                    subtitle: Text(tr('Коли принтер закінчить друк, прийде сповіщення — навіть якщо застосунок закритий. Застосунок спитає, з якої котушки й для чого списати пластик')),
                     value: PrinterHub.instance.enabled,
                     onChanged: (v) async {
                       await PrinterHub.instance.setEnabled(v);
