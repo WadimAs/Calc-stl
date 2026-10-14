@@ -832,6 +832,7 @@ class _WriteOffsPageState extends State<WriteOffsPage> {
   String _purpose(WriteOff w) => switch (w.purpose) {
         'order' => trf('Замовлення: {0}', [w.orderTitle]),
         'failed' => tr('Невдалий друк (брак)'),
+        'stock' => trf('На склад: {0}', [w.orderTitle]),
         _ => tr('Для себе'),
       };
 
@@ -934,7 +935,7 @@ class _EditWriteOffDialogState extends State<_EditWriteOffDialog> {
   ];
   late String _purpose = widget.writeOff.orderId != null
       ? (widget.orders.any((o) => o.id == widget.writeOff.orderId) ? widget.writeOff.orderId! : 'self')
-      : (widget.writeOff.purpose == 'failed' ? 'failed' : 'self');
+      : (const ['failed', 'stock'].contains(widget.writeOff.purpose) ? widget.writeOff.purpose : 'self');
 
   // Current spool weights as if this write-off had not happened.
   late final List<Spool> _spools = [
@@ -997,6 +998,11 @@ class _EditWriteOffDialogState extends State<_EditWriteOffDialog> {
               items: [
                 DropdownMenuItem(value: 'self', child: Text(tr('Для себе'))),
                 DropdownMenuItem(value: 'failed', child: Text(tr('Невдалий друк (брак)'))),
+                if (widget.writeOff.purpose == 'stock')
+                  DropdownMenuItem(
+                    value: 'stock',
+                    child: Text(trf('На склад: {0}', [widget.writeOff.orderTitle]), overflow: TextOverflow.ellipsis),
+                  ),
                 for (final o in widget.orders)
                   DropdownMenuItem(
                     value: o.id,
@@ -1028,7 +1034,7 @@ class _EditWriteOffDialogState extends State<_EditWriteOffDialog> {
                 job: w.job,
                 purpose: order.isNotEmpty ? 'order' : _purpose,
                 orderId: order.isNotEmpty ? order.first.id : null,
-                orderTitle: order.isNotEmpty ? order.first.title : '',
+                orderTitle: order.isNotEmpty ? order.first.title : (_purpose == 'stock' ? w.orderTitle : ''),
                 grams: grams,
               ),
             );

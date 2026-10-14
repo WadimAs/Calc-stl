@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../catalog/catalog.dart';
+import '../catalog/stock.dart';
 import '../i18n/i18n.dart';
 import '../mesh/slicer_project.dart';
 import '../orders/orders.dart';
@@ -27,6 +29,17 @@ Order? matchOrder(String job, List<Order> orders) {
       final n = _norm(it.name);
       if (n.isNotEmpty && (j.contains(n) || n.contains(j))) return o;
     }
+  }
+  return null;
+}
+
+/// Price-list product whose name matches the printed job, if any.
+Product? matchProduct(String job, List<Product> products) {
+  final j = _norm(job);
+  if (j.isEmpty) return null;
+  for (final p in products) {
+    final n = _norm(p.name);
+    if (n.isNotEmpty && (j.contains(n) || n.contains(j))) return p;
   }
   return null;
 }
@@ -72,11 +85,12 @@ Future<void> notifyFinishedPrint(FinishedPrint f) async {
 Future<void> showFinishedPrint(BuildContext context, FinishedPrint f) async {
   final spools = await SpoolStore.load();
   final orders = (await OrderStore.load()).where((o) => !o.status.printed).toList();
+  final products = await productStore.load();
   if (!context.mounted) return;
   await showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => _FinishedPrintDialog(print: f, spools: spools, orders: orders),
+    builder: (_) => _FinishedPrintDialog(print: f, spools: spools, orders: orders, products: products),
   );
 }
 
@@ -92,8 +106,9 @@ class _FinishedPrintDialog extends StatefulWidget {
   final FinishedPrint print;
   final List<Spool> spools;
   final List<Order> orders;
+  final List<Product> products;
 
-  const _FinishedPrintDialog({required this.print, required this.spools, required this.orders});
+  const _FinishedPrintDialog({required this.print, required this.spools, required this.orders, required this.products});
 
   @override
   State<_FinishedPrintDialog> createState() => _FinishedPrintDialogState();
@@ -101,8 +116,17 @@ class _FinishedPrintDialog extends StatefulWidget {
 
 class _FinishedPrintDialogState extends State<_FinishedPrintDialog> {
   late final List<_Line> _lines;
-  late String _purpose; // 'self', 'failed' or an order id
+  late String _purpose; // 'self', 'failed', 'stock:<product id>' or an order id
+  final _qty = TextEditingController(text: '1');
   bool _busy = false;
+
+  Product? get _product {
+    if (!_purpose.startsWith('stock:')) return null;
+    final id = _purpose.substring(6);
+    return widget.products.where((p) => p.id == id).firstOrNull;
+  }
+
+  int get _pieces => (int.tryParse(_qty.text.trim()) ?? 1).clamp(1, 100000).toInt();
 
   FinishedPrint get f => widget.print;
 
@@ -119,8 +143,10 @@ class _FinishedPrintDialogState extends State<_FinishedPrintDialog> {
       _fillGrams(l);
     }
     final match = matchOrder(f.job, widget.orders);
-    _purpose = f.failed ? 'failed' : (match?.id ?? 'self');
+    final product = match == null ? matchProduct(f.job, widget.products) : null;
+    _purpose = f.failed ? 'failed' : (match?.id ?? (product != null ? 'stock:${product.id}' : 'self'));
     if (match != null) _fillFromOrder(match);
+    if (!f.failed && product != null) _fillFromProduct(product);
   }
 
   @override
@@ -128,6 +154,7 @@ class _FinishedPrintDialogState extends State<_FinishedPrintDialog> {
     for (final l in _lines) {
       l.grams.dispose();
     }
+    _qty.dispose();
     super.dispose();
   }
 
@@ -166,6 +193,14 @@ class _FinishedPrintDialogState extends State<_FinishedPrintDialog> {
     if (g > 0) _lines.first.grams.text = _g(g);
   }
 
+  /// No weight from the printer: suggest the product's weight × pieces.
+  void _fillFromProduct(Product p, {bool force = false}) {
+    if (_lines.length != 1 || p.grams <= 0) return;
+    if (_lines.first.source.grams != null || _lines.first.source.filamentMm != null) return;
+    if (_lines.first.grams.text.isNotEmpty && !force) return;
+    _lines.first.grams.text = _g(p.grams * _pieces);
+  }
+
   Future<void> _writeOff() async {
     final grams = <String, double>{};
     for (final l in _lines) {
@@ -181,16 +216,18 @@ class _FinishedPrintDialogState extends State<_FinishedPrintDialog> {
     }
     setState(() => _busy = true);
     final order = widget.orders.where((o) => o.id == _purpose);
+    final product = _product;
     await applyWriteOff(WriteOff(
       id: newWriteOffId(),
       date: DateTime.now(),
       printer: f.printer.name,
       job: f.job,
-      purpose: order.isNotEmpty ? 'order' : _purpose,
+      purpose: order.isNotEmpty ? 'order' : (product != null ? 'stock' : _purpose),
       orderId: order.isNotEmpty ? order.first.id : null,
-      orderTitle: order.isNotEmpty ? order.first.title : '',
+      orderTitle: order.isNotEmpty ? order.first.title : (product?.name ?? ''),
       grams: grams,
     ));
+    if (product != null) await moveStock(product, _pieces, 'printed', note: f.job);
     final mj = f.moonrakerJob;
     if (mj != null) {
       final all = await printerStore.load();
@@ -277,13 +314,37 @@ class _FinishedPrintDialogState extends State<_FinishedPrintDialog> {
                     value: o.id,
                     child: Text(trf('Замовлення: {0}', [o.title]), overflow: TextOverflow.ellipsis),
                   ),
+                for (final p in widget.products)
+                  DropdownMenuItem(
+                    value: 'stock:${p.id}',
+                    child: Text(trf('На склад: {0}', [p.name]), overflow: TextOverflow.ellipsis),
+                  ),
               ],
               onChanged: (v) => setState(() {
                 _purpose = v ?? 'self';
                 final o = widget.orders.where((x) => x.id == _purpose);
                 if (o.isNotEmpty) _fillFromOrder(o.first);
+                final p = _product;
+                if (p != null) _fillFromProduct(p);
               }),
             ),
+            if (_product != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(children: [
+                  Expanded(child: Text(tr('Скільки штук надруковано'), style: theme.textTheme.bodyMedium)),
+                  SizedBox(
+                    width: 72,
+                    child: TextField(
+                      controller: _qty,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      onChanged: (_) => setState(() => _fillFromProduct(_product!, force: true)),
+                      decoration: InputDecoration(suffixText: tr('шт'), isDense: true),
+                    ),
+                  ),
+                ]),
+              ),
             if (widget.orders.any((o) => o.id == _purpose))
               Text(tr('Замовлення запам\'ятає списане, і при статусі «Готово» пластик не спишеться вдруге.'),
                   style: theme.textTheme.bodySmall),

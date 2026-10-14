@@ -4,6 +4,8 @@ import 'dart:io' show ZLibEncoder;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:stl_weight/catalog/catalog.dart';
+import 'package:stl_weight/catalog/stock.dart';
 import 'package:stl_weight/clients/clients.dart';
 import 'package:stl_weight/history/history.dart';
 import 'package:stl_weight/orders/reminders.dart';
@@ -1310,6 +1312,29 @@ void main() {
       for (int i = 0; i < 14; i++) (t.subtract(Duration(days: 13 - i)), i < 7 ? 100 : 1),
     ]);
     expect(s.week, 7);
+  });
+
+  test('stock of printed products', () {
+    Product p(String id, String name, int stock) => Product(
+          id: id, name: name, material: 'PLA', materialId: 'PLA',
+          grams: 20, hours: 1, cost: 10, price: 50, stock: stock);
+    final a = p('1', 'Підставка для телефона', 3);
+    expect(Product.fromJson(a.toJson())!.stock, 3);
+    expect(p('2', 'x', 0).toJson().containsKey('stock'), isFalse);
+    final t = stockTotals([a, p('2', 'Брелок', 2), p('3', 'Ваза', 0)]);
+    expect(t.pieces, 5);
+    expect(t.cost, 50);
+    expect(t.value, 250);
+    final m = StockMove(
+        id: 'm', productId: '1', productName: 'Підставка', date: DateTime(2026, 10, 14),
+        qty: -2, kind: 'sold', amount: 100, costEach: 10);
+    final back = StockMove.fromJson(jsonDecode(jsonEncode(m.toJson())))!;
+    expect(back.qty, -2);
+    expect(back.kind, 'sold');
+    expect(back.amount, 100);
+    expect(back.costEach, 10);
+    expect(matchProduct('Pidstavka_phone.gcode.3mf', [a]), isNull);
+    expect(matchProduct('Брелок.gcode.3mf', [a, p('2', 'Брелок', 2)])?.id, '2');
   });
 }
 

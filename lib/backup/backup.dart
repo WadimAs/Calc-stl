@@ -20,6 +20,7 @@ class Backup {
     'business': 'business.json',
     'printers': 'printers.json',
     'writeoffs': 'writeoffs.json',
+    'stock': 'stock.json',
   };
 
   static Future<Uint8List> export(SliceSettings settings) async {

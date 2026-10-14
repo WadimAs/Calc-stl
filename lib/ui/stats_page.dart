@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../catalog/catalog.dart';
+import '../catalog/stock.dart';
 import '../expenses/expenses.dart';
 import '../history/history.dart';
 import '../orders/orders.dart';
@@ -14,7 +16,7 @@ List<String> get _months => [
 
 class _Month {
   final int year, month;
-  int orders = 0;
+  int orders = 0, sold = 0;
   double revenue = 0, cost = 0, grams = 0, hours = 0, paid = 0, expenses = 0;
 
   _Month(this.year, this.month);
@@ -39,6 +41,7 @@ class _StatsPageState extends State<StatsPage> {
   List<_Month>? _months2;
   int _open = 0;
   double _openTotal = 0;
+  ({int pieces, double cost, double value}) _stock = (pieces: 0, cost: 0, value: 0);
 
   @override
   void initState() {
@@ -68,6 +71,17 @@ class _StatsPageState extends State<StatsPage> {
       m.hours += t.hours;
       if (o.status == OrderStatus.paid) m.paid += t.total;
     }
+    // Sales of printed products from stock.
+    for (final m in await stockStore.load()) {
+      if (m.kind != 'sold') continue;
+      final key = m.date.year * 12 + m.date.month - 1;
+      final x = map.putIfAbsent(key, () => _Month(m.date.year, m.date.month));
+      x.sold -= m.qty;
+      x.revenue += m.amount;
+      x.cost -= m.qty * m.costEach;
+      x.paid += m.amount;
+    }
+    final stock = stockTotals(await productStore.load());
     for (final e in await expenseStore.load()) {
       final key = e.date.year * 12 + e.date.month - 1;
       map.putIfAbsent(key, () => _Month(e.date.year, e.date.month)).expenses += e.amount;
@@ -78,6 +92,7 @@ class _StatsPageState extends State<StatsPage> {
         _months2 = [for (final e in list) e.value];
         _open = open;
         _openTotal = openTotal;
+        _stock = stock;
       });
     }
   }
@@ -124,7 +139,7 @@ class _StatsPageState extends State<StatsPage> {
                   Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text(
-                      tr('Статистика з\'явиться, коли замовлення отримають статус «Готово» або «Оплачено».'),
+                      tr('Статистика з\'явиться, коли замовлення отримають статус «Готово» або «Оплачено» чи ви продасте виріб зі складу.'),
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
@@ -141,12 +156,26 @@ class _StatsPageState extends State<StatsPage> {
                       tile(tr('витрати'), fmtMoney(months.first.expenses), Icons.account_balance_wallet_outlined),
                       tile(tr('чистий (виручка − витрати)'), fmtMoney(months.first.net), Icons.savings_outlined),
                     ]),
+                  if (months.first.sold > 0)
+                    Row(children: [
+                      tile(tr('продано зі складу'), trf('{0} шт', [months.first.sold]), Icons.sell_outlined),
+                    ]),
                   Row(children: [
                     tile(tr('замовлень'), '${months.first.orders}', Icons.receipt_long_outlined),
                     tile(tr('пластику'), fmtGrams(months.first.grams), Icons.circle_outlined),
                     tile(tr('друку'), formatDuration(months.first.hours), Icons.schedule),
                   ]),
                 ],
+                if (_stock.pieces > 0)
+                  Card(
+                    margin: const EdgeInsets.all(4),
+                    child: ListTile(
+                      leading: const Icon(Icons.inventory_2_outlined),
+                      title: Text(trf('На складі: {0} шт', [_stock.pieces])),
+                      subtitle: Text(trf('собівартість {0}', [fmtMoney(_stock.cost)])),
+                      trailing: Text(fmtMoney(_stock.value), style: theme.textTheme.titleSmall),
+                    ),
+                  ),
                 if (_open > 0)
                   Card(
                     margin: const EdgeInsets.all(4),

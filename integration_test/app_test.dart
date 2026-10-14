@@ -256,6 +256,28 @@ void main() {
       });
     }
 
+    await step('stock', () async {
+      await menu('Прайс-лист');
+      await settle(1000);
+      await tap(find.byType(PopupMenuButton<String>).first);
+      await tap(find.text('Надруковано на склад'));
+      await tester.enterText(inDialog(find.byType(TextField)).first, '5');
+      await settle(300);
+      await shot('28_stock_add');
+      await tap(inDialog(find.text('Зберегти')));
+      await waitFor(find.text('На складі: 5 шт'));
+      await tap(find.byType(PopupMenuButton<String>).first);
+      await tap(find.text('Продано зі складу'));
+      await tester.enterText(inDialog(find.byType(TextField)).first, '2');
+      await tap(inDialog(find.text('Зберегти')));
+      await waitFor(find.text('На складі: 3 шт'));
+      await shot('29_stock_catalog');
+      await tap(find.byTooltip('Рух складу'));
+      await waitFor(find.textContaining('Продано'), seconds: 8);
+      await shot('30_stock_log');
+      await home();
+    });
+
     await step('snack_hidden', () async {
       await settle(5000);
       if (find.byType(SnackBar).evaluate().isNotEmpty) throw StateError('SnackBar не зникає');

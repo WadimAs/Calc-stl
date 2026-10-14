@@ -1,5 +1,19 @@
 [
   {
+    "id": "2026-10-14a",
+    "version": "1.4.1",
+    "uk": [
+      "Склад готових виробів: у прайс-листі позначайте, скільки штук надруковано, продано чи списано — видно залишок кожного виробу й вартість усього складу.",
+      "У вікні «Друк завершено» можна вибрати «На склад: виріб» — пластик спишеться, а виріб додасться на склад.",
+      "Продажі зі складу потрапляють у статистику, а «Рух складу» показує всю історію з можливістю скасувати запис."
+    ],
+    "en": [
+      "Stock of printed products: in the price list mark how many pieces were printed, sold or written off — see each product's stock and the value of the whole stock.",
+      "In the “Print finished” window pick “To stock: product” — the filament is written off and the product is added to stock.",
+      "Sales from stock go into statistics, and the “Stock log” shows the full history with undo."
+    ]
+  },
+  {
     "id": "2026-10-12d",
     "version": "1.4",
     "uk": [
