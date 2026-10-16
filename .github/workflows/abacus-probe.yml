@@ -1,10 +1,15 @@
 name: Abacus probe
 on: workflow_dispatch
+permissions:
+  contents: write
 jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - run: |
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          exec > >(tee out.txt) 2>&1
           B=https://abacus.jasoncameron.dev
           NS=kotushka-probe-$RANDOM
           echo "NS=$NS"
@@ -20,3 +25,6 @@ jobs:
           curl -sS -i "$B/create/$NS/st?initializer=9" | sed -n '1p;$p'; echo
           curl -sS "$B/hit/$NS/seq"; echo
           curl -sS "$B/hit/$NS/seq"; echo
+          sleep 1
+          gh release view probe -R ${{ github.repository }} >/dev/null 2>&1 || gh release create probe -R ${{ github.repository }} --prerelease --title probe --notes probe
+          gh release upload probe out.txt --clobber -R ${{ github.repository }}
