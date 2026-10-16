@@ -875,4 +875,8 @@ const Map<String, String> en = {
   'встановлено {0}': 'installed {0}',
   'нові за 7 днів': 'new in 7 days',
   'пристроїв': 'devices',
+  'користувачів': 'users',
+  'Кожен телефон рахується один раз: оновлення й перевстановлення не додають користувачів. Тестові емулятори не рахуються.': 'Each phone counts once: updates and reinstalls add no users. Test emulators are not counted.',
+  'Приховано тестових емуляторів: {0}.': 'Hidden test emulators: {0}.',
+  'встановлень (разом із тестовими)': 'installs (including test runs)',
 };

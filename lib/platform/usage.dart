@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../data/json_store.dart';
@@ -46,6 +47,13 @@ class DeviceRecord {
   }
 
   String get android => sdkName(sdk);
+
+  /// Test emulators (CI runs before they were excluded).
+  bool get emulator {
+    final m = model.toLowerCase();
+    return m.contains('sdk_gphone') || m.startsWith('sdk ') || m.contains('emulator') ||
+        m.contains('android sdk built for');
+  }
 }
 
 /// Android version for an API level.
@@ -201,37 +209,69 @@ class Usage {
 
   static Future<void> _tick() async {
     final now = DateTime.now();
-    if (_state['installed'] != true && await _hit('installs')) _state['installed'] = true;
+    Map<Object?, Object?>? info;
+    try {
+      info = await _app.invokeMethod<Map<Object?, Object?>>('appInfo');
+    } catch (_) {}
+    // Test runs (emulators, debug builds) are not users.
+    if (kDebugMode || info == null || info['emulator'] == true) return;
+    if (!await _register(now, info)) return; // offline: next tick
     final d = dayKey(now), h = hourKey(now);
     if (_state['day'] != d && await _hit(d)) _state['day'] = d;
     if (_state['hour'] != h && await _hit(h)) _state['hour'] = h;
     await _save();
     try {
-      await _device(now);
+      await _status(now, info);
     } catch (_) {}
   }
 
   static const _app = MethodChannel('stl_weight/files');
 
-  /// Phone model, Android version, install date — once; then the last-used
-  /// day and app version once a day. No names, numbers or IDs.
-  static Future<void> _device(DateTime now) async {
-    final info = await _app.invokeMethod<Map<Object?, Object?>>('appInfo');
-    if (info == null) return;
-    final build = info['versionCode'] is int ? info['versionCode'] as int : 0;
-    final status = DeviceCodec.status(now, build);
+  /// Counts the phone once, ever: a reinstall or an update is not a new user.
+  /// The phone is recognised by a one-way hash of Android's per-app ID (the
+  /// same after a reinstall, says nothing about the person).
+  /// Then saves the phone model, Android version and install date once.
+  static Future<bool> _register(DateTime now, Map<Object?, Object?> info) async {
+    final dev = info['device'] is String ? info['device'] as String : '';
+    final dkey = dev.isEmpty ? null : 'd$dev';
     var n = _state['seq'] is int ? _state['seq'] as int : 0;
     if (n == 0) {
-      final v = await _get('hit/$_ns/seq');
-      if (v is! int || v <= 0) return;
-      n = v;
+      // Known phone (reinstalled)? Its number is stored under its hash.
+      final known = dkey == null ? 0 : await _get('get/$_ns/$dkey');
+      if (known == null) return false;
+      if (known is int && known > 0) {
+        n = known;
+        // New status key for this install (the old one's admin key is gone).
+        final g = await _get('hit/$_ns/u${n}g');
+        if (g is! int) return false;
+        _state['skey'] = 'u${n}s$g';
+        _state['installed'] = true; // counted before
+      } else {
+        final v = await _get('hit/$_ns/seq');
+        if (v is! int || v <= 0) return false;
+        n = v;
+        if (_state['installed'] != true) {
+          if (!await _hit('installs')) return false;
+          _state['installed'] = true;
+          await _save();
+        }
+        if (dkey != null && await _create(dkey, n) == null) return false;
+      }
       _state['seq'] = n;
+      _state['dev'] = true;
+      await _save();
+    } else if (_state['dev'] != true && dkey != null) {
+      // Registered before phones were recognised: link the hash to the number.
+      if (await _create(dkey, n) == null) return false;
+      _state['dev'] = true;
       await _save();
     }
     if (_state['reg'] != true) {
+      final build = info['versionCode'] is int ? info['versionCode'] as int : 0;
+      final status = DeviceCodec.status(now, build);
       if (_state['sk'] == null) {
-        final k = await _create('u${n}s', status);
-        if (k == null) return;
+        final k = await _create(_state['skey'] is String ? _state['skey'] as String : 'u${n}s', status);
+        if (k == null) return false;
         _state['sk'] = k;
         _state['st'] = status;
         await _save();
@@ -247,15 +287,24 @@ class Usage {
       );
       final parts = DeviceCodec.chunks(bytes);
       for (int i = 0; i < parts.length; i++) {
-        if (await _create('u${n}c$i', parts[i]) == null) return;
+        if (await _create('u${n}c$i', parts[i]) == null) return false;
       }
-      if (await _create('u${n}h', header) == null) return; // header last: marks a complete record
+      if (await _create('u${n}h', header) == null) return false; // header last: marks a complete record
       _state['reg'] = true;
       await _save();
-      return;
     }
+    return true;
+  }
+
+  /// Last-used day and app version, once a day.
+  static Future<void> _status(DateTime now, Map<Object?, Object?> info) async {
+    final n = _state['seq'];
     final key = _state['sk'];
-    if (key is String && key.isNotEmpty && _state['st'] != status && await _set('u${n}s', status, key)) {
+    if (n is! int || key is! String || key.isEmpty) return;
+    final build = info['versionCode'] is int ? info['versionCode'] as int : 0;
+    final status = DeviceCodec.status(now, build);
+    final name = _state['skey'] is String ? _state['skey'] as String : 'u${n}s';
+    if (_state['st'] != status && await _set(name, status, key)) {
       _state['st'] = status;
       await _save();
     }
@@ -343,7 +392,8 @@ class Usage {
         rec = {'h': h, 'c': parts};
         cache['$i'] = rec;
       }
-      final st = await get('u${i}s');
+      final g = await get('u${i}g');
+      final st = await get(g == null || g == 0 ? 'u${i}s' : 'u${i}s$g');
       out.add(DeviceCodec.decode(
         i,
         rec['h'] as int,

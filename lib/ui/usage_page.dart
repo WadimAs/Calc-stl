@@ -107,7 +107,7 @@ class _UsagePageState extends State<UsagePage> {
               childAspectRatio: 1.9,
               children: [
                 tile(tr('сьогодні'), s.today),
-                tile(tr('усього встановлень'), s.installs),
+                tile(tr('встановлень (разом із тестовими)'), s.installs),
               ],
             ),
             _DailyChart(s.days),
@@ -149,9 +149,11 @@ class _UsagePageState extends State<UsagePage> {
     );
   }
 
-  List<Widget> _deviceSection(BuildContext context, List<DeviceRecord> all) {
+  List<Widget> _deviceSection(BuildContext context, List<DeviceRecord> everything) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final all = everything.where((d) => !d.emulator).toList();
+    final hidden = everything.length - all.length;
     if (all.isEmpty) {
       return [
         Padding(
@@ -206,7 +208,7 @@ class _UsagePageState extends State<UsagePage> {
         );
     return [
       Row(children: [
-        small(tr('пристроїв'), all.length),
+        small(tr('користувачів'), all.length),
         small(tr('активні за 7 днів'), all.where((d) => within(d.lastSeen, 7)).length),
         small(tr('нові за 7 днів'), all.where((d) => within(d.installed, 7)).length),
       ]),
@@ -236,7 +238,11 @@ class _UsagePageState extends State<UsagePage> {
       Padding(
         padding: const EdgeInsets.all(8),
         child: Text(
-          tr('Лише модель телефону, версія Android, країна за мовою телефону, дата встановлення й останнього запуску та версія застосунку — без імен, номерів і ідентифікаторів.'),
+          [
+            tr('Кожен телефон рахується один раз: оновлення й перевстановлення не додають користувачів. Тестові емулятори не рахуються.'),
+            if (hidden > 0) trf('Приховано тестових емуляторів: {0}.', [hidden]),
+            tr('Лише модель телефону, версія Android, країна за мовою телефону, дата встановлення й останнього запуску та версія застосунку — без імен, номерів і ідентифікаторів.'),
+          ].join(' '),
           style: theme.textTheme.bodySmall?.copyWith(color: cs.outline),
         ),
       ),

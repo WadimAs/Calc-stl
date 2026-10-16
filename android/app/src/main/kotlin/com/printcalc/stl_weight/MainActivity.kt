@@ -166,7 +166,9 @@ class MainActivity : FlutterActivity() {
                             "model" to (Build.MODEL ?: ""),
                             "sdk" to Build.VERSION.SDK_INT,
                             "country" to (java.util.Locale.getDefault().country ?: ""),
-                            "installed" to info.firstInstallTime
+                            "installed" to info.firstInstallTime,
+                            "emulator" to isEmulator(),
+                            "device" to deviceHash()
                         ))
                     } catch (e: Exception) {
                         result.error("info", e.message, null)
@@ -377,6 +379,26 @@ class MainActivity : FlutterActivity() {
         // Reader mode only works in the foreground; the waiting dialog closes.
         nfc.cancel()
         super.onPause()
+    }
+
+    private fun isEmulator(): Boolean {
+        val f = Build.FINGERPRINT ?: ""
+        val m = Build.MODEL ?: ""
+        val h = Build.HARDWARE ?: ""
+        return f.startsWith("generic") || f.contains("emulator") || f.contains("sdk_gphone") ||
+            m.contains("sdk_gphone") || m.contains("Emulator") || m.contains("Android SDK built for") ||
+            h == "goldfish" || h == "ranchu" || Build.PRODUCT?.contains("sdk") == true
+    }
+
+    /** One-way hash of Android's per-app ID: tells a reinstall from a new phone, nothing more. */
+    private fun deviceHash(): String = try {
+        val id = android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: ""
+        if (id.isEmpty()) "" else {
+            val d = java.security.MessageDigest.getInstance("SHA-256").digest("kotushka:$id".toByteArray())
+            d.take(6).joinToString("") { "%02x".format(it) }
+        }
+    } catch (e: Exception) {
+        ""
     }
 
     companion object {
