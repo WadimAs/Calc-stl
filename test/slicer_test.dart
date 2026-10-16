@@ -1336,6 +1336,27 @@ void main() {
     expect(matchProduct('Pidstavka_phone.gcode.3mf', [a]), isNull);
     expect(matchProduct('Брелок.gcode.3mf', [a, p('2', 'Брелок', 2)])?.id, '2');
   });
+
+  test('device record packs into numbers and back', () {
+    final bytes = DeviceCodec.text('Xiaomi', 'Redmi Note 12 Pro+ 5G');
+    final h = DeviceCodec.header(sdk: 34, installDay: DeviceCodec.day(DateTime.utc(2026, 10, 12)), len: bytes.length, country: 'UA');
+    final parts = DeviceCodec.chunks(bytes);
+    expect(parts.every((v) => v >= 0 && v < (1 << 56)), isTrue);
+    expect(DeviceCodec.chunkCount(h), parts.length);
+    final st = DeviceCodec.status(DateTime.utc(2026, 10, 16), 112);
+    final r = DeviceCodec.decode(7, h, parts, st);
+    expect(r.maker, 'Xiaomi');
+    expect(r.model, 'Redmi Note 12 Pro+ 5G');
+    expect(r.phone, 'Xiaomi Redmi Note 12 Pro+ 5G');
+    expect(r.sdk, 34);
+    expect(r.android, 'Android 14');
+    expect(r.country, 'UA');
+    expect(r.installed, DateTime.utc(2026, 10, 12));
+    expect(r.lastSeen, DateTime.utc(2026, 10, 16));
+    expect(r.build, 112);
+    final long = DeviceCodec.text('samsung', 'SM-' * 30);
+    expect(long.length, DeviceCodec.maxBytes);
+  });
 }
 
 final _epoch = DateTime.fromMillisecondsSinceEpoch(0);

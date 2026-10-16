@@ -161,7 +161,12 @@ class MainActivity : FlutterActivity() {
                         result.success(hashMapOf<String, Any>(
                             "versionCode" to code,
                             "versionName" to (info.versionName ?: ""),
-                            "is64" to Build.SUPPORTED_64_BIT_ABIS.isNotEmpty()
+                            "is64" to Build.SUPPORTED_64_BIT_ABIS.isNotEmpty(),
+                            "maker" to (Build.MANUFACTURER ?: ""),
+                            "model" to (Build.MODEL ?: ""),
+                            "sdk" to Build.VERSION.SDK_INT,
+                            "country" to (java.util.Locale.getDefault().country ?: ""),
+                            "installed" to info.firstInstallTime
                         ))
                     } catch (e: Exception) {
                         result.error("info", e.message, null)
