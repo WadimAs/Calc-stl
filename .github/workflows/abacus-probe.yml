@@ -17,12 +17,12 @@ jobs:
           curl -sS "$B/get/$NS/big1"; echo
           curl -sS -i "$B/create/$NS/big2?initializer=72057594037927935" | sed -n '1p;$p'; echo
           curl -sS "$B/get/$NS/big2"; echo
-          R=$(curl -sS "$B/create/$NS/st?initializer=5")
+          R=$(curl -sS "$B/create/$NS/st1?initializer=5")
           echo "$R"
           K=$(echo "$R" | python3 -c "import sys,json;print(json.load(sys.stdin).get('admin_key',''))")
-          curl -sS -i -X POST -H "Authorization: Bearer $K" "$B/set/$NS/st?value=1234567" | sed -n '1p;$p'; echo
-          curl -sS "$B/get/$NS/st"; echo
-          curl -sS -i "$B/create/$NS/st?initializer=9" | sed -n '1p;$p'; echo
+          curl -sS -i -X POST -H "Authorization: Bearer $K" "$B/set/$NS/st1?value=1234567" | sed -n '1p;$p'; echo
+          curl -sS "$B/get/$NS/st1"; echo
+          curl -sS -i "$B/create/$NS/st1?initializer=9" | sed -n '1p;$p'; echo
           curl -sS "$B/hit/$NS/seq"; echo
           curl -sS "$B/hit/$NS/seq"; echo
           sleep 1
